@@ -1,0 +1,411 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Astronaut Sprite Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Nunito:wght@400;600;700&family=Pixelify+Sans:wght@500;700&display=swap">
+<style>
+  /* Layout: stage-first bench. The live sprite owns the left; a narrow instrument column on the right; stacks on phones. */
+  :root {
+    --night: #1b1726;
+    --panel: #231e32;
+    --rule: #362e4a;
+    --cream: #f1e8dc;
+    --lavender: #a99bb4;
+    --coral: #ec7a5a;
+    --teal: #4fc6b4;
+    --coral-ink: #2a1520;
+    --font-display: 'Pixelify Sans', ui-monospace, 'Courier New', monospace;
+    --font-body: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-data: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--night); color: var(--cream); }
+  body {
+    margin: 0;
+    font: 15px/1.5 var(--font-body);
+    padding-inline: clamp(16px, 3vw, 40px);
+    padding-block: 28px 40px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; }
+  h1 { margin: 0; font: 700 clamp(28px, 4.2vw, 42px)/1 var(--font-display); letter-spacing: 0.01em; text-wrap: balance; }
+  h1 span { color: var(--coral); }
+  .meta { font: 500 12px/1.4 var(--font-data); color: var(--lavender); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .bench { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+
+  .stage-col { display: grid; gap: 12px; min-width: 0; }
+  .stage {
+    position: relative; display: grid; place-items: center; min-width: 0;
+    background: #1f1a2b; border: 1px solid var(--rule); border-radius: 6px; padding: 40px 12px 16px;
+    overflow: hidden;
+  }
+  #stage { display: block; image-rendering: pixelated; image-rendering: crisp-edges; max-width: 100%; }
+  .hud {
+    position: absolute; left: 14px; top: 12px; right: 14px; display: flex; justify-content: space-between; gap: 12px;
+    font: 500 12px/1 var(--font-data); color: var(--lavender); letter-spacing: 0.04em; font-variant-numeric: tabular-nums;
+  }
+  .hud b { color: var(--cream); font-weight: 500; }
+  .live { display: inline-flex; align-items: center; gap: 6px; }
+  .live i { width: 7px; height: 7px; background: var(--teal); display: inline-block; }
+  .live.paused i { background: var(--lavender); }
+
+  .strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-color: var(--rule) transparent; }
+  .strip button {
+    flex: none; padding: 0; border: 1px solid var(--rule); border-radius: 4px; background: #1f1a2b; cursor: pointer;
+    display: grid; justify-items: center; color: var(--lavender); font: 500 10px/1 var(--font-data);
+  }
+  .strip button canvas { width: 72px; height: 104px; image-rendering: pixelated; display: block; }
+  .strip button span { padding: 3px 0 5px; font-variant-numeric: tabular-nums; }
+  .strip button[aria-current="true"] { border-color: var(--coral); color: var(--cream); background: #2a2238; }
+
+  .controls { display: grid; gap: 20px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 18px; min-width: 0; }
+  .group { display: grid; gap: 9px; }
+  .label { font: 700 11px/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--lavender); }
+
+  button { font: inherit; color: inherit; }
+  button:focus-visible, input:focus-visible + .box { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+  .seg button {
+    border: 1px solid var(--rule); background: #1f1a2b; border-radius: 4px; padding: 8px 4px; cursor: pointer;
+    color: var(--lavender); font: 500 13px/1 var(--font-data);
+  }
+  .seg button:hover { color: var(--cream); border-color: #4a4063; }
+  .seg button[aria-pressed="true"] { background: var(--coral); border-color: var(--coral); color: var(--coral-ink); }
+  .anims button { display: grid; gap: 5px; padding: 10px 4px 8px; font: 500 16px/1 var(--font-display); }
+  .anims button small { font: 400 10px/1 var(--font-data); opacity: 0.8; }
+
+  .compass-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .compass { display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 38px); gap: 4px; }
+  .compass button {
+    border: 1px solid var(--rule); background: #1f1a2b; border-radius: 4px; cursor: pointer; color: var(--lavender);
+    font: 500 12px/1 var(--font-data); position: relative;
+  }
+  .compass button.axis::after {
+    content: ''; position: absolute; right: 4px; top: 4px; width: 4px; height: 4px; background: currentColor;
+    transform: rotate(45deg); opacity: 0.7;
+  }
+  .compass button:hover:not(:disabled) { color: var(--cream); border-color: #4a4063; }
+  .compass button[aria-pressed="true"] { background: var(--coral); border-color: var(--coral); color: var(--coral-ink); }
+  .compass button:disabled { opacity: 0.28; cursor: not-allowed; }
+  .compass .hub { display: grid; place-items: center; font: 700 15px/1 var(--font-display); color: var(--cream); }
+  .legend { font-size: 12.5px; line-height: 1.45; color: var(--lavender); max-width: 15em; }
+  .legend .dia { display: inline-block; width: 6px; height: 6px; background: var(--lavender); transform: rotate(45deg); margin-right: 4px; vertical-align: 1px; }
+
+  .transport { display: grid; grid-template-columns: 1fr 1.6fr 1fr; gap: 4px; }
+  .transport button {
+    border: 1px solid var(--rule); background: #1f1a2b; border-radius: 4px; padding: 9px 4px; cursor: pointer;
+    font: 600 13px/1 var(--font-body); color: var(--cream);
+  }
+  .transport button:hover { border-color: #4a4063; }
+  .transport #play { background: var(--teal); border-color: var(--teal); color: #10282a; }
+
+  .toggles { display: grid; gap: 8px; }
+  .toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
+  .toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .toggle .box { width: 30px; height: 16px; border-radius: 2px; background: #1f1a2b; border: 1px solid var(--rule); position: relative; flex: none; }
+  .toggle .box::after { content: ''; position: absolute; left: 2px; top: 2px; width: 10px; height: 10px; background: var(--lavender); transition: transform 120ms; }
+  .toggle input:checked + .box { background: #2c4a4d; border-color: var(--teal); }
+  .toggle input:checked + .box::after { transform: translateX(14px); background: var(--teal); }
+  .toggle .hint { color: var(--lavender); font-size: 12px; }
+
+  dl.spec { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 13px; }
+  dl.spec dt { color: var(--lavender); }
+  dl.spec dd { margin: 0; font: 400 12.5px/1.5 var(--font-data); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
+
+  footer { font-size: 12.5px; color: var(--lavender); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  kbd { font: 500 11px/1 var(--font-data); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 2px 5px; color: var(--cream); }
+  .err { color: var(--coral); }
+  @media (prefers-reduced-motion: reduce) { .toggle .box::after { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Astronaut <span>sprite bench</span></h1>
+    <div class="meta" id="meta">64×64 frames · 2:1 isometric · 8 directions</div>
+  </header>
+
+  <main class="bench">
+    <section class="stage-col" aria-label="Animation preview">
+      <div class="stage" id="stageBox">
+        <div class="hud">
+          <span id="hudLeft">walk · SE</span>
+          <span class="live" id="live"><i></i><span id="hudRight">frame 01/12</span></span>
+        </div>
+        <canvas id="stage" width="128" height="112" aria-label="Animated astronaut sprite"></canvas>
+      </div>
+      <div class="strip" id="strip" aria-label="Frames"></div>
+    </section>
+
+    <aside class="controls" aria-label="Controls">
+      <div class="group">
+        <div class="label">Animation</div>
+        <div class="seg anims" id="anims"></div>
+      </div>
+
+      <div class="group">
+        <div class="label">Facing</div>
+        <div class="compass-row">
+          <div class="compass" id="compass"></div>
+          <p class="legend" id="legend"><span class="dia"></span>marks the tile axes, where steps run 2px across for every 1px down.</p>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="label">Playback</div>
+        <div class="transport">
+          <button id="prev" type="button" aria-label="Previous frame">◀ Prev</button>
+          <button id="play" type="button">Pause</button>
+          <button id="next" type="button" aria-label="Next frame">Next ▶</button>
+        </div>
+        <div class="seg" id="speeds" aria-label="Playback speed"></div>
+        <div class="seg" id="zooms" aria-label="Zoom"></div>
+      </div>
+
+      <div class="group toggles">
+        <label class="toggle"><input type="checkbox" id="optMove" checked><span class="box"></span><span>Move <span class="hint">· floor scrolls at game speed</span></span></label>
+        <label class="toggle"><input type="checkbox" id="optShadow" checked><span class="box"></span><span>Ground shadow</span></label>
+        <label class="toggle"><input type="checkbox" id="optOnion"><span class="box"></span><span>Onion skin <span class="hint">· previous frame</span></span></label>
+      </div>
+
+      <div class="group">
+        <div class="label">Sheet</div>
+        <dl class="spec" id="spec"></dl>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <span><kbd>Space</kbd> play / pause</span>
+    <span><kbd>←</kbd> <kbd>→</kbd> step frames</span>
+    <span><kbd>1</kbd>–<kbd>4</kbd> animation</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const M = {"name": "astronaut", "frame_size": [64, 64], "anchor": [32, 56], "anchor_note": "Pixel coordinate (from top-left of each frame) of the point between the feet on the ground. Place this on the entity's ground position.", "projection": "2:1 pixel isometric (camera pitch 30 deg, yaw 45 deg to the tile grid)", "direction_note": "Directions are screen-space compass directions. NE/SE/SW/NW run along the iso tile axes (2px across : 1px down); N/E/S/W are the screen-aligned in-betweens.", "world_unit_px": {"vertical": 1.0, "horizontal": 1.1547}, "shadow": "astronaut_shadow.png", "animations": {"idle": {"file": "astronaut_idle.png", "frames": 16, "fps": 8, "loop": true, "directions": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"], "layout": "one row per direction (in the order listed), one column per frame"}, "walk": {"file": "astronaut_walk.png", "frames": 12, "fps": 12, "loop": true, "directions": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"], "layout": "one row per direction (in the order listed), one column per frame", "ground_speed_world_per_sec": 13.333, "screen_speed_px_per_sec": {"NE/SE/SW/NW": [10.89, 5.44], "E/W": [15.4, 0.0], "N/S": [0.0, 7.7]}, "speed_note": "Move the sprite at these [x, y] px/sec so the planted foot does not slide."}, "run": {"file": "astronaut_run.png", "frames": 10, "fps": 15, "loop": true, "directions": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"], "layout": "one row per direction (in the order listed), one column per frame", "ground_speed_world_per_sec": 47.368, "screen_speed_px_per_sec": {"NE/SE/SW/NW": [38.68, 19.34], "E/W": [54.7, 0.0], "N/S": [0.0, 27.35]}, "speed_note": "Move the sprite at these [x, y] px/sec so the planted foot does not slide."}, "climb": {"file": "astronaut_climb.png", "frames": 12, "fps": 12, "loop": true, "directions": ["N", "NE", "NW"], "layout": "one row per direction (in the order listed), one column per frame", "climb_speed_px_per_sec": 12.0, "ladder_rung_spacing_px": 6.0, "note": "In-place animation: move the entity up the ladder at climb_speed_px_per_sec so the hands and feet stay locked to the rungs."}}, "preview": {"ladder": {"file": "preview/ladder_climb.png", "frame_size": [64, 112], "anchor": [32, 80]}}};
+  const FW = M.frame_size[0], FH = M.frame_size[1];
+  const [ANX, ANY] = M.anchor;
+  const LW = 128, LH = 112, AX = 64, AY = 84;           // stage logical pixels, ground point on stage
+  const ANIM_KEYS = Object.keys(M.animations);
+  const GRID = ['NW', 'N', 'NE', 'W', null, 'E', 'SW', 'S', 'SE'];
+  const AXES = new Set(['NE', 'SE', 'SW', 'NW']);
+  const CLIMB_FALLBACK = { S: 'N', SE: 'NE', E: 'NE', SW: 'NW', W: 'NW' };
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const state = { anim: 'walk', dir: 'SE', frame: 0, playing: !reduced, speed: 1, zoom: 4,
+                  move: true, shadow: true, onion: false, acc: 0, offX: 0, offY: 0 };
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), ctx = stage.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  const load = src => new Promise((res, rej) => {
+    const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error(src)); im.src = src;
+  });
+
+  const anim = () => M.animations[state.anim];
+  const row = () => anim().directions.indexOf(state.dir);
+
+  // ---------- floor (2:1 iso tiles, drawn per pixel so every edge is crisp)
+  const floorImg = ctx.createImageData(LW, LH);
+  const BG = [31, 26, 43], TA = [63, 55, 85], TB = [69, 60, 92], EDGE = [84, 73, 110];
+  function drawFloor() {
+    const ox = Math.round(state.offX), oy = Math.round(state.offY), d = floorImg.data;
+    for (let y = 0; y < LH; y++) {
+      for (let x = 0; x < LW; x++) {
+        const px = x + 0.5 - AX - ox, py = y + 0.5 - AY - oy;
+        const gx = py / 16 + px / 32 + 0.5, gy = py / 16 - px / 32 + 0.5;
+        const ix = Math.floor(gx), iy = Math.floor(gy);
+        const fx = gx - ix, fy = gy - iy;
+        let c = ((ix + iy) & 1) ? TB : TA;
+        if (fx < 0.062 || fy < 0.062) c = EDGE;
+        // stepped vignette so the floor melts into the stage
+        const r = Math.hypot((x - AX) / 64, (y - AY + 8) / 44);
+        const k = r < 0.62 ? 1 : r < 0.8 ? 0.62 : r < 0.95 ? 0.3 : 0;
+        const i = (y * LW + x) * 4;
+        d[i] = BG[0] + (c[0] - BG[0]) * k; d[i + 1] = BG[1] + (c[1] - BG[1]) * k; d[i + 2] = BG[2] + (c[2] - BG[2]) * k; d[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(floorImg, 0, 0);
+  }
+
+  function drawWall(scroll) {
+    ctx.fillStyle = '#1f1a2b'; ctx.fillRect(0, 0, LW, LH);
+    ctx.fillStyle = '#262036';
+    for (let y = ((scroll % 12) + 12) % 12 - 12; y < LH; y += 12) ctx.fillRect(0, y, LW, 1);
+  }
+
+  function velocity() {
+    const a = anim();
+    if (!a.screen_speed_px_per_sec) return [0, 0];
+    const s = a.screen_speed_px_per_sec, d = state.dir;
+    if (AXES.has(d)) { const [vx, vy] = s['NE/SE/SW/NW']; return [d.includes('E') ? vx : -vx, d.includes('S') ? vy : -vy]; }
+    if (d === 'E' || d === 'W') return [d === 'E' ? s['E/W'][0] : -s['E/W'][0], 0];
+    return [0, d === 'S' ? s['N/S'][1] : -s['N/S'][1]];
+  }
+
+  function blitFrame(target, f, dx, dy) {
+    target.drawImage(sheets[state.anim], f * FW, row() * FH, FW, FH, dx, dy, FW, FH);
+  }
+
+  function draw() {
+    const a = anim(), n = a.frames;
+    if (state.anim === 'climb') {
+      const L = M.preview.ladder, lf = state.move ? state.frame : 0;
+      const rise = state.move ? Math.round(lf * a.climb_speed_px_per_sec / a.fps) : 0;
+      drawWall(rise);
+      ctx.drawImage(ladderImg, lf * L.frame_size[0], row() * L.frame_size[1], L.frame_size[0], L.frame_size[1],
+                    AX - L.anchor[0], AY - L.anchor[1], L.frame_size[0], L.frame_size[1]);
+    } else {
+      drawFloor();
+      if (state.shadow) ctx.drawImage(shadowImg, AX - ANX, AY - ANY);
+    }
+    if (state.onion) { ctx.globalAlpha = 0.3; blitFrame(ctx, (state.frame - 1 + n) % n, AX - ANX, AY - ANY); ctx.globalAlpha = 1; }
+    blitFrame(ctx, state.frame, AX - ANX, AY - ANY);
+
+    $('hudLeft').innerHTML = `<b>${state.anim}</b> · ${state.dir}`;
+    $('hudRight').textContent = `frame ${String(state.frame + 1).padStart(2, '0')}/${String(n).padStart(2, '0')} · ${a.fps} fps`;
+    $('live').classList.toggle('paused', !state.playing);
+    stripButtons.forEach((b, i) => b.setAttribute('aria-current', i === state.frame ? 'true' : 'false'));
+  }
+
+  // ---------- loop
+  let last = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (state.playing) {
+      const a = anim(), step = 1 / a.fps;
+      state.acc += dt * state.speed;
+      while (state.acc >= step) { state.acc -= step; state.frame = (state.frame + 1) % a.frames; }
+      if (state.move && state.anim !== 'climb') {
+        const [vx, vy] = velocity();
+        state.offX = (((state.offX - vx * dt * state.speed) % 32) + 32) % 32;
+        state.offY = (((state.offY - vy * dt * state.speed) % 16) + 16) % 16;
+      }
+    }
+    draw();
+    requestAnimationFrame(tick);
+  }
+
+  // ---------- UI
+  let stripButtons = [];
+  function buildStrip() {
+    const strip = $('strip'); strip.textContent = '';
+    stripButtons = [];
+    for (let i = 0; i < anim().frames; i++) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('aria-label', `Frame ${i + 1}`);
+      const c = document.createElement('canvas'); c.width = 36; c.height = 52;
+      const cx = c.getContext('2d'); cx.imageSmoothingEnabled = false;
+      cx.drawImage(sheets[state.anim], i * FW + 14, row() * FH + 8, 36, 52, 0, 0, 36, 52);
+      const s = document.createElement('span'); s.textContent = String(i + 1).padStart(2, '0');
+      b.append(c, s);
+      b.addEventListener('click', () => { state.frame = i; state.acc = 0; setPlaying(false); });
+      strip.append(b); stripButtons.push(b);
+    }
+  }
+
+  function seg(container, items, current, onPick) {
+    const el = $(container); el.textContent = '';
+    items.forEach(it => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.innerHTML = it.html; b.dataset.v = it.v;
+      b.setAttribute('aria-pressed', String(it.v === current));
+      b.addEventListener('click', () => { onPick(it.v); [...el.children].forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === String(it.v)))); });
+      el.append(b);
+    });
+  }
+
+  function buildCompass() {
+    const el = $('compass'); el.textContent = '';
+    const dirs = anim().directions;
+    GRID.forEach(d => {
+      if (!d) { const hub = document.createElement('div'); hub.className = 'hub'; hub.textContent = state.dir; el.append(hub); return; }
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = d; b.className = AXES.has(d) ? 'axis' : '';
+      b.disabled = !dirs.includes(d);
+      b.setAttribute('aria-pressed', String(d === state.dir));
+      b.setAttribute('aria-label', `Face ${d}`);
+      b.addEventListener('click', () => { state.dir = d; refresh(); });
+      el.append(b);
+    });
+  }
+
+  function buildSpec() {
+    const a = anim(), r = row();
+    const rows = [
+      ['File', a.file],
+      ['Row', `${r + 1} of ${a.directions.length} (${state.dir})`],
+      ['Frames', `${a.frames} @ ${a.fps} fps`],
+      ['Loop', `${(a.frames / a.fps).toFixed(2)} s`],
+    ];
+    if (a.screen_speed_px_per_sec) {
+      const [vx, vy] = velocity();
+      rows.push(['Move', `${Math.abs(vx).toFixed(1)}, ${Math.abs(vy).toFixed(1)} px/s`]);
+    }
+    if (a.climb_speed_px_per_sec) rows.push(['Climb', `${a.climb_speed_px_per_sec} px/s up`], ['Rungs', `every ${a.ladder_rung_spacing_px} px`]);
+    rows.push(['Anchor', `${ANX}, ${ANY} px`]);
+    $('spec').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  }
+
+  function fitZoom() {
+    const box = $('stageBox');
+    const avail = box.clientWidth - 24;
+    const z = Math.max(1, Math.min(state.zoom, Math.floor(avail / LW)));
+    stage.style.width = `${LW * z}px`; stage.style.height = `${LH * z}px`;
+  }
+
+  function setPlaying(p) { state.playing = p; $('play').textContent = p ? 'Pause' : 'Play'; }
+
+  function refresh() {
+    const a = anim();
+    if (!a.directions.includes(state.dir)) state.dir = CLIMB_FALLBACK[state.dir] || a.directions[0];
+    state.frame %= a.frames;
+    $('optShadow').disabled = state.anim === 'climb';
+    buildCompass(); buildStrip(); buildSpec(); draw();
+  }
+
+  function pickAnim(k) { state.anim = k; state.acc = 0; state.frame = 0; refresh();
+    [...$('anims').children].forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === k))); }
+
+  let sheets = {}, shadowImg, ladderImg;
+  Promise.all([
+    ...ANIM_KEYS.map(k => load(M.animations[k].file).then(im => { sheets[k] = im; })),
+    load(M.shadow).then(im => { shadowImg = im; }),
+    load(M.preview.ladder.file).then(im => { ladderImg = im; }),
+  ]).then(() => {
+    const total = ANIM_KEYS.reduce((s, k) => s + M.animations[k].frames * M.animations[k].directions.length, 0);
+    $('meta').textContent = `${FW}×${FH} frames · 2:1 isometric · ${ANIM_KEYS.length} animations · ${total} frames`;
+    seg('anims', ANIM_KEYS.map(k => ({ v: k, html: `${k}<small>${M.animations[k].frames}f · ${M.animations[k].fps}fps</small>` })), state.anim, pickAnim);
+    seg('speeds', [0.25, 0.5, 1, 2].map(v => ({ v, html: `${v}×` })), 1, v => { state.speed = v; });
+    seg('zooms', [2, 3, 4, 6].map(v => ({ v, html: `zoom ${v}` })), 4, v => { state.zoom = v; fitZoom(); });
+    $('play').addEventListener('click', () => setPlaying(!state.playing));
+    $('prev').addEventListener('click', () => { setPlaying(false); state.frame = (state.frame - 1 + anim().frames) % anim().frames; });
+    $('next').addEventListener('click', () => { setPlaying(false); state.frame = (state.frame + 1) % anim().frames; });
+    $('optMove').addEventListener('change', e => { state.move = e.target.checked; });
+    $('optShadow').addEventListener('change', e => { state.shadow = e.target.checked; });
+    $('optOnion').addEventListener('change', e => { state.onion = e.target.checked; });
+    document.addEventListener('keydown', e => {
+      if (e.target.closest && e.target.closest('input, button') && (e.code === 'Space' || e.key === 'Enter')) return;
+      if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); }
+      else if (e.key === 'ArrowRight') { $('next').click(); }
+      else if (e.key === 'ArrowLeft') { $('prev').click(); }
+      else if (/^[1-4]$/.test(e.key) && ANIM_KEYS[+e.key - 1]) { pickAnim(ANIM_KEYS[+e.key - 1]); }
+    });
+    window.addEventListener('resize', fitZoom);
+    setPlaying(state.playing);
+    fitZoom(); refresh();
+    requestAnimationFrame(tick);
+  }).catch(err => {
+    $('meta').innerHTML = `<span class="err">Could not load ${err.message}. Keep viewer.html next to the sprite sheets.</span>`;
+  });
+})();
+</script>

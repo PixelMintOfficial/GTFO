@@ -1,0 +1,276 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Red Planet Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Nunito:wght@400;600;700&family=Pixelify+Sans:wght@500;700&display=swap">
+<style>
+  /* Layout: the map owns the page; one instrument strip underneath. Same night palette as the sprite bench. */
+  :root {
+    --night: #0d0b17;
+    --panel: #1c1829;
+    --rule: #342c47;
+    --cream: #f1e8dc;
+    --lavender: #a99bb4;
+    --coral: #ec7a5a;
+    --teal: #4fc6b4;
+    --coral-ink: #2a1520;
+    --font-display: 'Pixelify Sans', ui-monospace, 'Courier New', monospace;
+    --font-body: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-data: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--night); color: var(--cream); }
+  body { margin: 0; font: 15px/1.5 var(--font-body); padding-inline: clamp(16px, 2.5vw, 32px); padding-block: 22px 32px; }
+  .wrap { max-width: 1500px; margin: 0 auto; display: grid; gap: 14px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; }
+  h1 { margin: 0; font: 700 clamp(26px, 3.6vw, 38px)/1 var(--font-display); text-wrap: balance; }
+  h1 span { color: var(--coral); }
+  .meta { font: 500 12px/1.4 var(--font-data); color: var(--lavender); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .stage {
+    position: relative; height: clamp(340px, 72vh, 940px); border: 1px solid var(--rule); border-radius: 6px;
+    overflow: hidden; background: #0b0915; touch-action: none; cursor: grab;
+  }
+  .stage.dragging { cursor: grabbing; }
+  #map { display: block; width: 100%; height: 100%; }
+  .readout {
+    position: absolute; left: 12px; bottom: 12px; right: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;
+    pointer-events: none; font: 500 12px/1 var(--font-data); color: var(--lavender); font-variant-numeric: tabular-nums;
+  }
+  .readout span { background: rgba(13, 11, 23, 0.78); border: 1px solid var(--rule); border-radius: 4px; padding: 7px 9px; }
+  .readout b { color: var(--cream); font-weight: 500; }
+  .readout .warn b { color: var(--coral); }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; }
+  .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .label { font: 700 11px/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--lavender); margin-right: 4px; }
+  button { font: inherit; color: inherit; }
+  .btn {
+    border: 1px solid var(--rule); background: #15121f; border-radius: 4px; padding: 8px 11px; cursor: pointer;
+    font: 500 13px/1 var(--font-data); color: var(--cream);
+  }
+  .btn:hover { border-color: #4b4166; }
+  .btn.dome { font: 500 15px/1 var(--font-display); }
+  .btn[aria-pressed="true"] { background: var(--coral); border-color: var(--coral); color: var(--coral-ink); }
+  button:focus-visible, input:focus-visible + .box { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  .toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+  .toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .toggle .box { width: 30px; height: 16px; border-radius: 2px; background: #15121f; border: 1px solid var(--rule); position: relative; flex: none; }
+  .toggle .box::after { content: ''; position: absolute; left: 2px; top: 2px; width: 10px; height: 10px; background: var(--lavender); transition: transform 120ms; }
+  .toggle input:checked + .box { background: #2c4a4d; border-color: var(--teal); }
+  .toggle input:checked + .box::after { transform: translateX(14px); background: var(--teal); }
+
+  footer { font-size: 12.5px; color: var(--lavender); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  kbd { font: 500 11px/1 var(--font-data); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 2px 5px; color: var(--cream); }
+  .err { color: var(--coral); }
+  @media (prefers-reduced-motion: reduce) { .toggle .box::after { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Red planet <span>outpost</span></h1>
+    <div class="meta" id="meta">Full map · true game scale</div>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="map" aria-label="Isometric map of the red planet outpost"></canvas>
+    <div class="readout">
+      <span id="inview">In view: <b>Base</b></span>
+      <span id="zoomr">zoom <b>100%</b></span>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="group" id="jumps"><span class="label">Go to</span></div>
+    <div class="group">
+      <span class="label">Zoom</span>
+      <button class="btn" type="button" id="fit">Whole map</button>
+      <button class="btn" type="button" id="game">Game scale</button>
+      <button class="btn" type="button" id="zout" aria-label="Zoom out">−</button>
+      <button class="btn" type="button" id="zin" aria-label="Zoom in">+</button>
+    </div>
+    <div class="group">
+      <label class="toggle"><input type="checkbox" id="optView" checked><span class="box"></span>Game view</label>
+      <label class="toggle"><input type="checkbox" id="optAstro" checked><span class="box"></span>Astronaut</label>
+      <label class="toggle"><input type="checkbox" id="optLabels" checked><span class="box"></span>Labels</label>
+    </div>
+  </div>
+
+  <footer>
+    <span>Click the map to drop the game view there</span>
+    <span>Drag to pan · scroll or <kbd>+</kbd> <kbd>−</kbd> to zoom · <kbd>0</kbd> whole map</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const M = {"name": "red_planet", "image": "red_planet_map.png", "size": [6118, 3490], "origin_px": [3059.0, 3190.0], "world_unit_px": {"vertical": 2.0, "horizontal": 2.3094}, "grid_size_world": 1800, "viewport_assumed": [384, 216], "domes": {"base": {"center_px": [1557.9, 1688.9], "radius_world": 300.0, "bbox_px": [865.1, 996.1, 2250.7, 2035.3]}, "nursery": {"center_px": [4814.1, 1688.9], "radius_world": 200.0, "bbox_px": [4352.3, 1227.0, 5276.0, 1919.8]}, "comms": {"center_px": [3289.9, 2381.7], "radius_world": 200.0, "bbox_px": [2828.1, 1476.7, 3751.8, 2612.6]}}, "landing_pad": {"center_px": [1557.9, 2197.0], "radius_world": 88.0}, "lamps": 15, "visibility_checks": [{"pair": ["base", "nursery"], "gap_x_px": 2101.6, "gap_y_px": -808.3, "never_together": true}, {"pair": ["base", "comms"], "gap_x_px": 577.4, "gap_y_px": -558.6, "never_together": true}, {"pair": ["nursery", "comms"], "gap_x_px": 600.4, "gap_y_px": -443.1, "never_together": true}], "game": {"depth_png": "red_planet_depth.png", "walk_png": "red_planet_walk.png", "depth_scale": 25.0, "height_offset": 100.0, "height_scale": 150.0, "world_units_per_px": 0.43301270189221935, "depth_to_px": 0.5773502691896257, "px_per_unit": 2.0, "character_scale": 0.5, "grid_size": 1800, "spawn_world": [-357.51, 1083.34], "notes": "World X/Y: X right, Y away from the camera. Screen = (origin_x + X / world_units_per_px, origin_y - (depth_to_px * Y + z) * px_per_unit). Walk grid pixel (u, v) with u = (X + Y) / sqrt2, v = (Y - X) / sqrt2. Channels: R,G = 16-bit value (hi, lo); depth B = 255 for glass; walk B = 255 when walkable. character_scale converts sprite units (1 sprite px of height) to world units."}, "sprite": {"idle": "../../characters/astronaut/astronaut_idle.png", "shadow": "../../characters/astronaut/astronaut_shadow.png", "frame": 64, "anchor": [32, 56], "frames": 16, "fps": 8, "row": 4}};
+  const [MW, MH] = M.size;
+  const [VW, VH] = M.viewport_assumed;
+  const NAMES = { base: 'Base', nursery: 'Nursery', comms: 'Comms' };
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), canvas = $('map'), ctx = canvas.getContext('2d');
+  const st = { zoom: 1, panX: 0, panY: 0, focus: null, view: true, astro: true, labels: true, cw: 0, ch: 0 };
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const load = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error(src)); im.src = src; });
+
+  function resize() {
+    const r = stage.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const first = st.cw === 0;
+    st.cw = r.width; st.ch = r.height;
+    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+    if (first) fit();
+  }
+  function fit() {
+    st.zoom = Math.min(st.cw / MW, st.ch / MH) * 0.98;
+    st.panX = (st.cw - MW * st.zoom) / 2; st.panY = (st.ch - MH * st.zoom) / 2;
+  }
+  function centerOn(x, y, zoom) {
+    st.zoom = zoom; st.panX = st.cw / 2 - x * zoom; st.panY = st.ch / 2 - y * zoom;
+  }
+  function gameZoom() {
+    const z = Math.min(st.cw / VW, st.ch / VH) * 0.92;
+    return z >= 1 ? Math.floor(z) : z;
+  }
+  function zoomAt(sx, sy, factor) {
+    const nz = Math.min(8, Math.max(0.08, st.zoom * factor));
+    st.panX = sx - (sx - st.panX) * nz / st.zoom; st.panY = sy - (sy - st.panY) * nz / st.zoom; st.zoom = nz;
+  }
+  const toMap = (sx, sy) => [(sx - st.panX) / st.zoom, (sy - st.panY) / st.zoom];
+
+  function viewRect() { return [st.focus[0] - VW / 2, st.focus[1] - VH / 2 - 20, VW, VH]; }
+  function domesInView() {
+    const [x, y, w, h] = viewRect();
+    return Object.entries(M.domes).filter(([, d]) => {
+      const [a, b, c, e] = d.bbox_px;
+      return a < x + w && c > x && b < y + h && e > y;
+    }).map(([k]) => NAMES[k] || k);
+  }
+
+  let mapImg, sprite, shadow;
+  function draw(t) {
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#0b0915'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr * st.zoom, 0, 0, dpr * st.zoom, dpr * st.panX, dpr * st.panY);
+    ctx.imageSmoothingEnabled = st.zoom * dpr < 1;
+    ctx.drawImage(mapImg, 0, 0);
+
+    const [vx, vy, vw, vh] = viewRect();
+    if (st.astro && sprite) {
+      const S = M.sprite, row = S.row, n = S.frames;
+      const f = reduced ? 0 : Math.floor(t / 1000 * S.fps) % n;
+      const [ax, ay] = S.anchor, fs = S.frame;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(shadow, Math.round(st.focus[0] - ax), Math.round(st.focus[1] - ay));
+      ctx.drawImage(sprite, f * fs, row * fs, fs, fs, Math.round(st.focus[0] - ax), Math.round(st.focus[1] - ay), fs, fs);
+    }
+    if (st.view) {
+      ctx.fillStyle = 'rgba(8, 6, 16, 0.5)';
+      ctx.beginPath();
+      ctx.rect(-MW, -MH, MW * 3, MH * 3);
+      ctx.rect(vx, vy, vw, vh);
+      ctx.fill('evenodd');
+      ctx.strokeStyle = '#ec7a5a'; ctx.lineWidth = 2 / st.zoom;
+      ctx.strokeRect(vx, vy, vw, vh);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (st.view) {
+      const sx = vx * st.zoom + st.panX, sy = vy * st.zoom + st.panY;
+      chip(`${VW}×${VH} game view`, sx, sy - 6, '#ec7a5a', '#2a1520', 'left');
+    }
+    if (st.labels) {
+      for (const [k, d] of Object.entries(M.domes)) {
+        const [a, b, c] = d.bbox_px;
+        chip(NAMES[k] || k, ((a + c) / 2) * st.zoom + st.panX, b * st.zoom + st.panY - 8, '#f1e8dc', '#1c1829', 'center');
+      }
+    }
+    const inv = domesInView();
+    $('inview').innerHTML = `In view: <b>${inv.length ? inv.join(' + ') : 'open ground'}</b>`;
+    $('inview').classList.toggle('warn', inv.length > 1);
+    $('zoomr').innerHTML = `zoom <b>${Math.round(st.zoom * 100)}%</b>`;
+  }
+
+  function chip(text, x, y, bg, fg, align) {
+    ctx.font = '600 13px Nunito, system-ui, sans-serif';
+    const w = ctx.measureText(text).width + 14, h = 22;
+    const left = align === 'center' ? x - w / 2 : x;
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(Math.round(left), Math.round(y - h), w, h, 3); ctx.fill();
+    ctx.fillStyle = fg; ctx.textBaseline = 'middle'; ctx.fillText(text, Math.round(left + 7), Math.round(y - h / 2 + 1));
+  }
+
+  function loop(t) { draw(t); requestAnimationFrame(loop); }
+
+  // ---------- input
+  let drag = null;
+  stage.addEventListener('pointerdown', e => {
+    stage.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, y: e.clientY, px: st.panX, py: st.panY, moved: false };
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; stage.classList.add('dragging'); }
+    if (drag.moved) { st.panX = drag.px + dx; st.panY = drag.py + dy; }
+  });
+  stage.addEventListener('pointerup', e => {
+    if (drag && !drag.moved) {
+      const r = stage.getBoundingClientRect();
+      const [mx, my] = toMap(e.clientX - r.left, e.clientY - r.top);
+      st.focus = [Math.max(0, Math.min(MW, mx)), Math.max(0, Math.min(MH, my))];
+    }
+    drag = null; stage.classList.remove('dragging');
+  });
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = stage.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+  }, { passive: false });
+
+  function jump(k) {
+    const d = M.domes[k];
+    st.focus = [d.center_px[0], d.center_px[1] + 10];
+    centerOn(st.focus[0], st.focus[1] - 20, gameZoom());
+    [...$('jumps').querySelectorAll('button')].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+  }
+
+  Promise.all([load(M.image), load(M.sprite.idle).catch(() => null), load(M.sprite.shadow).catch(() => null)])
+    .then(([m, s, sh]) => {
+      mapImg = m; sprite = s && sh ? s : null; shadow = sh;
+      if (!sprite) { $('optAstro').checked = false; $('optAstro').disabled = true; st.astro = false; }
+      $('meta').textContent = `${MW}×${MH} px · 1 world unit = 1 px tall · assumed view ${VW}×${VH}`;
+      for (const k of Object.keys(M.domes)) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn dome'; b.textContent = NAMES[k] || k; b.dataset.k = k;
+        b.setAttribute('aria-pressed', 'false');
+        b.addEventListener('click', () => jump(k));
+        $('jumps').append(b);
+      }
+      const base = M.domes.base || Object.values(M.domes)[0];
+      st.focus = [base.center_px[0], base.center_px[1] + 10];
+      new ResizeObserver(resize).observe(stage);
+      resize();
+      $('fit').addEventListener('click', fit);
+      $('game').addEventListener('click', () => centerOn(st.focus[0], st.focus[1] - 20, gameZoom()));
+      $('zin').addEventListener('click', () => zoomAt(st.cw / 2, st.ch / 2, 1.5));
+      $('zout').addEventListener('click', () => zoomAt(st.cw / 2, st.ch / 2, 1 / 1.5));
+      $('optView').addEventListener('change', e => { st.view = e.target.checked; });
+      $('optAstro').addEventListener('change', e => { st.astro = e.target.checked; });
+      $('optLabels').addEventListener('change', e => { st.labels = e.target.checked; });
+      document.addEventListener('keydown', e => {
+        if (e.target.closest && e.target.closest('input, button')) return;
+        if (e.key === '+' || e.key === '=') zoomAt(st.cw / 2, st.ch / 2, 1.5);
+        else if (e.key === '-') zoomAt(st.cw / 2, st.ch / 2, 1 / 1.5);
+        else if (e.key === '0') fit();
+      });
+      requestAnimationFrame(loop);
+    })
+    .catch(err => { $('meta').innerHTML = `<span class="err">Could not load ${err.message}. Keep viewer.html next to the map image.</span>`; });
+})();
+</script>
