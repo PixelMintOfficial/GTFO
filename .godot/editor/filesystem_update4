@@ -1,3 +1,2 @@
-res://scripts/map_terrain.gd
-res://scripts/overworld.gd
+res://assets/characters/astronaut/astronaut_frames.tres
 res://scripts/player.gd

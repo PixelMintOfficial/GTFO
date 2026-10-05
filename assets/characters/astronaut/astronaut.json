@@ -50,19 +50,19 @@
         "NW"
       ],
       "layout": "one row per direction (in the order listed), one column per frame",
-      "ground_speed_world_per_sec": 13.333,
+      "ground_speed_world_per_sec": 19.643,
       "screen_speed_px_per_sec": {
         "NE/SE/SW/NW": [
-          10.89,
-          5.44
+          16.04,
+          8.02
         ],
         "E/W": [
-          15.4,
+          22.68,
           0.0
         ],
         "N/S": [
           0.0,
-          7.7
+          11.34
         ]
       },
       "speed_note": "Move the sprite at these [x, y] px/sec so the planted foot does not slide."

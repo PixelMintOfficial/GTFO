@@ -731,15 +731,19 @@ def gait_pose(t, S, beta, lift, strike, off, kick, base_z, bob, bob_phase, lean,
     return p
 
 
+WALK_STRIDE, WALK_STANCE = 11.0, 0.56   # a long, brisk stride
+RUN_STRIDE, RUN_STANCE = 12.0, 0.38
+
+
 def pose_walk(t):
-    return gait_pose(t, S=8.0, beta=0.6, lift=2.4, strike=0.30, off=0.45, kick=1.0,
-                     base_z=STAND_Z - 0.55, bob=0.45, bob_phase=0.25, lean=0.05,
-                     arm_swing=0.45, arm_bend=0.30, arm_bend_var=0.35, arm_abduct=0.12,
+    return gait_pose(t, S=WALK_STRIDE, beta=WALK_STANCE, lift=2.8, strike=0.32, off=0.5, kick=1.0,
+                     base_z=STAND_Z - 0.6, bob=0.6, bob_phase=0.25, lean=0.07,
+                     arm_swing=0.55, arm_bend=0.32, arm_bend_var=0.4, arm_abduct=0.12,
                      hip_yaw=0.10, chest_yaw=0.12, sway=0.35, head_lag=0.08, ant_back=1.0)
 
 
 def pose_run(t):
-    return gait_pose(t, S=12.0, beta=0.38, lift=5.0, strike=0.18, off=0.70, kick=1.6,
+    return gait_pose(t, S=RUN_STRIDE, beta=RUN_STANCE, lift=5.0, strike=0.18, off=0.70, kick=1.6,
                      base_z=STAND_Z - 0.9, bob=0.75, bob_phase=0.44, lean=0.24,
                      arm_swing=0.85, arm_bend=1.45, arm_bend_var=0.25, arm_abduct=0.18,
                      hip_yaw=0.16, chest_yaw=0.2, sway=0.2, head_lag=0.1, ant_back=2.6)
@@ -942,9 +946,9 @@ def build(quick=False):
             'layout': 'one row per direction (in the order listed), one column per frame',
         }
         if name == 'walk':
-            info['ground_speed_world_per_sec'] = round(8.0 / 0.6 * a['fps'] / a['frames'], 3)
+            info['ground_speed_world_per_sec'] = round(WALK_STRIDE / WALK_STANCE * a['fps'] / a['frames'], 3)
         if name == 'run':
-            info['ground_speed_world_per_sec'] = round(12.0 / 0.38 * a['fps'] / a['frames'], 3)
+            info['ground_speed_world_per_sec'] = round(RUN_STRIDE / RUN_STANCE * a['fps'] / a['frames'], 3)
         if name == 'climb':
             info['climb_speed_px_per_sec'] = round(CLIMB_RISE * a['fps'] / a['frames'], 3)
             info['ladder_rung_spacing_px'] = RUNG

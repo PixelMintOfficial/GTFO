@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/overworld.gd" id="1_overworld"]
 [ext_resource type="Texture2D" path="res://assets/maps/red_planet/red_planet_map.png" id="2_map"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="3_player"]
 [ext_resource type="Script" path="res://scripts/wind_fx.gd" id="4_wind"]
+[ext_resource type="Script" path="res://scripts/map_screen.gd" id="5_map"]
 
 [node name="Overworld" type="Node2D"]
 script = ExtResource("1_overworld")
@@ -16,3 +17,6 @@ centered = false
 
 [node name="WindFX" type="Node2D" parent="."]
 script = ExtResource("4_wind")
+
+[node name="MapScreen" type="CanvasLayer" parent="."]
+script = ExtResource("5_map")

@@ -4,20 +4,24 @@ extends Node2D
 ## the projected pixel position, so the iso projection, ground height and depth
 ## occlusion all come from one place (MapTerrain).
 ##
-## Controls: WASD / arrow keys / left stick to move in 8 directions, Shift / right
-## shoulder to run.
+## Controls: WASD / arrow keys / left stick to walk in 8 directions, Shift / right
+## shoulder to run. Tilting the stick part-way walks slower.
 
 ## Screen-space compass, clockwise from east (screen y points down).
 const DIRS: Array[String] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"]
 
-## Ground speeds at which the drawn cycles keep the planted foot still, in sprite units/s
-## (from astronaut.json). Converted to map units with the map's character_scale.
-@export var walk_cycle_speed := 13.333
+## Speeds are in sprite units/s (1 unit = 1 sprite pixel of height) and are converted to
+## map units with the map's character_scale.
+## Walking speed at full stick / keyboard.
+@export var walk_speed := 71.0
+## Playback speed of the walk cycle while walking. The drawn stride covers 19.6 units per
+## second at 1x, so this keeps a brisk, natural cadence rather than a frantic one.
+@export var walk_anim_scale := 2.4
+## Ground speed of the drawn run cycle (from astronaut.json).
 @export var run_cycle_speed := 47.368
-## How much faster than the drawn cycle to move. The animation plays faster by the same
-## factor, so feet stay locked to the ground at any pace.
-@export var walk_pace := 1.75
-@export var run_pace := 1.5
+## How much faster than the drawn run cycle to move when running. The animation speeds up
+## by the same factor, so the run keeps its feet planted.
+@export var run_pace := 1.8
 ## Radius around the feet that must be walkable, in sprite units.
 @export var foot_radius := 3.2
 ## How far the sprite reaches in front of / behind its feet, in sprite units (occlusion).
@@ -72,7 +76,8 @@ func _physics_process(delta: float) -> void:
 	if input == Vector2.ZERO:
 		input = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var running := forced_run or Input.is_action_pressed("run")
-	if input.length() < 0.25:
+	var tilt := input.length()
+	if tilt < 0.25:
 		_animate("idle", 1.0)
 		_dust.emitting = false
 		return
@@ -81,11 +86,12 @@ func _physics_process(delta: float) -> void:
 	facing = DIRS[step]
 	var screen_dir := Vector2.from_angle(step * PI / 4.0)
 	var dir := Vector2(screen_dir.x, -screen_dir.y)  # screen up = away from the camera
-	var pace := run_pace if running else walk_pace
-	var speed := (run_cycle_speed if running else walk_cycle_speed) * pace * _scale
-	var moved := _try_move(dir * speed * delta)
+	var push := clampf(tilt, 0.0, 1.0)
+	var speed := run_cycle_speed * run_pace if running else walk_speed * push
+	var anim_scale := run_pace if running else walk_anim_scale * push
+	var moved := _try_move(dir * speed * _scale * delta)
 	if moved:
-		_animate("run" if running else "walk", pace)
+		_animate("run" if running else "walk", anim_scale)
 	else:
 		_animate("idle", 1.0)
 	_kick_dust(moved, running, screen_dir)

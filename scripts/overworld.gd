@@ -6,6 +6,7 @@ extends Node2D
 ##   --walk=DX,DY[,run]     hold this stick direction (screen space, y down)
 ##   --capture=PATH         save the screen as PNG after --seconds (default 1.5), then quit
 ##   --burst=N              save N frames, 0.12 s apart (PATH gets _0, _1, ... suffixes)
+##   --open-map             open the map screen after a second
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
 const DEPTH_MAP: Texture2D = preload("res://assets/maps/red_planet/red_planet_depth.png")
@@ -14,12 +15,14 @@ var terrain: MapTerrain
 
 @onready var player: Player = $Player
 @onready var wind: WindFX = $WindFX
+@onready var map_screen: MapScreen = $MapScreen
 
 
 func _ready() -> void:
 	terrain = MapTerrain.new(MAP_JSON)
 	player.setup(terrain, DEPTH_MAP)
 	wind.setup(player.camera)
+	map_screen.setup(MAP_JSON, player)
 	_run_test_hooks()
 
 
@@ -35,6 +38,8 @@ func _run_test_hooks() -> void:
 		var w: PackedStringArray = args["walk"].split(",")
 		player.forced_input = Vector2(float(w[0]), float(w[1]))
 		player.forced_run = w.size() > 2 and w[2] == "run"
+	if args.has("open-map"):
+		get_tree().create_timer(1.0).timeout.connect(map_screen.toggle)
 	if not args.has("capture"):
 		return
 	await get_tree().create_timer(float(args.get("seconds", "1.5"))).timeout

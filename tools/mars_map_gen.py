@@ -62,33 +62,33 @@ LAMP_SCALE = 1.5                  # path lamps ~22 units: as tall as the astrona
 PAD_SCALE = 2.2
 SOLAR_SCALE = 1.6
 DOMES = {
-    'base':    dict(X=-650.0, Y=1300.0, R0=120.0, ribs=36),
-    'nursery': dict(X=760.0, Y=1300.0, R0=80.0, ribs=24),
-    'comms':   dict(X=100.0, Y=700.0, R0=80.0, ribs=24),
+    'base':    dict(X=-790.0, Y=1290.0, R0=120.0, ribs=36),
+    'nursery': dict(X=900.0, Y=1300.0, R0=80.0, ribs=24),
+    'comms':   dict(X=120.0, Y=540.0, R0=80.0, ribs=24),
 }
 for _d in DOMES.values():
     _d['R'] = _d['R0'] * DOME_SCALE
-PAD = dict(X=-650.0, Y=860.0, R0=40.0)
+PAD = dict(X=-560.0, Y=820.0, R0=40.0)
 PAD['R'] = PAD['R0'] * PAD_SCALE
 SOLAR = dict(X=-420.0, Y=1760.0)
 TOWER_TOP = 150.0                 # design units (scaled with the comms dome)
 PATHS = [
-    [(-650, 1300), (-300, 1480), (50, 1560), (420, 1480), (760, 1300)],     # base -> nursery
-    [(-650, 1300), (-380, 1100), (-150, 880), (100, 700)],                  # base -> comms
-    [(100, 700), (380, 820), (600, 1050), (760, 1300)],                     # comms -> nursery
-    [(-650, 1300), (-650, 860)],                                            # base -> landing pad
+    [(-790, 1290), (-420, 1480), (0, 1580), (450, 1520), (900, 1300)],      # base -> nursery
+    [(-790, 1290), (-500, 1050), (-200, 780), (120, 540)],                  # base -> comms
+    [(120, 540), (420, 640), (700, 900), (900, 1300)],                      # comms -> nursery
+    [(-790, 1290), (-560, 820)],                                            # base -> landing pad
 ]
 PATH_HALF = 9.5
 CRATERS = [(-200.0, 1250.0, 86.0, 26.0), (500.0, 1750.0, 60.0, 19.0), (-320.0, 2060.0, 44.0, 14.0),
-           (-100.0, 400.0, 40.0, 13.0)]
+           (-250.0, 420.0, 40.0, 13.0)]
 # spiky mountain ranges: centre X, Y, peaks, spread, min/max height
 SPIKE_RANGES = [
     (-420.0, 2080.0, 9, 150.0, 90.0, 190.0),     # back-left ridge
     (300.0, 2050.0, 6, 110.0, 80.0, 160.0),      # back-right
     (-50.0, 2250.0, 7, 130.0, 100.0, 210.0),     # the far back: a skyline
-    (720.0, 880.0, 6, 100.0, 80.0, 170.0),       # front-right
-    (-1020.0, 1450.0, 7, 110.0, 80.0, 170.0),    # left edge
-    (-150.0, 470.0, 6, 120.0, 70.0, 150.0),      # front
+    (520.0, 1150.0, 5, 80.0, 90.0, 180.0),       # between the comms and the nursery
+    (-680.0, 1720.0, 6, 90.0, 80.0, 160.0),      # back-left corner
+    (-120.0, 260.0, 6, 110.0, 70.0, 150.0),      # front
     (-480.0, 600.0, 5, 90.0, 70.0, 140.0),       # front-left
     (150.0, 1150.0, 3, 50.0, 130.0, 210.0),      # lone spires in the middle
 ]
@@ -1471,6 +1471,80 @@ def draw_moon(img, cx, cy, r):
     reg[inside] = ramp[lv[inside]]
 
 
+# ================================================================== map screen
+FONT = {  # tiny pixel font for labels baked into the map-screen image
+    'A': ['.#.', '#.#', '###', '#.#', '#.#'], 'B': ['##.', '#.#', '##.', '#.#', '##.'],
+    'C': ['.##', '#..', '#..', '#..', '.##'], 'D': ['##.', '#.#', '#.#', '#.#', '##.'],
+    'E': ['###', '#..', '##.', '#..', '###'], 'L': ['#..', '#..', '#..', '#..', '###'],
+    'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#'], 'N': ['#..#', '##.#', '#.##', '#..#', '#..#'],
+    'O': ['.#.', '#.#', '#.#', '#.#', '.#.'], 'P': ['##.', '#.#', '##.', '#..', '#..'],
+    'R': ['##.', '#.#', '##.', '#.#', '#.#'], 'S': ['.##', '#..', '.#.', '..#', '##.'],
+    'T': ['###', '.#.', '.#.', '.#.', '.#.'], 'U': ['#.#', '#.#', '#.#', '#.#', '###'],
+    'Y': ['#.#', '#.#', '.#.', '.#.', '.#.'], ' ': ['..', '..', '..', '..', '..'],
+}
+
+
+def text_width(text):
+    return sum(len(FONT[ch][0]) + 1 for ch in text) - 1
+
+
+def draw_text(img, x, y, text, color, shadow=(34, 24, 44)):
+    mask = np.zeros((7, text_width(text) + 2), bool)
+    cx = 1
+    for ch in text:
+        g = FONT[ch]
+        for r, row in enumerate(g):
+            for c, bit in enumerate(row):
+                if bit == '#':
+                    mask[r + 1, cx + c] = True
+        cx += len(g[0]) + 1
+    halo = ndi.binary_dilation(mask, structure=np.ones((3, 3), bool)) & ~mask
+    h, w = mask.shape
+    reg = img[y - 1:y - 1 + h, x - 1:x - 1 + w]
+    reg[halo[:reg.shape[0], :reg.shape[1]]] = shadow
+    reg[mask[:reg.shape[0], :reg.shape[1]]] = color
+
+
+def export_minimap(final, filled, fit=(352, 192)):
+    """A small whole-map image for the in-game map screen (M)."""
+    ys, xs = np.nonzero(filled)
+    x0, x1, y0, y1 = xs.min() - 60, xs.max() + 60, ys.min() - 60, ys.max() + 60
+    scale = min(fit[0] / (x1 - x0), fit[1] / (y1 - y0))
+    w, h = int((x1 - x0) * scale), int((y1 - y0) * scale)
+    mm = Image.fromarray(final[y0:y1, x0:x1]).resize((w, h), Image.BOX)
+    mm = np.array(mm).astype(np.float32)
+    mm = np.clip((mm - 128) * 1.12 + 128, 0, 255).astype(np.uint8)       # keep it crisp after averaging
+
+    def to_mm(X, Y, z=0.0):
+        px, py = project(X, Y, z)
+        return (px - x0) * scale, (py - y0) * scale
+
+    path_col = np.array(A.hex2rgb('#f3cf9e'), np.uint8)
+    for pts in PATHS:
+        cp = catmull(pts, step=2.0)
+        for X, Y in cp:
+            if min(math.hypot(X - d['X'], Y - d['Y']) - d['R'] for d in DOMES.values()) < 0:
+                continue
+            mx, my = to_mm(X, Y)
+            mm[int(my), int(mx)] = path_col
+    ring_col = np.array(A.hex2rgb('#a8ece2'), np.uint8)
+    for name, d in DOMES.items():
+        for a in np.linspace(0, 2 * math.pi, 720, endpoint=False):
+            mx, my = to_mm(d['X'] + d['R'] * math.cos(a), d['Y'] + d['R'] * math.sin(a))
+            mm[int(my), int(mx)] = ring_col
+    cream = A.hex2rgb('#f6ecdc')
+    for name, d in DOMES.items():
+        label = name.upper()
+        mx, top = to_mm(d['X'], d['Y'], d['R'] * (1.0 if name != 'comms' else 0.0) + 20)
+        if name == 'comms':
+            top = to_mm(d['X'], d['Y'], (TOWER_TOP + 34) * DOME_SCALE)[1]
+        draw_text(mm, int(mx - text_width(label) / 2), int(top - 9), label, cream)
+    draw_text(mm, 4, 4, 'RED PLANET', A.hex2rgb('#ec7a5a'))
+    draw_text(mm, w - text_width('M CLOSE') - 4, h - 9, 'M CLOSE', A.hex2rgb('#a99bb4'))
+    Image.fromarray(mm).save(os.path.join(OUT, 'red_planet_minimap.png'))
+    return dict(file='red_planet_minimap.png', origin=[int(x0), int(y0)], scale=scale, size=[w, h])
+
+
 # ================================================================== game data
 DEPTH_SCALE = 25.0                          # depth png stores camera-depth Y * 25 in 16 bits
 HEIGHT_OFFSET, HEIGHT_SCALE = 100.0, 150.0  # walk png stores (z + 100) * 150 in 16 bits
@@ -1663,6 +1737,7 @@ def build():
             print(f'  {names[i]:8s} / {names[j]:8s}  gap x {gx:7.1f}px  y {gy:7.1f}px  -> {"OK" if ok else "VISIBLE TOGETHER"}')
     meta['visibility_checks'] = checks
     meta['game'] = export_game_data(G, D, kind)
+    meta['minimap'] = export_minimap(final, filled)
     with open(os.path.join(OUT, 'red_planet_map.json'), 'w') as fh:
         json.dump(meta, fh, indent=2)
 
