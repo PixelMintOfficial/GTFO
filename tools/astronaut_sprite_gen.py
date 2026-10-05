@@ -783,12 +783,51 @@ def pose_climb(t):
     return p
 
 
+# Jump key poses. The game picks frames from the jump physics (see JUMP_PHASES), so each
+# frame is a pose rather than a time step. Airborne poses are drawn relative to the
+# ground anchor; the game lifts the whole sprite by the jump height.
+#   pz: pelvis offset  tp: torso pitch  hz: helmet lag  arm: (swing, abduct, bend)
+#   feet: (x, y, lift, pitch) with an extra lift on one foot for asymmetry  ant: antenna lag
+JUMP_KEYS = [
+    dict(pz=-2.0, tp=0.22, hp=0.06, hz=-0.5, arm=(-0.55, 0.16, 0.45), feet=(2.9, 0.0, 0.0, 0.0, 0.0), ant=(0.0, 0.8)),
+    dict(pz=-3.0, tp=0.30, hp=0.08, hz=-0.8, arm=(-0.95, 0.18, 0.55), feet=(2.9, 0.0, 0.0, 0.0, 0.0), ant=(0.0, 1.4)),
+    dict(pz=0.9, tp=-0.04, hp=-0.10, hz=0.5, arm=(2.3, 0.25, 0.25), feet=(2.6, -0.4, 1.4, -0.65, 0.0), ant=(0.0, -1.6)),
+    dict(pz=0.4, tp=0.0, hp=-0.12, hz=0.3, arm=(2.0, 0.35, 0.35), feet=(2.4, -0.2, 3.0, -0.45, 0.4), ant=(0.2, -1.8)),
+    dict(pz=0.0, tp=0.04, hp=-0.08, hz=0.1, arm=(1.5, 0.55, 0.4), feet=(2.6, 0.4, 4.0, -0.25, 0.5), ant=(0.4, -1.2)),
+    dict(pz=0.0, tp=0.02, hp=-0.04, hz=0.0, arm=(0.7, 1.05, 0.35), feet=(3.4, 0.6, 3.6, -0.1, 0.6), ant=(0.8, -0.2)),
+    dict(pz=0.1, tp=0.0, hp=-0.02, hz=0.15, arm=(0.55, 1.15, 0.3), feet=(3.6, 0.3, 3.4, 0.0, 0.0), ant=(0.0, 0.4)),
+    dict(pz=0.0, tp=0.02, hp=-0.04, hz=0.05, arm=(0.7, 1.05, 0.35), feet=(3.4, 0.0, 3.6, -0.05, -0.6), ant=(-0.8, -0.1)),
+    dict(pz=-0.2, tp=0.06, hp=0.02, hz=-0.1, arm=(1.1, 0.8, 0.3), feet=(3.0, 0.2, 2.0, 0.05, 0.3), ant=(0.0, 1.2)),
+    dict(pz=0.3, tp=0.08, hp=0.04, hz=-0.2, arm=(1.4, 0.6, 0.25), feet=(3.0, 0.4, 0.8, 0.2, 0.0), ant=(0.0, 1.8)),
+    dict(pz=-3.2, tp=0.32, hp=0.10, hz=-1.0, arm=(0.55, 0.55, 0.7), feet=(3.2, 0.2, 0.0, 0.0, 0.0), ant=(0.0, 2.2)),
+    dict(pz=-1.3, tp=0.14, hp=0.04, hz=-0.3, arm=(0.15, 0.3, 0.4), feet=(3.0, 0.0, 0.0, 0.0, 0.0), ant=(0.0, 0.6)),
+]
+JUMP_PHASES = {'crouch': [0, 1], 'takeoff': [2], 'rise': [3, 4], 'apex': [5, 6, 7], 'fall': [8, 9], 'land': [10, 11]}
+
+
+def pose_jump(t):
+    k = JUMP_KEYS[int(round(t * len(JUMP_KEYS))) % len(JUMP_KEYS)]
+    p = base_pose()
+    p['pelvis'] = np.array([0.0, 0.0, STAND_Z + k['pz']])
+    p['torso_rot'] = (0.0, k['tp'], 0.0)
+    p['head_rot'] = (0.0, k['hp'], 0.0)
+    p['head_off'] = np.array([0.0, 0.0, k['hz']])
+    swing, abduct, bend = k['arm']
+    p['arms'] = {'L': ('fk', swing, abduct, bend), 'R': ('fk', swing * 0.94, abduct * 1.05, bend)}
+    fx, fy, lift, pitch, skew = k['feet']
+    p['feet'] = {'L': (np.array([-fx, fy, ANKLE_H + lift + max(skew, 0.0)]), pitch, -0.10),
+                 'R': (np.array([fx, fy, ANKLE_H + lift + max(-skew, 0.0)]), pitch, 0.10)}
+    p['antenna'] = k['ant']
+    return p
+
+
 ALL8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 ANIMS = {
     'idle':  dict(frames=16, fps=8,  fn=pose_idle,  dirs=ALL8, loop=True),
     'walk':  dict(frames=12, fps=12, fn=pose_walk,  dirs=ALL8, loop=True),
     'run':   dict(frames=10, fps=15, fn=pose_run,   dirs=ALL8, loop=True),
     'climb': dict(frames=12, fps=12, fn=pose_climb, dirs=['N', 'NE', 'NW'], loop=True),
+    'jump':  dict(frames=len(JUMP_KEYS), fps=12, fn=pose_jump, dirs=ALL8, loop=False),
 }
 
 
@@ -949,6 +988,10 @@ def build(quick=False):
             info['ground_speed_world_per_sec'] = round(WALK_STRIDE / WALK_STANCE * a['fps'] / a['frames'], 3)
         if name == 'run':
             info['ground_speed_world_per_sec'] = round(RUN_STRIDE / RUN_STANCE * a['fps'] / a['frames'], 3)
+        if name == 'jump':
+            info['phases'] = JUMP_PHASES
+            info['note'] = 'Pose set, not a timed loop: pick frames from the jump state (crouch, takeoff, ' \
+                           'rise, apex, fall, land) and lift the sprite by the jump height.'
         if name == 'climb':
             info['climb_speed_px_per_sec'] = round(CLIMB_RISE * a['fps'] / a['frames'], 3)
             info['ladder_rung_spacing_px'] = RUNG

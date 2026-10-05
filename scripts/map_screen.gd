@@ -55,8 +55,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+func _ready() -> void:
+	visible = false  # until setup() and M
+
+
 func _process(delta: float) -> void:
-	if visible:
+	if visible and _canvas != null:
 		_time += delta
 		_canvas.queue_redraw()
 
@@ -72,7 +76,8 @@ func _draw_map() -> void:
 
 	# what the camera sees right now
 	var cam := _player.camera.get_screen_center_position()
-	var box := Rect2(((cam - view * 0.5) - _origin) * _scale + at, (view * _scale).ceil())
+	var seen := _player.camera.view_size()
+	var box := Rect2(((cam - seen * 0.5) - _origin) * _scale + at, (seen * _scale).ceil())
 	_frame(Rect2(box.position.floor(), box.size), VIEW_BOX)
 
 	# the astronaut: a blinking dot with a ring that pulses outward

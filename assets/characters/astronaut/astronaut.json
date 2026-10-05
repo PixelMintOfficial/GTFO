@@ -114,6 +114,50 @@
       "climb_speed_px_per_sec": 12.0,
       "ladder_rung_spacing_px": 6.0,
       "note": "In-place animation: move the entity up the ladder at climb_speed_px_per_sec so the hands and feet stay locked to the rungs."
+    },
+    "jump": {
+      "file": "astronaut_jump.png",
+      "frames": 12,
+      "fps": 12,
+      "loop": false,
+      "directions": [
+        "N",
+        "NE",
+        "E",
+        "SE",
+        "S",
+        "SW",
+        "W",
+        "NW"
+      ],
+      "layout": "one row per direction (in the order listed), one column per frame",
+      "phases": {
+        "crouch": [
+          0,
+          1
+        ],
+        "takeoff": [
+          2
+        ],
+        "rise": [
+          3,
+          4
+        ],
+        "apex": [
+          5,
+          6,
+          7
+        ],
+        "fall": [
+          8,
+          9
+        ],
+        "land": [
+          10,
+          11
+        ]
+      },
+      "note": "Pose set, not a timed loop: pick frames from the jump state (crouch, takeoff, rise, apex, fall, land) and lift the sprite by the jump height."
     }
   }
 }

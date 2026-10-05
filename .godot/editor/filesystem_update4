@@ -1,2 +1,8 @@
 res://assets/characters/astronaut/astronaut_frames.tres
 res://scripts/player.gd
+res://scripts/map_screen.gd
+res://scripts/map_terrain.gd
+res://scripts/overworld.gd
+res://scripts/wind_fx.gd
+res://shaders/depth_occlusion.gdshader
+res://shaders/dust_gusts.gdshader

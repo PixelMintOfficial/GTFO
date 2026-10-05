@@ -19,6 +19,7 @@ const GUST_SHADER := preload("res://shaders/dust_gusts.gdshader")
 
 var _camera: Camera2D
 var _gusts: ShaderMaterial
+var _layers: Array[CPUParticles2D] = []
 
 
 func setup(camera: Camera2D) -> void:
@@ -26,9 +27,11 @@ func setup(camera: Camera2D) -> void:
 	z_index = 50  # above the map and the astronaut
 	var view := get_viewport_rect().size
 	var dir := wind_dir.normalized()
-	add_child(_make_layer(mote_count, 6.0, Vector2(24, 46), _dot(1, 1), 0.9, view, dir, mote_color))
-	add_child(_make_layer(mote_count / 3, 5.0, Vector2(38, 70), _dot(2, 1), 0.6, view, dir, mote_color))
-	add_child(_make_layer(streak_count, 1.4, Vector2(150, 220), _dot(5, 1), 0.45, view, dir, mote_color))
+	_layers.append(_make_layer(mote_count, 6.0, Vector2(24, 46), _dot(1, 1), 0.9, view, dir, mote_color))
+	_layers.append(_make_layer(mote_count / 3, 5.0, Vector2(38, 70), _dot(2, 1), 0.6, view, dir, mote_color))
+	_layers.append(_make_layer(streak_count, 1.4, Vector2(150, 220), _dot(5, 1), 0.45, view, dir, mote_color))
+	for l in _layers:
+		add_child(l)
 
 	var layer := CanvasLayer.new()
 	layer.layer = 2
@@ -60,7 +63,11 @@ func _process(_delta: float) -> void:
 		return
 	var center := _camera.get_screen_center_position()
 	global_position = center
-	_gusts.set_shader_parameter("view_origin", center - get_viewport_rect().size * 0.5)
+	var seen := get_viewport_rect().size / _camera.zoom
+	_gusts.set_shader_parameter("view_origin", center - seen * 0.5)
+	_gusts.set_shader_parameter("view_scale", 1.0 / _camera.zoom.x)
+	for l in _layers:
+		l.emission_rect_extents = seen * 0.5 + Vector2(40, 30)
 
 
 func _make_layer(amount: int, lifetime: float, speed: Vector2, tex: Texture2D, alpha: float,

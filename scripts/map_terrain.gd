@@ -15,6 +15,10 @@ var px_per_unit := 1.0
 ## speeds and sizes (authored in sprite pixels) are converted with this.
 var character_scale := 1.0
 var spawn := Vector2.ZERO
+## Map pixels the furthest zoom-out may show (the whole main base).
+var max_view_px := Vector2(1920, 1080)
+## Boxes (map pixels) around each dome that the furthest zoom frames as a whole.
+var frames: Array[Rect2] = []
 
 var _grid_size := 0
 var _height_offset := 100.0
@@ -33,6 +37,10 @@ func _init(json_path: String) -> void:
 	px_per_unit = game.get("px_per_unit", 1.0)
 	character_scale = game.get("character_scale", 1.0)
 	spawn = Vector2(game["spawn_world"][0], game["spawn_world"][1])
+	if meta.has("zoom"):
+		max_view_px = Vector2(meta["zoom"]["max_view_px"][0], meta["zoom"]["max_view_px"][1])
+		for f in meta["zoom"].get("frames", {}).values():
+			frames.append(Rect2(f[0], f[1], f[2], f[3]))
 	_grid_size = int(game["grid_size"])
 	_height_offset = game["height_offset"]
 	_height_scale = game["height_scale"]

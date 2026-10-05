@@ -6,6 +6,7 @@ shader_type canvas_item;
 
 uniform sampler2D noise_tex : repeat_enable, filter_linear;
 uniform vec2 view_origin = vec2(0.0);    // world position of the view's top-left pixel
+uniform float view_scale = 1.0;          // world pixels per screen pixel (camera zoom-out)
 uniform vec2 wind = vec2(34.0, 7.0);     // px per second
 uniform vec4 dust_color : source_color = vec4(0.88, 0.62, 0.48, 1.0);
 uniform float strength = 0.2;
@@ -25,11 +26,12 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 px = floor(view_origin) + floor(local_px);
+	vec2 screen_px = floor(local_px);
+	vec2 px = floor(view_origin + screen_px * view_scale);
 	vec2 a = (px - wind * TIME) * vec2(0.0016, 0.0042);
 	vec2 b = (px - wind * TIME * 1.7) * vec2(0.0032, 0.009) + vec2(0.37, 0.71);
 	float n = texture(noise_tex, a).r * 0.65 + texture(noise_tex, b).r * 0.35;
 	float gust = smoothstep(1.0 - coverage, 1.0 - coverage + 0.32, n);
-	float level = floor(gust * 3.0 + bayer4(px) * 0.999) / 3.0;
+	float level = floor(gust * 3.0 + bayer4(screen_px) * 0.999) / 3.0;
 	COLOR = vec4(dust_color.rgb, level * strength);
 }

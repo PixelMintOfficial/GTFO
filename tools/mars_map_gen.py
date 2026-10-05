@@ -79,6 +79,9 @@ PATHS = [
     [(-790, 1290), (-560, 820)],                                            # base -> landing pad
 ]
 PATH_HALF = 9.5
+WALK_SLOPE = 0.75                 # steepest ground an astronaut can walk (~37 degrees)
+RAMP_SLOPE = 0.42                 # sand drifts piled against cliffs: gentle enough to climb
+DRIFT_SIDE = 0.55                 # drift flanks: steep sand, still walkable on the diagonal
 CRATERS = [(-200.0, 1250.0, 86.0, 26.0), (500.0, 1750.0, 60.0, 19.0), (-320.0, 2060.0, 44.0, 14.0),
            (-250.0, 420.0, 40.0, 13.0)]
 # spiky mountain ranges: centre X, Y, peaks, spread, min/max height
@@ -317,8 +320,8 @@ def build_world():
         a0, a1 = max(0, int(u0) - win), min(N, int(u0) + win)
         b0, b1 = max(0, int(v0) - win), min(N, int(v0) + win)
         r = np.hypot(U[a0:a1, b0:b1] - u0, V[a0:a1, b0:b1] - v0) / R
-        bowl = np.where(r < 1, depth * (r * r - 1), 0.0)
-        rim = 0.24 * depth * np.exp(-((r - 1) / 0.2) ** 2)
+        bowl = np.where(r < 1, -depth * np.cos(np.clip(r, 0, 1) * math.pi / 2) ** 2, 0.0)   # rounded, walkable walls
+        rim = 0.14 * depth * np.exp(-((r - 1) / 0.25) ** 2)
         crater_h[a0:a1, b0:b1] += bowl + rim
 
     # --- spiky mountains: star-shaped cones with concave flanks and gullies
@@ -362,6 +365,11 @@ def build_world():
     dunes = 2.4 * fbm(170, 4, 6) + 0.6 * fbm(36, 2, 7)
     ripples = 0.28 * np.sin((U * 0.83 + V * 0.55) / 2.6 + 2.6 * fbm(90, 2, 8))
     Hf = dunes + ripples + mesa + talus + pits + crater_h + spike_h
+    ground_ok = (free > 0.3) & ~ndi.binary_dilation(pit1, iterations=3) & (spike_h < 1) & (path_d > PATH_HALF + 6)
+    before = Hf.copy()
+    drifts = carve_drifts(Hf, U, V, tier1, tier2, pit1, pit2, ground_ok, rs, jag)
+    drifted = Hf > before + 0.5
+    del before
 
     # --- flatten under paths, pads and domes
     w = smoothstep(PATH_HALF - 2, PATH_HALF + 9, path_d)
@@ -373,6 +381,7 @@ def build_world():
 
     # --- boulders, crowding at cliff feet and crater rims, plus a few big ones
     near_cliff = np.clip(ndi.gaussian_filter((tier1 | pit1).astype(np.float32), 9) * 3.0, 0, 1)
+    drift_zone = ndi.binary_dilation(drifted, iterations=6)          # keep the way up clear
     rock = np.zeros((N, N), np.float32)
     placed, tries = 0, 0
     while placed < 1150 and tries < 50000:
@@ -380,7 +389,7 @@ def build_world():
         u, v = rs.uniform(14, N - 14, 2)
         iu, iv = int(u), int(v)
         big = placed < 50
-        if free[iu, iv] < 0.9 or (not big and rs.random() > 0.08 + 0.9 * near_cliff[iu, iv]):
+        if free[iu, iv] < 0.9 or drift_zone[iu, iv] or (not big and rs.random() > 0.08 + 0.9 * near_cliff[iu, iv]):
             continue
         r = float(rs.uniform(6, 11)) if big else float(np.clip(1.3 + rs.gamma(1.4, 0.9), 1.3, 5.5))
         win = int(r) + 2
@@ -401,6 +410,7 @@ def build_world():
     mat[(pits < -10)] = 2                           # pit floors
     mat[rock > 0.35] = 4
     mat[spike_h > 4] = 6                            # spires
+    mat[drifted] = 0                                # sand drifts read as ground
     for k, d in DOMES.items():
         mat[dome_r[k] < d['R']] = 5
 
@@ -462,9 +472,109 @@ def build_world():
              streak=fbm(70, 3, 11, aniso=(2.2, 0.35)), strata=fbm(90, 2, 12),
              spike_rel=spike_rel, lamps=lamps, craters=craters)
     G['shadow'] = shadow_map(Hf)
+    print(f'sand drifts: {drifts}')
     print(f'world built in {time.time() - t0:.1f}s ({len(craters)} craters, {peaks} peaks, '
           f'{placed} boulders, {len(lamps)} lamps)')
     return G
+
+
+def _drift(Hf, U, V, p, n, h_top, h_base, half_top=6.0, jag=None, rs=None):
+    """Windblown sand drift from h_top at p, running along n down to h_base: rounded flanks,
+    a wavering edge and surface ripples, max-combined so it meets the ground smoothly."""
+    length = max((h_top - h_base) / RAMP_SLOPE, 8.0)
+    ext = int(length + (h_top - h_base) / DRIFT_SIDE + 12)
+    cu, cv = int(p[0] + n[0] * length / 2), int(p[1] + n[1] * length / 2)
+    a0, a1 = max(0, cu - ext), min(N, cu + ext)
+    b0, b1 = max(0, cv - ext), min(N, cv + ext)
+    du, dv = U[a0:a1, b0:b1] - p[0], V[a0:a1, b0:b1] - p[1]
+    along = du * n[0] + dv * n[1]
+    lat = np.abs(-du * n[1] + dv * n[0])
+    ph = rs.uniform(0, 6.28) if rs is not None else 0.0
+    half = half_top * (1 + 0.35 * np.sin(along / 11.0 + ph)) + 2.0 * np.sin(along / 4.3 + ph * 2)
+    over = lat - half
+    flank = (np.sqrt(over * over + 9.0) + over) / 2               # rounded shoulder
+    h = h_top - np.clip(along, 0, None) * (h_top - h_base) / length - flank * DRIFT_SIDE
+    if jag is not None:
+        h = h + 0.7 * jag[a0:a1, b0:b1] * np.clip(along / 10.0, 0, 1)
+    ok = along > -4
+    Hf[a0:a1, b0:b1] = np.where(ok, np.maximum(Hf[a0:a1, b0:b1], h), Hf[a0:a1, b0:b1])
+
+
+def carve_drifts(Hf, U, V, tier1, tier2, pit1, pit2, allowed_ground, rs, jag=None):
+    """Sand drifts against some cliffs so several plateaus (and the summits on them) can be
+    climbed and a few pits walked into. Everything else stays cliff-bound."""
+    counts = dict(plateau=0, summit=0, pit=0, deep_pit=0)
+    lab1, n1 = ndi.label(tier1)
+    reachable_tops = set()
+
+    def try_component(region, room, outward, attempts=320):
+        smooth = ndi.gaussian_filter(region.astype(np.float32), 4)
+        gu, gv = np.gradient(smooth)
+        edge = np.argwhere(region & ~ndi.binary_erosion(region))
+        rs.shuffle(edge)
+        for iu, iv in edge[:attempts]:
+            g = np.array([gu[iu, iv], gv[iu, iv]])
+            if np.linalg.norm(g) < 1e-4:
+                continue
+            n = -g / np.linalg.norm(g) if outward else g / np.linalg.norm(g)
+            inside = np.array([iu, iv]) - n * 5         # on the upper side of the edge
+            if not (0 <= inside[0] < N and 0 <= inside[1] < N):
+                continue
+            h_top = float(Hf[int(inside[0]), int(inside[1])])
+            probe = np.array([iu, iv]) + n * 42
+            if not (0 <= probe[0] < N and 0 <= probe[1] < N):
+                continue
+            h_base = float(Hf[int(probe[0]), int(probe[1])])
+            drop = h_top - h_base
+            if drop < 6:
+                continue
+            length = drop / RAMP_SLOPE
+            perp = np.array([-n[1], n[0]])
+            fits = True
+            for s_ in np.arange(5, length + 6, 3):
+                for lt in (-8.0, 0.0, 8.0):
+                    q = np.array([iu, iv]) + n * s_ + perp * lt
+                    qu, qv = int(q[0]), int(q[1])
+                    if not (10 <= qu < N - 10 and 10 <= qv < N - 10) or not room[qu, qv]:
+                        fits = False
+                        break
+                if not fits:
+                    break
+            if fits:
+                _drift(Hf, U, V, np.array([iu + 0.5, iv + 0.5]), n, h_top, h_base, jag=jag, rs=rs)
+                return True
+        return False
+
+    # plateaus: drifts piled against the outside of the biggest mesas
+    sizes = ndi.sum(tier1, lab1, index=np.arange(1, n1 + 1))
+    room = allowed_ground & ~ndi.binary_dilation(tier1, iterations=3)
+    for comp in np.argsort(sizes)[::-1][:16]:
+        if counts['plateau'] >= 9 or sizes[comp] < 600:
+            break
+        if try_component(lab1 == comp + 1, room, True):
+            counts['plateau'] += 1
+            reachable_tops.add(comp + 1)
+    # summits: only on plateaus you can already get onto
+    lab2, n2 = ndi.label(tier2)
+    room = ndi.binary_erosion(tier1, iterations=5) & ~ndi.binary_dilation(tier2, iterations=3)
+    for comp in range(1, n2 + 1):
+        if counts['summit'] >= 5:
+            break
+        region = lab2 == comp
+        parent = np.bincount(lab1[region], minlength=n1 + 1)[1:].argmax() + 1
+        if parent in reachable_tops and region.sum() >= 400 and try_component(region, room, True):
+            counts['summit'] += 1
+    # pits: drifts spilling down into them
+    for mask, room, want, label in ((pit1, pit1 & ~ndi.binary_dilation(pit2, iterations=3), 4, 'pit'),
+                                    (pit2, ndi.binary_erosion(pit2, iterations=2), 2, 'deep_pit')):
+        lab, n = ndi.label(mask)
+        sizes = ndi.sum(mask, lab, index=np.arange(1, n + 1)) if n else []
+        for comp in np.argsort(sizes)[::-1]:
+            if counts[label] >= want or sizes[comp] < 600:
+                break
+            if try_component(lab == comp + 1, room, False):
+                counts[label] += 1
+    return counts
 
 
 def shadow_map(Hf):
@@ -1035,7 +1145,7 @@ def comms_interior(d):
     return parts, lights
 
 
-def comms_tower(d):
+def comms_tower(d, with_dish=False):
     C = cam(d['X'], d['Y'], 0.0)
     parts = [P_('tower', A.RoundCone(C, C + np.array([0, 0, TOWER_TOP]), 7.5, 3.0), 'red', 'tower', decal_tower)]
     parts.append(P_('collar', A.Torus(C + np.array([0, 0, d['R0'] - 0.6]), 8.6, 1.8), 'dark', 'collar'))
@@ -1043,12 +1153,60 @@ def comms_tower(d):
     out = grid_dir(math.radians(-60))
     dish_dir = A.nz(out + np.array([0, 0, 0.9]))
     dish_c = C + np.array([0, 0, 122.0]) + out * 7
-    parts.append(P_('dish', A.Ellipsoid(dish_c, (9.5, 9.5, 2.0), frame_z(dish_dir)), 'metal', 'dish'))
-    parts.append(P_('feed', A.RoundCone(dish_c, dish_c + dish_dir * 8.0, 0.8, 0.6), 'dark', 'dish'))
+    if with_dish:
+        parts += tower_dish_parts(C, math.radians(-60))
     parts.append(P_('mast', A.RoundCone(C + np.array([0, 0, TOWER_TOP - 2]), C + np.array([0, 0, TOWER_TOP + 26]), 1.1, 0.6),
                     'dark', 'mast'))
     parts.append(P_('beacon', A.Sphere(C + np.array([0, 0, TOWER_TOP + 28]), 2.4), 'beacon', 'beacon'))
     return parts, C + np.array([0, 0, TOWER_TOP + 28])
+
+
+def tower_dish_parts(C, theta):
+    """The comms dish on its swing arm, orbiting the tower axis."""
+    out = grid_dir(theta)
+    dish_dir = A.nz(out + np.array([0, 0, 0.9]))
+    dish_c = C + np.array([0, 0, 122.0]) + out * 7
+    return [P_('arm', A.RoundCone(C + np.array([0, 0, 118.0]), dish_c - dish_dir * 1.2, 1.0, 0.8), 'dark', 'dish'),
+            P_('dish', A.Ellipsoid(dish_c, (9.5, 9.5, 2.0), frame_z(dish_dir)), 'metal', 'dish'),
+            P_('feed', A.RoundCone(dish_c, dish_c + dish_dir * 8.0, 0.8, 0.6), 'dark', 'dish')]
+
+
+def tower_dish_frame(d, theta):
+    """Dish + the tower section and deck around it, so the tower hides the dish behind it."""
+    C = cam(d['X'], d['Y'], 0.0)
+    return ([P_('tower', A.RoundCone(C, C + np.array([0, 0, TOWER_TOP]), 7.5, 3.0), 'red', 'tower', decal_tower),
+             P_('deck', A.Disc(C + np.array([0, 0, 112.0]), 11.0, 1.3, 0.6, UPAX), 'metal', 'deck')]
+            + tower_dish_parts(C, theta))
+
+
+def apex_radar(d, theta):
+    """Radar on a short mast at the top of a dome."""
+    C = cam(d['X'], d['Y'], 0.0)
+    top = C + np.array([0, 0, d['R0']])
+    pivot = top + np.array([0, 0, 9.0])
+    face = grid_dir(theta)
+    dish_dir = A.nz(face + np.array([0, 0, 0.45]))
+    return [P_('collar', A.Torus(top + np.array([0, 0, -0.3]), 3.6, 1.2), 'dark', 'mast'),
+            P_('mast', A.RoundCone(top - np.array([0, 0, 1.0]), pivot, 1.4, 1.0), 'pack', 'mast'),
+            P_('dish', A.Ellipsoid(pivot + face * 1.2, (6.2, 6.2, 1.3), frame_z(dish_dir)), 'metal', 'radar'),
+            P_('feed', A.RoundCone(pivot + face * 1.2, pivot + face * 1.2 + dish_dir * 4.5, 0.5, 0.4), 'dark', 'radar'),
+            P_('weight', A.RoundBox(pivot - face * 2.4, (1.4, 1.4, 1.1), 0.5, yaw_to(face)), 'coral', 'radar')]
+
+
+def apex_anemometer(d, theta):
+    """Three-cup wind gauge spinning on top of a dome."""
+    C = cam(d['X'], d['Y'], 0.0)
+    top = C + np.array([0, 0, d['R0']])
+    hub = top + np.array([0, 0, 8.0])
+    parts = [P_('collar', A.Torus(top + np.array([0, 0, -0.3]), 3.2, 1.1), 'dark', 'mast'),
+             P_('mast', A.RoundCone(top - np.array([0, 0, 1.0]), hub, 1.2, 0.8), 'pack', 'mast'),
+             P_('hub', A.Sphere(hub + np.array([0, 0, 0.6]), 1.3), 'coral', 'rotor')]
+    for k in range(3):
+        a = grid_dir(theta + k * 2 * math.pi / 3)
+        cup = hub + np.array([0, 0, 0.6]) + a * 5.0
+        parts += [P_('arm', A.RoundCone(hub + np.array([0, 0, 0.6]), cup, 0.4, 0.35), 'dark', 'rotor'),
+                  P_('cup', A.Sphere(cup, 1.4), 'teal' if k == 0 else 'metal', 'rotor')]
+    return parts
 
 
 def landing_pad():
@@ -1107,7 +1265,7 @@ def part_bound(sdf):
     raise TypeError(type(sdf))
 
 
-def render_groups(parts, img, D, kind, gid, gid_base):
+def render_groups(parts, img, D, kind, gid, gid_base, ox=0, oy=0):
     """Ray-march each model group on its own, inside its own tight bounding sphere."""
     groups = {}
     for p in parts:
@@ -1118,16 +1276,16 @@ def render_groups(parts, img, D, kind, gid, gid_base):
         hi = np.max([c + r for c, r in bounds], axis=0)
         center = (lo + hi) / 2
         radius = max(np.linalg.norm(c - center) + r for c, r in bounds) + 0.5
-        gid_base = render_props(ps, center, radius, img, D, kind, gid, gid_base)
+        gid_base = render_props(ps, center, radius, img, D, kind, gid, gid_base, ox, oy)
     return gid_base
 
 
-def render_props(parts, center, radius, img, D, kind, gid, gid_base):
+def render_props(parts, center, radius, img, D, kind, gid, gid_base, ox=0, oy=0):
     center = np.asarray(center, float)
     cx, cy = project(*center)
     rp = radius / S + 3
-    x0, x1 = int(max(0, cx - rp)), int(min(W, cx + rp + 1))
-    y0, y1 = int(max(0, cy - rp)), int(min(H, cy + rp + 1))
+    x0, x1 = int(max(ox, cx - rp)), int(min(ox + img.shape[1], cx + rp + 1))
+    y0, y1 = int(max(oy, cy - rp)), int(min(oy + img.shape[0], cy + rp + 1))
     if x1 <= x0 or y1 <= y0:
         return gid_base + 1
     jj, ii = np.mgrid[y0:y1, x0:x1]
@@ -1183,7 +1341,7 @@ def render_props(parts, center, radius, img, D, kind, gid, gid_base):
     for ri in np.unique(ramp):
         sel = ramp == ri
         col[sel] = O_RGB[ri][level[sel]]
-    yy, xx = jj.ravel()[Hh], ii.ravel()[Hh]
+    yy, xx = jj.ravel()[Hh] - oy, ii.ravel()[Hh] - ox
     depth = P[:, 1]
     front = depth < D[yy, xx]
     yy, xx = yy[front], xx[front]
@@ -1471,6 +1629,89 @@ def draw_moon(img, cx, cy, r):
     reg[inside] = ramp[lv[inside]]
 
 
+HAZE = np.array(A.hex2rgb('#d39a8e'), np.float32)
+
+
+def apply_haze(rgb, y0, x0):
+    """Thin dusty air: the far side of the map softens toward a rose haze."""
+    h, w = rgb.shape[:2]
+    yy = np.arange(y0, y0 + h, dtype=np.float32)[:, None]
+    far = np.clip((AY - 260 * PX - yy) / (1300 * PX), 0, 1)
+    bay = BAYER[np.arange(y0, y0 + h)[:, None] % 4, np.arange(x0, x0 + w)[None, :] % 4]
+    hq = (np.floor(far * 3 + bay * 0.9 + 0.5) / 3.0 * 0.12)[..., None]
+    return (rgb * (1 - hq) + HAZE * hq).astype(np.uint8)
+
+
+# ================================================================== moving parts
+def export_animated(D):
+    """Sprite sheets for the parts that move on the domes, plus the light positions the
+    game animates (rim chase lights, airlock blinkers, comms beacon)."""
+    adir = os.path.join(OUT, 'anim')
+    os.makedirs(adir, exist_ok=True)
+    out = dict(sprites=[], ring_lights=[], door_lights=[], beacon=None)
+
+    def sheet(name, builder, d, frames, fps, z_center, radius, turn=2 * math.pi):
+        C = cam(d['X'], d['Y'], 0.0)
+        cx, cy = project(*scale_pt(C + np.array([0, 0, z_center]), C, DOME_SCALE))
+        rp = radius * DOME_SCALE / S + 3
+        x0, y0 = int(cx - rp), int(cy - rp)
+        w = h = int(2 * rp) + 1
+        strip = np.zeros((h, w * frames, 4), np.uint8)
+        for f in range(frames):
+            img = np.zeros((h, w, 3), np.uint8)
+            Dc = np.full((h, w), np.inf, np.float32)
+            kind = np.zeros((h, w), np.uint8)
+            gid = np.zeros((h, w), np.int32)
+            parts = scaled(builder(d, turn * f / frames), C, DOME_SCALE, name)
+            render_groups(parts, img, Dc, kind, gid, 1, x0, y0)
+            depth_lines(img, img, Dc, kind, gid)
+            filled = kind > 0
+            pad = np.pad(filled, 1)
+            ring = (pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]) & ~filled
+            img = apply_haze(img, y0, x0)
+            img[ring] = OUTLINE
+            alpha = np.where(filled | ring, 255, 0).astype(np.uint8)
+            strip[:, f * w:(f + 1) * w, :3] = img
+            strip[:, f * w:(f + 1) * w, 3] = alpha
+        Image.fromarray(strip).save(os.path.join(adir, f'{name}.png'))
+        out['sprites'].append(dict(name=name, file=f'anim/{name}.png', frames=frames, fps=fps,
+                                   position=[x0, y0], frame_size=[w, h]))
+
+    sheet('base_radar', apex_radar, DOMES['base'], 24, 8, DOMES['base']['R0'] + 5, 12.0)
+    sheet('nursery_anemometer', apex_anemometer, DOMES['nursery'], 8, 14, DOMES['nursery']['R0'] + 4, 9.5,
+          turn=2 * math.pi / 3)
+    sheet('comms_dish', tower_dish_frame, DOMES['comms'], 24, 6, 121.0, 21.0)
+
+    def visible(P):
+        px, py = project(*P)
+        ix, iy = int(px), int(py)
+        return 0 <= ix < W and 0 <= iy < H and D[iy, ix] >= P[1] - 6, [ix, iy]
+
+    for name, d in DOMES.items():                         # rim lights, as decal_ring places them
+        C = cam(d['X'], d['Y'], 0.0)
+        n = 40
+        for k in range(n):
+            a = k * 2 * math.pi / n + 0.01
+            P = scale_pt(C + np.array([d['R0'] * math.cos(a), d['R0'] * math.sin(a), 1.4 + 2.5]), C, DOME_SCALE)
+            ok, px = visible(P)
+            if ok:
+                out['ring_lights'].append(px + [round(k / n, 4), name])
+    for k, (d, dirv) in enumerate(airlock_ends()):        # a warning light over every airlock door
+        C = cam(d['X'], d['Y'], 0.0)
+        dv = np.array([dirv[0], dirv[1], 0.0])
+        P = scale_pt(C + dv * (d['R0'] + 15.6) + np.array([0, 0, 14.6]), C, DOME_SCALE)
+        ok, px = visible(P)
+        if ok:
+            out['door_lights'].append(px + [round(k * 0.37 % 1.0, 3)])
+    cm = DOMES['comms']
+    C = cam(cm['X'], cm['Y'], 0.0)
+    bx, by = project(*scale_pt(C + np.array([0, 0, TOWER_TOP + 28]), C, DOME_SCALE))
+    out['beacon'] = [int(bx), int(by)]
+    print(f"animated: {len(out['sprites'])} sprites, {len(out['ring_lights'])} rim lights, "
+          f"{len(out['door_lights'])} door lights")
+    return out
+
+
 # ================================================================== map screen
 FONT = {  # tiny pixel font for labels baked into the map-screen image
     'A': ['.#.', '#.#', '###', '#.#', '#.#'], 'B': ['##.', '#.#', '##.', '#.#', '##.'],
@@ -1568,7 +1809,7 @@ def export_game_data(G, D, kind):
     U, V = np.meshgrid(c, c, indexing='ij')
     Xg, Yg = (U - V) / SQ2, (U + V) / SQ2
     Hu, Hv = np.gradient(Hf)
-    walk = np.hypot(Hu, Hv) < 0.5
+    walk = np.hypot(Hu, Hv) < WALK_SLOPE
     walk &= ~ndi.binary_dilation(G['mat'] == 4, iterations=1)       # boulders
     for d in DOMES.values():
         walk &= np.hypot(Xg - d['X'], Yg - d['Y']) >= d['R'] + 3
@@ -1647,7 +1888,6 @@ def build():
     cC = cam(comms['X'], comms['Y'])
     tower_parts, beacon = comms_tower(comms)
     gb = render_groups(scaled(tower_parts, cC, DOME_SCALE, 'tower'), img, D, kind, gid, gb)
-    lights.append((scale_pt(beacon, cC, DOME_SCALE), 14 * DOME_SCALE * gp, A.hex2rgb('#ff6a52'), 0.55))
     interiors = {'base': base_interior, 'nursery': nursery_interior, 'comms': comms_interior}
     for name, d in DOMES.items():
         C = cam(d['X'], d['Y'])
@@ -1698,14 +1938,10 @@ def build():
     final[filled] = img[filled]
     del img
     final[ring] = OUTLINE
-    haze = np.array(A.hex2rgb('#d39a8e'), np.float32)
     for r0 in range(0, H, 256):                          # thin dusty air softens the far side
         r1 = min(H, r0 + 256)
-        yy = np.arange(r0, r1, dtype=np.float32)[:, None]
-        far = np.clip((AY - 260 * PX - yy) / (1300 * PX), 0, 1) * filled[r0:r1]
-        bay = BAYER[np.arange(r0, r1)[:, None] % 4, np.arange(W)[None, :] % 4]
-        hq = (np.floor(far * 3 + bay * 0.9 + 0.5) / 3.0 * 0.12)[..., None]
-        final[r0:r1] = (final[r0:r1] * (1 - hq) + haze * hq).astype(np.uint8)
+        hazed = apply_haze(final[r0:r1], r0, 0)
+        final[r0:r1] = np.where(filled[r0:r1, :, None], hazed, final[r0:r1])
     for p, rad, colr, s in lights:
         sx, sy = project(*p)
         add_glow(final, sx, sy, rad, colr, s)
@@ -1738,6 +1974,27 @@ def build():
     meta['visibility_checks'] = checks
     meta['game'] = export_game_data(G, D, kind)
     meta['minimap'] = export_minimap(final, filled)
+    meta['animated'] = export_animated(D)
+    margin = 24
+    frames = {}
+    for name, b in DOMES.items():
+        bx, by = project(b['X'], b['Y'], 0.0)
+        xs, ys = [bx - b['R'] / S, bx + b['R'] / S], [by - b['R'] / S, by + b['R'] * KY * PX]
+        for d, dirv in airlock_ends():
+            if d is b:
+                for z in (0.0, 30.0 * DOME_SCALE):
+                    px_, py_ = project(*(np.array([b['X'], b['Y'], z]) + np.array([*dirv, 0]) * (b['R0'] + 17) * DOME_SCALE))
+                    xs.append(px_)
+                    ys.append(py_)
+        for sp in meta['animated']['sprites']:
+            if sp['name'].startswith(name):
+                ys.append(sp['position'][1])
+        frames[name] = [round(min(xs) - margin), round(min(ys) - margin),
+                        round(max(xs) - min(xs) + 2 * margin), round(max(ys) - min(ys) + 2 * margin)]
+    meta['zoom'] = dict(max_view_px=frames['base'][2:], frames=frames,
+                        note='The furthest zoom-out shows max_view_px of map: the whole main base, no more. '
+                             'frames are [x, y, w, h] boxes the camera frames at that zoom.')
+    print(f"zoom: furthest view {meta['zoom']['max_view_px']} map px")
     with open(os.path.join(OUT, 'red_planet_map.json'), 'w') as fh:
         json.dump(meta, fh, indent=2)
 
