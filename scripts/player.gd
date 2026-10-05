@@ -7,11 +7,17 @@ extends Node2D
 ## Controls: WASD / arrow keys / left stick to walk in 8 directions, Shift / right
 ## shoulder to run, Space / A to jump (hold for a higher, floatier jump). Tilting the
 ## stick part-way walks slower.
+##
+## Terrain: you walk on WALK ground and glide along anything in the way. STEEP ground
+## (crater walls, cliffs, boulders) can't be walked but can be jumped over, onto or down;
+## land on it and you skid down to the next safe footing. SOLID things always block.
 
 ## Screen-space compass, clockwise from east (screen y points down).
 const DIRS: Array[String] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"]
+## Directions tried, in order, when the way ahead is blocked: glide along the obstacle.
+const GLIDE_ANGLES: Array[float] = [0.0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2]
 
-enum Jump { GROUNDED, CROUCH, AIR, LAND }
+enum Jump { GROUNDED, CROUCH, AIR, LAND, SLIDE }
 
 ## Speeds are in sprite units/s (1 unit = 1 sprite pixel of height) and are converted to
 ## map units with the map's character_scale.
@@ -25,10 +31,12 @@ enum Jump { GROUNDED, CROUCH, AIR, LAND }
 ## How much faster than the drawn run cycle to move when running. The animation speeds up
 ## by the same factor, so the run keeps its feet planted.
 @export var run_pace := 1.8
-## Radius around the feet that must be walkable, in sprite units.
+## Radius around the feet that must be clear, in sprite units.
 @export var foot_radius := 3.2
 ## How far the sprite reaches in front of / behind its feet, in sprite units (occlusion).
 @export var body_depth := 6.0
+## Speed of skidding down ground too steep to stand on.
+@export var slide_speed := 110.0
 
 @export_group("Low-gravity jump")
 ## Upward speed at take-off, sprite units/s. Height is in sprite units = screen pixels.
@@ -61,10 +69,11 @@ var _scale := 1.0
 var _dust: CPUParticles2D
 var _jump := Jump.GROUNDED
 var _jt := 0.0            # time in the current jump state
-var _z := 0.0             # height above the ground, sprite units
-var _vz := 0.0
+var _feet := 0.0          # height of the feet, world units (the ground when standing)
+var _vz := 0.0            # vertical speed, sprite units/s
 var _jump_buffer := 0.0
 var _auto_t := 0.0
+var _stuck := 0.0
 var _dot2: ImageTexture
 var _dot1: ImageTexture
 
@@ -100,12 +109,19 @@ func setup(t: MapTerrain, depth_map: Texture2D) -> void:
 
 func teleport(p: Vector2) -> void:
 	world_pos = p
+	_feet = terrain.height_at(p)
+	_jump = Jump.GROUNDED
 	_sync()
 	camera.snap()
 
 
 func is_airborne() -> bool:
 	return _jump == Jump.AIR
+
+
+## What the camera follows: halfway between the ground and the astronaut in the air.
+func camera_focus() -> Vector2:
+	return global_position + sprite.position * 0.5
 
 
 func _physics_process(delta: float) -> void:
@@ -121,7 +137,7 @@ func _physics_process(delta: float) -> void:
 	var moved := false
 	var screen_dir := Vector2.ZERO
 	var anim_scale := 1.0
-	if tilt >= 0.25:
+	if tilt >= 0.25 and _jump != Jump.SLIDE:
 		var step := posmod(int(round(input.angle() / (PI / 4.0))), 8)
 		facing = DIRS[step]
 		screen_dir = Vector2.from_angle(step * PI / 4.0)
@@ -133,7 +149,7 @@ func _physics_process(delta: float) -> void:
 			speed *= squash_speed
 		moved = _try_move(dir * speed * _scale * delta)
 
-	_step_jump(delta)
+	_step_vertical(delta)
 	if _jump == Jump.GROUNDED:
 		if moved:
 			_animate("run" if running else "walk", anim_scale)
@@ -146,7 +162,45 @@ func _physics_process(delta: float) -> void:
 	_sync()
 
 
-# ---------------------------------------------------------------- jump
+# ---------------------------------------------------------------- movement
+## Moves if the feet can be at the new spot; when blocked, glides along the obstacle.
+func _try_move(motion: Vector2) -> bool:
+	if motion.length_squared() < 0.000001:
+		return false
+	var airborne := _jump == Jump.AIR
+	for a in GLIDE_ANGLES:
+		var m := motion.rotated(a) * cos(a)
+		if _can_be(world_pos + m, airborne):
+			world_pos += m
+			return true
+	return false
+
+
+## On foot every sample around the feet must be walkable; in the air the ground there just
+## has to be below the feet (and not a building).
+func _can_be(p: Vector2, airborne: bool) -> bool:
+	for k in 5:
+		var q := p if k == 4 else p + Vector2.from_angle(k * PI / 2.0) * foot_radius * _scale
+		var s := terrain.surface(q)
+		if s == MapTerrain.Surface.SOLID:
+			return false
+		if airborne:
+			if terrain.height_at(q) > _feet + 0.75:
+				return false
+		elif s != MapTerrain.Surface.WALK:
+			return false
+	return true
+
+
+func _not_solid(p: Vector2) -> bool:
+	for k in 5:
+		var q := p if k == 4 else p + Vector2.from_angle(k * PI / 2.0) * foot_radius * _scale
+		if terrain.surface(q) == MapTerrain.Surface.SOLID:
+			return false
+	return true
+
+
+# ---------------------------------------------------------------- jump, fall, skid
 func _read_jump_input(delta: float) -> void:
 	_jump_buffer = maxf(0.0, _jump_buffer - delta)
 	var pressed := Input.is_action_just_pressed("jump")
@@ -163,9 +217,15 @@ func _read_jump_input(delta: float) -> void:
 		_jt = 0.0
 
 
-func _step_jump(delta: float) -> void:
+func _step_vertical(delta: float) -> void:
+	var ground := terrain.height_at(world_pos)
 	match _jump:
+		Jump.GROUNDED:
+			_feet = ground
+			if not _can_be(world_pos, false):
+				_start_slide()
 		Jump.CROUCH:
+			_feet = ground
 			_jt += delta
 			if _jt >= crouch_time:
 				_jump = Jump.AIR
@@ -179,18 +239,67 @@ func _step_jump(delta: float) -> void:
 			if absf(_vz) < apex_band:
 				g *= apex_float
 			_vz -= g * delta
-			_z += _vz * delta
-			if _z <= 0.0:
+			_feet += _vz * _scale * delta
+			if _feet <= ground:
 				var impact := -_vz
-				_z = 0.0
+				_feet = ground
 				_vz = 0.0
-				_jump = Jump.LAND
-				_jt = 0.0
-				_burst(clampf(impact / jump_velocity, 0.45, 1.25), true)
+				if _can_be(world_pos, false):
+					_jump = Jump.LAND
+					_jt = 0.0
+					_burst(clampf(impact / jump_velocity, 0.45, 1.25), true)
+				else:
+					_burst(0.5, true)
+					_start_slide()
 		Jump.LAND:
+			_feet = ground
 			_jt += delta
 			if _jt >= land_time:
 				_jump = Jump.GROUNDED
+		Jump.SLIDE:
+			_slide(delta)
+
+
+func _start_slide() -> void:
+	_jump = Jump.SLIDE
+	_jt = 0.0
+	_stuck = 0.0
+
+
+## Skid down ground too steep to stand on until there is safe footing.
+func _slide(delta: float) -> void:
+	_jt += delta
+	var before := world_pos
+	var down := terrain.downhill(world_pos)
+	if down != Vector2.ZERO:
+		var step := down * slide_speed * _scale * delta
+		for a in [0.0, 0.5, -0.5, 1.0, -1.0]:
+			var m := step.rotated(a)
+			if _not_solid(world_pos + m):
+				world_pos += m
+				break
+	_feet = terrain.height_at(world_pos)
+	if _can_be(world_pos, false):
+		_jump = Jump.LAND
+		_jt = 0.0
+		_burst(0.35, true)
+		return
+	_stuck = _stuck + delta if world_pos.distance_squared_to(before) < 0.0001 else 0.0
+	if _stuck > 0.4 or _jt > 3.0:
+		_rescue()
+
+
+## Last resort if a skid can't find footing: step to the nearest spot you can stand on.
+func _rescue() -> void:
+	for r in range(2, 60, 2):
+		for k in 16:
+			var p := world_pos + Vector2.from_angle(k * TAU / 16.0) * float(r) * _scale
+			if _can_be(p, false):
+				world_pos = p
+				_feet = terrain.height_at(p)
+				_jump = Jump.LAND
+				_jt = 0.0
+				return
 
 
 ## Frames of the jump sheet are poses; pick the one that matches the physics.
@@ -214,6 +323,8 @@ func _show_jump_frame() -> void:
 				f = 9                                   # legs reaching for the ground
 		Jump.LAND:
 			f = 10 if _jt < land_time * 0.5 else 11
+		Jump.SLIDE:
+			f = 10                                      # crouched, arms out: skidding
 	var anim := StringName("jump_" + facing)
 	if sprite.animation != anim:
 		sprite.animation = anim
@@ -280,29 +391,13 @@ static func _fade(from: Color, to: Color) -> Gradient:
 	return g
 
 
-# ---------------------------------------------------------------- movement
-## Moves if the feet would land on walkable ground, sliding along obstacles.
-func _try_move(motion: Vector2) -> bool:
-	for m in [motion, Vector2(motion.x, 0.0), Vector2(0.0, motion.y)]:
-		if m.length_squared() > 0.0001 and _can_stand(world_pos + m):
-			world_pos += m
-			return true
-	return false
-
-
-func _can_stand(p: Vector2) -> bool:
-	if not terrain.is_walkable(p):
-		return false
-	for k in 4:
-		if not terrain.is_walkable(p + Vector2.from_angle(k * PI / 2.0) * foot_radius * _scale):
-			return false
-	return true
-
-
+# ---------------------------------------------------------------- drawing
 func _sync() -> void:
-	position = terrain.to_screen(world_pos, terrain.height_at(world_pos)).round()
-	sprite.position.y = -roundf(_z)
-	var lift := clampf(_z / 70.0, 0.0, 1.0)
+	var ground := terrain.height_at(world_pos)
+	position = terrain.to_screen(world_pos, ground).round()
+	var above := maxf(0.0, _feet - ground) * terrain.px_per_unit
+	sprite.position.y = -roundf(above)
+	var lift := clampf(above / 70.0, 0.0, 1.0)
 	shadow.scale = Vector2.ONE * lerpf(1.0, 0.55, lift)
 	shadow.modulate.a = lerpf(1.0, 0.45, lift)
 	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_depth", world_pos.y)

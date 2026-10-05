@@ -6,3 +6,4 @@ res://scripts/overworld.gd
 res://scripts/wind_fx.gd
 res://shaders/depth_occlusion.gdshader
 res://shaders/dust_gusts.gdshader
+res://scripts/game_camera.gd

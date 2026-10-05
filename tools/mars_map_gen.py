@@ -79,11 +79,12 @@ PATHS = [
     [(-790, 1290), (-560, 820)],                                            # base -> landing pad
 ]
 PATH_HALF = 9.5
-WALK_SLOPE = 0.75                 # steepest ground an astronaut can walk (~37 degrees)
+WALK_SLOPE = 0.78                 # steepest ground an astronaut can walk (~38 degrees)
 RAMP_SLOPE = 0.42                 # sand drifts piled against cliffs: gentle enough to climb
-DRIFT_SIDE = 0.55                 # drift flanks: steep sand, still walkable on the diagonal
-CRATERS = [(-200.0, 1250.0, 86.0, 26.0), (500.0, 1750.0, 60.0, 19.0), (-320.0, 2060.0, 44.0, 14.0),
-           (-250.0, 420.0, 40.0, 13.0)]
+DRIFT_SIDE = 0.5                  # drift flanks: steep sand, still walkable on the diagonal
+CRATERS = [  # X, Y, radius, depth, style: 'new' = rounded walkable bowl, 'old' = steep walls, jump in
+    (-200.0, 1250.0, 86.0, 26.0, 'new'), (500.0, 1750.0, 60.0, 19.0, 'old'), (-320.0, 2060.0, 44.0, 14.0, 'old'),
+    (-250.0, 420.0, 40.0, 13.0, 'new'), (700.0, 1650.0, 70.0, 24.0, 'old')]
 # spiky mountain ranges: centre X, Y, peaks, spread, min/max height
 SPIKE_RANGES = [
     (-420.0, 2080.0, 9, 150.0, 90.0, 190.0),     # back-left ridge
@@ -266,7 +267,7 @@ def build_world():
         raster[pu[ok].astype(int), pv[ok].astype(int)] = True
     path_d = ndi.distance_transform_edt(~raster).astype(np.float32)
 
-    crater_keep = np.minimum.reduce([np.hypot(Xg - x, Yg - y) - r * 1.35 for x, y, r, _ in CRATERS])
+    crater_keep = np.minimum.reduce([np.hypot(Xg - x, Yg - y) - r * 1.35 for x, y, r, *_ in CRATERS])
     struct_d = np.minimum.reduce([rim_d, path_d - PATH_HALF, pad_d, solar_d])
     keep = np.minimum.reduce([rim_d - 80, path_d - 30, pad_d - 40, solar_d - 30, crater_keep])
     free = smoothstep(0, 70, keep)
@@ -310,18 +311,22 @@ def build_world():
         R = float(rs.choice([7, 9, 11, 14, 18, 24, 30]))
         if free[iu, iv] < 0.97 or tier1[iu, iv] or pit1[iu, iv] or mesa_zone[iu, iv]:
             continue
-        if any(math.hypot(X - x, Y - y) < R + r + 20 for x, y, r, _ in craters):
+        if any(math.hypot(X - x, Y - y) < R + r + 20 for x, y, r, *_ in craters):
             continue
-        craters.append((X, Y, R, R * 0.36))
+        craters.append((X, Y, R, R * 0.36, 'old' if len(craters) % 2 else 'new'))
     crater_h = np.zeros((N, N), np.float32)
-    for X, Y, R, depth in craters:
+    for X, Y, R, depth, style in craters:
         u0, v0 = to_grid(X, Y)
         win = int(R * 1.9) + 2
         a0, a1 = max(0, int(u0) - win), min(N, int(u0) + win)
         b0, b1 = max(0, int(v0) - win), min(N, int(v0) + win)
         r = np.hypot(U[a0:a1, b0:b1] - u0, V[a0:a1, b0:b1] - v0) / R
-        bowl = np.where(r < 1, -depth * np.cos(np.clip(r, 0, 1) * math.pi / 2) ** 2, 0.0)   # rounded, walkable walls
-        rim = 0.14 * depth * np.exp(-((r - 1) / 0.25) ** 2)
+        if style == 'new':   # rounded bowl: walls stay walkable all the way down
+            bowl = np.where(r < 1, -depth * np.cos(np.clip(r, 0, 1) * math.pi / 2) ** 2, 0.0)
+            rim = 0.14 * depth * np.exp(-((r - 1) / 0.25) ** 2)
+        else:                # old crater: a steep band under a sharp rim, jump down into it
+            bowl = np.where(r < 1, depth * (r * r - 1), 0.0)
+            rim = 0.24 * depth * np.exp(-((r - 1) / 0.2) ** 2)
         crater_h[a0:a1, b0:b1] += bowl + rim
 
     # --- spiky mountains: star-shaped cones with concave flanks and gullies
@@ -478,7 +483,7 @@ def build_world():
     return G
 
 
-def _drift(Hf, U, V, p, n, h_top, h_base, half_top=6.0, jag=None, rs=None):
+def _drift(Hf, U, V, p, n, h_top, h_base, half_top=8.0, jag=None, rs=None):
     """Windblown sand drift from h_top at p, running along n down to h_base: rounded flanks,
     a wavering edge and surface ripples, max-combined so it meets the ground smoothly."""
     length = max((h_top - h_base) / RAMP_SLOPE, 8.0)
@@ -495,8 +500,8 @@ def _drift(Hf, U, V, p, n, h_top, h_base, half_top=6.0, jag=None, rs=None):
     flank = (np.sqrt(over * over + 9.0) + over) / 2               # rounded shoulder
     h = h_top - np.clip(along, 0, None) * (h_top - h_base) / length - flank * DRIFT_SIDE
     if jag is not None:
-        h = h + 0.7 * jag[a0:a1, b0:b1] * np.clip(along / 10.0, 0, 1)
-    ok = along > -4
+        h = h + 0.35 * jag[a0:a1, b0:b1] * np.clip(along / 10.0, 0, 1)
+    ok = along > -8
     Hf[a0:a1, b0:b1] = np.where(ok, np.maximum(Hf[a0:a1, b0:b1], h), Hf[a0:a1, b0:b1])
 
 
@@ -1808,17 +1813,23 @@ def export_game_data(G, D, kind):
     c = np.arange(N, dtype=np.float32) + 0.5
     U, V = np.meshgrid(c, c, indexing='ij')
     Xg, Yg = (U - V) / SQ2, (U + V) / SQ2
-    Hu, Hv = np.gradient(Hf)
+    Hu, Hv = np.gradient(ndi.gaussian_filter(Hf, 0.75))
     walk = np.hypot(Hu, Hv) < WALK_SLOPE
-    walk &= ~ndi.binary_dilation(G['mat'] == 4, iterations=1)       # boulders
+    steep = ~walk                                                    # isolated specks are surface noise
+    lab, n_steep = ndi.label(steep)
+    if n_steep:
+        sizes = ndi.sum(steep, lab, np.arange(1, n_steep + 1))
+        walk |= np.isin(lab, np.nonzero(sizes < 8)[0] + 1)
+    walk &= ~ndi.binary_dilation(G['mat'] == 4, iterations=1)       # boulders: jump over them
+    solid = np.zeros((N, N), bool)                                   # buildings and props always block
     for d in DOMES.values():
-        walk &= np.hypot(Xg - d['X'], Yg - d['Y']) >= d['R'] + 3
+        solid |= np.hypot(Xg - d['X'], Yg - d['Y']) < d['R'] + 3
 
     def block_segment(a, b, r):
-        nonlocal walk
+        nonlocal solid
         ab = b - a
         t = np.clip(((Xg - a[0]) * ab[0] + (Yg - a[1]) * ab[1]) / (ab @ ab), 0, 1)
-        walk &= np.hypot(Xg - a[0] - t * ab[0], Yg - a[1] - t * ab[1]) >= r
+        solid |= np.hypot(Xg - a[0] - t * ab[0], Yg - a[1] - t * ab[1]) < r
 
     for d, dirv in airlock_ends():                                    # airlock tunnels
         C = np.array([d['X'], d['Y']])
@@ -1826,12 +1837,13 @@ def export_game_data(G, D, kind):
     pad_r = np.hypot(Xg - PAD['X'], Yg - PAD['Y'])
     Hf[pad_r < PAD['R']] = 2.2 * PAD_SCALE                           # stand on top of the pad
     lander = np.array([PAD['X'], PAD['Y']]) + grid_dir(math.radians(-30))[:2] * 8 * PAD_SCALE
-    walk &= np.hypot(Xg - lander[0], Yg - lander[1]) >= 12 * PAD_SCALE
+    solid |= np.hypot(Xg - lander[0], Yg - lander[1]) < 12 * PAD_SCALE
     for u, v in solar_panels():
-        walk &= np.hypot(U - u, V - v) >= 9.5 * SOLAR_SCALE
+        solid |= np.hypot(U - u, V - v) < 9.5 * SOLAR_SCALE
     for X, Y in G['lamps']:
-        walk &= np.hypot(Xg - X, Yg - Y) >= 2.5 * LAMP_SCALE
-    walk &= (U > 6) & (U < N - 6) & (V > 6) & (V < N - 6)
+        solid |= np.hypot(Xg - X, Yg - Y) < 2.5 * LAMP_SCALE
+    solid |= (U <= 6) | (U >= N - 6) | (V <= 6) | (V >= N - 6)
+    walk &= ~solid
 
     base = DOMES['base']
     dirv = np.array(PATHS[1][1], float) - np.array([base['X'], base['Y']])
@@ -1843,19 +1855,17 @@ def export_game_data(G, D, kind):
         if (walk[int(su_) - 3:int(su_) + 4, int(sv_) - 3:int(sv_) + 4].all()
                 and np.min(np.hypot(lamps[:, 0] - spawn[0], lamps[:, 1] - spawn[1])) > 30):
             break
-    labels, _ = ndi.label(walk)
-    label = labels[int(su_), int(sv_)]
-    if label == 0:
+    if not walk[int(su_), int(sv_)]:
         raise RuntimeError('spawn point is not walkable')
-    walk = labels == label                                            # only what you can actually reach
 
     hq = np.clip((Hf + HEIGHT_OFFSET) * HEIGHT_SCALE, 0, 65535).astype(np.uint32)
     grid = np.zeros((N, N, 4), np.uint8)
     grid[..., 0], grid[..., 1] = hq >> 8, hq & 255
-    grid[..., 2] = np.where(walk, 255, 0)
+    grid[..., 2] = np.where(solid, 0, np.where(walk, 255, 128))
     grid[..., 3] = 255
     Image.fromarray(grid.transpose(1, 0, 2).copy()).save(os.path.join(OUT, 'red_planet_walk.png'))
-    print(f'game data: {walk.mean() * 100:.1f}% of the map is walkable')
+    print(f'game data: {walk.mean() * 100:.1f}% walkable, {(~walk & ~solid).mean() * 100:.1f}% too steep '
+          f'(jump only), {solid.mean() * 100:.1f}% solid')
     return dict(
         depth_png='red_planet_depth.png', walk_png='red_planet_walk.png',
         depth_scale=DEPTH_SCALE, height_offset=HEIGHT_OFFSET, height_scale=HEIGHT_SCALE,
@@ -1864,7 +1874,7 @@ def export_game_data(G, D, kind):
         notes='World X/Y: X right, Y away from the camera. Screen = (origin_x + X / world_units_per_px, '
               'origin_y - (depth_to_px * Y + z) * px_per_unit). Walk grid pixel (u, v) with u = (X + Y) / sqrt2, '
               'v = (Y - X) / sqrt2. Channels: R,G = 16-bit value (hi, lo); depth B = 255 for glass; walk B = 255 '
-              'when walkable. character_scale converts sprite units (1 sprite px of height) to world units.')
+              'walkable, 128 too steep to walk (can be jumped over, onto or down), 0 solid. character_scale converts sprite units (1 sprite px of height) to world units.')
 
 
 # ================================================================== build

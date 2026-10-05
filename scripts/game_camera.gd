@@ -39,7 +39,7 @@ func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2) -> void:
 ## Jump straight to the target (after a teleport).
 func snap() -> void:
 	if _target != null:
-		_pos = _target.global_position
+		_pos = _focus()
 		global_position = _pos.round()
 
 
@@ -66,10 +66,14 @@ func _process(delta: float) -> void:
 	global_position = _pos.round()
 
 
+func _focus() -> Vector2:
+	return _target.camera_focus() if _target.has_method("camera_focus") else _target.global_position
+
+
 ## Where the camera wants to be: on the player, or at the furthest zoom on a nearby dome
 ## (as far toward its centre as possible while the player stays on screen).
 func _goal() -> Vector2:
-	var goal := _target.global_position
+	var goal := _focus()
 	if level < levels.size() - 1 or frames.is_empty():
 		return goal
 	var half := view_size() * 0.5 - Vector2(frame_margin, frame_margin)

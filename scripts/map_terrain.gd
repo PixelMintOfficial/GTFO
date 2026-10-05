@@ -1,5 +1,8 @@
 class_name MapTerrain
 extends RefCounted
+
+## What the ground at a point allows.
+enum Surface { SOLID, STEEP, WALK }
 ## Ground data for a pre-rendered isometric map, read from the map generator's JSON:
 ## where you can walk, how high the ground is, and the projection between world
 ## coordinates (X right, Y away from the camera, in world units) and map pixels.
@@ -65,12 +68,29 @@ func to_screen(p: Vector2, z: float) -> Vector2:
 
 
 func is_walkable(p: Vector2) -> bool:
+	return surface(p) == Surface.WALK
+
+
+## WALK: you can walk here. STEEP: too steep to walk (slopes, boulders) but you can jump
+## over, onto or down it. SOLID: buildings and props, always in the way.
+func surface(p: Vector2) -> Surface:
 	var g := _to_grid(p)
 	var u := int(floor(g.x))
 	var v := int(floor(g.y))
 	if u < 0 or v < 0 or u >= _grid_size or v >= _grid_size:
-		return false
-	return _walk[(v * _grid_size + u) * 4 + 2] > 127
+		return Surface.SOLID
+	var b := _walk[(v * _grid_size + u) * 4 + 2]
+	if b > 191:
+		return Surface.WALK
+	return Surface.STEEP if b > 63 else Surface.SOLID
+
+
+## Unit direction (world X/Y) the ground falls away fastest.
+func downhill(p: Vector2) -> Vector2:
+	var gx := height_at(p + Vector2(1.5, 0)) - height_at(p - Vector2(1.5, 0))
+	var gy := height_at(p + Vector2(0, 1.5)) - height_at(p - Vector2(0, 1.5))
+	var g := -Vector2(gx, gy)
+	return g.normalized() if g.length() > 0.0001 else Vector2.ZERO
 
 
 ## Ground height under a world point, bilinear between grid cells.
