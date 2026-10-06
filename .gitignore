@@ -1,0 +1,12 @@
+# Godot's import cache and editor state: rebuilt on every machine, never commit it.
+.godot/
+/android/
+
+# Python bytecode from the generators in tools/
+__pycache__/
+*.pyc
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini
