@@ -9,7 +9,14 @@ extends Camera2D
 @export var zoom_time := 0.3
 ## Gap kept between the player and the screen edge while framing a dome.
 @export var frame_margin := 48.0
+## How quickly the camera pans to a cutscene focus and back to the player.
+@export var pan_speed := 2.2
 
+## Cutscenes: look here instead of at the player (map px). Use release_focus() to come back.
+var focus_override: Variant = null
+
+## Indoors there is nothing to see further out: the view stays at the default zoom.
+var zoom_locked := false
 ## How much more of the world each level shows than the default view.
 var levels: Array[float] = [1.0]
 var level := 0
@@ -22,6 +29,10 @@ var _max_view := Vector2.ZERO
 var _pos := Vector2.ZERO
 var _factor := 1.0
 var _tween: Tween
+var _returning := false
+var _shake := 0.0
+var _shake_left := 0.0
+var _shake_len := 1.0
 
 
 func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2) -> void:
@@ -43,6 +54,25 @@ func snap() -> void:
 		global_position = _pos.round()
 
 
+## Jump straight to a map point (cutscenes).
+func snap_to(p: Vector2) -> void:
+	_pos = p - offset
+	global_position = _pos.round()
+
+
+## Stop looking at the cutscene focus and pan back to the player.
+func release_focus() -> void:
+	focus_override = null
+	_returning = true
+
+
+## Rattle the view by up to strength px, dying away over duration seconds.
+func shake(strength: float, duration: float) -> void:
+	_shake = strength
+	_shake_left = duration
+	_shake_len = maxf(duration, 0.01)
+
+
 ## World pixels currently visible.
 func view_size() -> Vector2:
 	return _base_view() / zoom
@@ -62,8 +92,17 @@ func set_level(i: int) -> void:
 func _process(delta: float) -> void:
 	if _target == null:
 		return
-	_pos = _pos.lerp(_goal(), 1.0 - exp(-follow_speed * delta))
-	global_position = _pos.round()
+	var goal := _goal()
+	var speed := pan_speed if focus_override != null or _returning else follow_speed
+	_pos = _pos.lerp(goal, 1.0 - exp(-speed * delta))
+	if _returning and _pos.distance_to(goal) < 3.0:
+		_returning = false
+	var jolt := Vector2.ZERO
+	if _shake_left > 0.0:
+		_shake_left -= delta
+		var a := _shake * clampf(_shake_left / _shake_len, 0.0, 1.0)
+		jolt = Vector2(randf_range(-a, a), randf_range(-a, a))
+	global_position = (_pos + jolt).round()
 
 
 func _focus() -> Vector2:
@@ -73,6 +112,8 @@ func _focus() -> Vector2:
 ## Where the camera wants to be: on the player, or at the furthest zoom on a nearby dome
 ## (as far toward its centre as possible while the player stays on screen).
 func _goal() -> Vector2:
+	if focus_override != null:
+		return focus_override - offset
 	var goal := _focus()
 	if level < levels.size() - 1 or frames.is_empty():
 		return goal
@@ -89,6 +130,8 @@ func _goal() -> Vector2:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if zoom_locked:
+		return
 	if event.is_action_pressed("zoom_in"):
 		set_level(level - 1)
 	elif event.is_action_pressed("zoom_out"):
@@ -109,6 +152,10 @@ func _build_levels() -> void:
 	var max_f := maxf(1.0, maxf(_max_view.x / base.x, _max_view.y / base.y))
 	var s0 := _base_scale()
 	levels = [1.0]
+	if zoom_locked:
+		level = 0
+		_apply_factor(1.0)
+		return
 	for k in [1, 2]:
 		var ideal := pow(max_f, k / 3.0)
 		var f := ideal

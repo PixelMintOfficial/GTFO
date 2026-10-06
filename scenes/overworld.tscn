@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/overworld.gd" id="1_overworld"]
 [ext_resource type="Texture2D" path="res://assets/maps/red_planet/red_planet_map.png" id="2_map"]
@@ -6,6 +6,9 @@
 [ext_resource type="Script" path="res://scripts/wind_fx.gd" id="4_wind"]
 [ext_resource type="Script" path="res://scripts/map_screen.gd" id="5_map"]
 [ext_resource type="Script" path="res://scripts/dome_fx.gd" id="6_dome"]
+[ext_resource type="Script" path="res://scripts/biome_fx.gd" id="7_biome"]
+[ext_resource type="Script" path="res://scripts/crash_site.gd" id="8_crash"]
+[ext_resource type="Script" path="res://scripts/multitool.gd" id="9_tool"]
 
 [node name="Overworld" type="Node2D"]
 script = ExtResource("1_overworld")
@@ -14,10 +17,22 @@ script = ExtResource("1_overworld")
 texture = ExtResource("2_map")
 centered = false
 
+[node name="CrashSite" type="Node2D" parent="."]
+script = ExtResource("8_crash")
+
+[node name="BiomeFX" type="Node2D" parent="."]
+script = ExtResource("7_biome")
+
 [node name="DomeFX" type="Node2D" parent="."]
 script = ExtResource("6_dome")
 
-[node name="Player" parent="." instance=ExtResource("3_player")]
+[node name="Actors" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="Player" parent="Actors" instance=ExtResource("3_player")]
+
+[node name="Multitool" type="Node2D" parent="."]
+script = ExtResource("9_tool")
 
 [node name="WindFX" type="Node2D" parent="."]
 script = ExtResource("4_wind")

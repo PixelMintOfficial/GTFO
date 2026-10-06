@@ -26,6 +26,9 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# Multitool designs:  v1  a handheld tool (white body, coral cap, claw prongs round a lens)
+#                     v2  an arm gauntlet that unfolds from a pack device (red and gold armour)
+TOOL_DESIGN = os.environ.get('TOOL_DESIGN', 'v2')
 OUT = os.path.join(ROOT, 'assets', 'characters', 'astronaut')
 
 # ------------------------------------------------------------------ camera / frame
@@ -47,6 +50,14 @@ RAMPS = {
     'visor':   ['#111430', '#1a2450', '#243c6c', '#335f88', '#64aeb8', '#eefcf4'],
     'bulb':    ['#a8582e', '#eb9b45', '#ffd468', '#fff7d2'],
     'wood':    ['#3f2630', '#6b4038', '#99654a', '#c99466'],
+    # the multitool: glossy white shell, an emitter lens that lights up when it is out
+    'tool':    ['#77738f', '#b8b5c9', '#ecebf4', '#ffffff'],
+    'lens':    ['#2f6f8c', '#69c8e6', '#c9f6ff', '#ffffff'],
+    'gun':     ['#16142a', '#272544', '#403f66', '#6c6c98'],
+    'armor':   ['#5c1626', '#a3283a', '#e2483e', '#ff9468'],
+    'gold':    ['#7a4422', '#c78a32', '#f4c24e', '#fff0a8'],
+    'gunlit':  ['#20203c', '#363a62', '#566290', '#8a9ccc'],
+    'lensoff': ['#1c2440', '#2c3d5c', '#46607e', '#7894ae'],
 }
 OUTLINE = '#22182c'
 STALK = '#3b3253'
@@ -322,6 +333,165 @@ def decal_boot(part, P):
     return out
 
 
+# ================================================================== the multitool
+# A compact device clipped to the right side of the backpack. Taken out, it bursts open into
+# a ring of armour plates that fly onto the right forearm and lock into a gauntlet: dark
+# segmented plating with glowing seams, a coral spine, and an emitter on the back of the hand
+# that does the work (mining beam, gathering stream, lifting tether, repair scan).
+TOOL_PACK = np.array([5.95, -5.1, 3.4])           # torso frame: the device on the backpack
+TOOL_PACK_WRIST = np.array([6.1, -4.2, 4.6])      # where the hand goes to take it
+TOOL_HOLD = np.array([8.8, 3.0, 4.9])             # ready: forearm out to the side and forward
+TOOL_AIM = np.array([4.0, 7.0, 5.0])              # working: arm out straight at the target
+
+
+class Moved:
+    """Moves and scales an SDF about a point (plates flying into place)."""
+
+    def __init__(self, inner, c, delta, k):
+        self.inner, self.c, self.delta, self.k = inner, np.asarray(c, float), np.asarray(delta, float), max(k, 0.05)
+
+    def _in(self, P):
+        return self.c + (P - self.c - self.delta) / self.k
+
+    def local(self, P):
+        return self.inner.local(self._in(P))
+
+    def __call__(self, P):
+        return self.inner(self._in(P)) * self.k
+
+
+def _arm_frame(E, W, up_hint):
+    f = nz(W - E)
+    up = np.asarray(up_hint, float) - (np.asarray(up_hint, float) @ f) * f
+    if np.linalg.norm(up) < 1e-3:
+        up = np.array([1.0, 0.0, 0.0]) - (np.array([1.0, 0.0, 0.0]) @ f) * f
+    up = nz(up)
+    return f, up, np.cross(f, up)
+
+
+def device_parts(c, f, up, side, lit=False):
+    """The folded-up multitool: a little dark slab with a coral cap and a lens."""
+    Rb = np.stack([side, f, up], axis=1)
+    return [Part('device', RoundBox(c, (1.25, 1.9, 1.05), 0.6, Rb), 'gun', 'tool'),
+            Part('devcap', RoundBox(c + f * 1.5, (1.3, 0.5, 1.1), 0.45, Rb), 'coral', 'tool'),
+            Part('devstrip', RoundBox(c + up * 1.05, (0.35, 1.3, 0.2), 0.15, Rb), 'lens' if lit else 'lensoff', 'tool'),
+            Part('lens', Sphere(c + f * 2.05, 0.55), 'lens' if lit else 'lensoff', 'tool')], c + f * 2.1
+
+
+def gauntlet_parts(E, W, deploy, lit, up_hint):
+    """The gauntlet round the forearm E -> W. deploy 0..1: folded in the hand, bursting open
+    into a ring of plates, plates flying onto the forearm (wrist first), locked. Returns parts
+    and the emitter lens centre."""
+    f, up, side = _arm_frame(E, W, up_hint)
+    L = float(np.linalg.norm(W - E))
+    hand = W + f * 0.9
+    if deploy < 0.22:                                     # still folded, in the hand
+        grow = 1.0 + 0.4 * deploy / 0.22
+        dev, tip = device_parts(hand + up * 1.5, f, up, side)
+        return [Part(q.name, Moved(q.sdf, hand + up * 1.5, np.zeros(3), grow), q.ramp, q.group) for q in dev], tip
+    Rb = np.stack([side, f, up], axis=1)
+    Rd = np.stack([f, side, up], axis=1)
+    Rr = np.stack([side, up, f], axis=1)
+    emit_c = W + f * 1.1 + up * 1.85
+    lens_c = emit_c + f * 1.25
+    final = [   # (name, sdf, ramp, arrival order: 0 = first, near the wrist)
+        ('plate', RoundCone(E + f * L * 0.70, E + f * L * 1.06, 2.75, 2.65), 'armor', 0),
+        ('plate', RoundCone(E + f * L * 0.38, E + f * L * 0.66, 2.9, 2.8), 'armor', 1),
+        ('plate', RoundCone(E + f * L * 0.02, E + f * L * 0.34, 3.0, 2.92), 'armor', 2),
+        ('elbow', Ellipsoid(E - f * 0.35, (2.95, 2.95, 2.95)), 'gold', 3),
+        ('spine', RoundBox(E + f * L * 0.52 + up * 2.75, (0.95, L * 0.52, 0.6), 0.4, Rb), 'gold', 1),
+        ('knuckle', RoundBox(hand + up * 1.25 + f * 0.25, (1.85, 1.45, 0.7), 0.45, Rb), 'gold', 0),
+        ('emitter', Disc(emit_c, 1.8, 1.1, 0.5, Rd), 'gunlit', 0),
+        ('emring', Torus(emit_c + f * 1.0, 1.62, 0.48, Rr), 'gold', 0),
+    ]
+    parts = []
+    n = len(final)
+    for i, (name, sdf, ramp, order) in enumerate(final):
+        c, _ = _bound(sdf)
+        ang = i / n * TAU
+        burst = hand + up * 1.5 + (up * math.cos(ang) + side * math.sin(ang)) * 4.6 + f * 0.8
+        open_ = min(1.0, (deploy - 0.22) / 0.2)               # fanning out of the device
+        e = ease(open_)
+        fly = ease(min(1.0, max(0.0, (deploy - 0.45 - 0.07 * order) / 0.3)))   # onto the arm
+        start = lerp(hand + up * 1.5, burst, e)
+        pos = lerp(start, c, fly)
+        k = lerp(0.55 + 0.4 * e, 1.0, fly)
+        parts.append(Part(name, Moved(sdf, c, pos - c, k), ramp, 'tool'))
+    if deploy >= 0.9:                                     # seams light up once it locks
+        for sf in (0.36, 0.68):
+            parts.append(Part('seam', Torus(E + f * L * sf, 2.95, 0.45, Rr), 'lens' if lit else 'lensoff', 'tool'))
+        parts.append(Part('spinelight', RoundBox(E + f * L * 0.52 + up * 3.38, (0.35, L * 0.4, 0.14), 0.12, Rb),
+                          'lens' if lit else 'lensoff', 'tool'))
+    parts.append(Part('lens', Sphere(lens_c, 1.25 if deploy >= 0.75 else 1.25 * max(0.0, (deploy - 0.45) / 0.3)),
+                      'lens' if lit else 'lensoff', 'tool'))
+    return parts, lens_c
+
+
+def _bound(sdf):
+    if isinstance(sdf, Sphere):
+        return sdf.c, sdf.r
+    if isinstance(sdf, (Ellipsoid,)):
+        return sdf.c, float(sdf.rad.max())
+    if isinstance(sdf, RoundBox):
+        return sdf.c, float(np.linalg.norm(sdf.half))
+    if isinstance(sdf, RoundCone):
+        return (sdf.a + sdf.b) / 2, math.sqrt(sdf.l2) / 2 + max(sdf.r1, sdf.r2)
+    if isinstance(sdf, Torus):
+        return sdf.c, sdf.major + sdf.minor
+    return sdf.c, sdf.radius
+
+
+# ------------------------------------------------------------------ v1: the handheld tool
+TOOL1_PACK_FWD = np.array([0.0, 0.22, 1.0])
+TOOL1_HOLD = np.array([4.8, 3.0, 3.7])            # close in, elbow bent: a relaxed carry
+TOOL1_HOLD_FWD = np.array([-0.08, 1.0, -0.22])
+TOOL1_AIM = np.array([4.2, 6.6, 4.6])
+TOOL1_AIM_FWD = np.array([-0.08, 1.0, -0.26])
+TOOL_K = 1.35                                     # overall size of the v1 tool
+
+
+def _frame_from(fwd, up_hint):
+    fwd = nz(fwd)
+    up = np.asarray(up_hint, float) - (np.asarray(up_hint, float) @ fwd) * fwd
+    if np.linalg.norm(up) < 1e-3:
+        up = np.array([0.0, -1.0, 0.0]) - (np.array([0.0, -1.0, 0.0]) @ fwd) * fwd
+    up = nz(up)
+    return fwd, up, np.cross(fwd, up)
+
+
+def tool_parts_v1(grip, fwd, up_hint, open_, lit):
+    """The v1 multitool: a glossy white body over a dark grip, a glowing status strip on top,
+    and a dark emitter head with a coral collar, a big lens and three claw prongs that fan open
+    when it powers up. Built around the point where the hand holds it."""
+    k = TOOL_K
+    fwd, up, side = _frame_from(fwd, up_hint)
+    Rb = np.stack([side, fwd, up], axis=1)
+    Rd = np.stack([fwd, side, up], axis=1)
+    Rr = np.stack([side, up, fwd], axis=1)
+    body_c = grip + (fwd * 3.0 + up * 0.85) * k
+    head_c = grip + (fwd * 6.4 + up * 0.85) * k
+    lens_c = head_c + fwd * 1.0 * k
+    parts = [
+        Part('tbody', RoundBox(body_c, np.array([1.25, 3.1, 1.3]) * k, 1.0 * k, Rb), 'tool', 'tool'),
+        Part('tback', RoundBox(grip + (-fwd * 0.4 + up * 0.85) * k, np.array([1.05, 0.7, 1.05]) * k, 0.6 * k, Rb),
+             'coral', 'tool'),
+        Part('tgrip', RoundCone(grip + (up * 0.35 - fwd * 0.1) * k, grip + (-up * 1.8 - fwd * 0.7) * k, 0.85 * k, 0.72 * k),
+             'dark', 'tool'),
+        Part('tstrip', RoundBox(grip + (fwd * 2.8 + up * 2.2) * k, np.array([0.42, 2.0, 0.38]) * k, 0.32 * k, Rb),
+             'teal' if lit else 'dark', 'tool'),
+        Part('thead', Disc(head_c, 2.0 * k, 0.95 * k, 0.5 * k, Rd), 'dark', 'tool'),
+        Part('tring', Torus(head_c + fwd * 0.5 * k, 1.95 * k, 0.45 * k, Rr), 'coral', 'tool'),
+        Part('lens', Sphere(lens_c, 1.25 * k), 'lens' if lit else 'lensoff', 'tool'),
+    ]
+    for j in range(3):
+        a = math.radians(90 + 120 * j)
+        radial = up * math.sin(a) + side * math.cos(a)
+        root = head_c + (radial * 1.55 - fwd * 0.2) * k
+        tip = root + (radial * (0.15 + 1.0 * open_) + fwd * (0.8 + 1.4 * open_)) * k
+        parts.append(Part('prong', RoundCone(root, tip, 0.5 * k, 0.32 * k), 'tool', 'tool'))
+    return parts, lens_c
+
+
 # ================================================================== rig
 def two_bone(root, target, l1, l2, pole):
     d = target - root
@@ -363,6 +533,7 @@ def base_pose():
         arms={'L': ('fk', 0.0, 0.18, 0.25), 'R': ('fk', 0.0, 0.18, 0.25)},
         antenna=(0.0, 0.0),
         bulb=1.0,
+        tool=dict(where='pack', open=0.0, lit=False),
     )
 
 
@@ -412,6 +583,8 @@ def build_parts(pose):
         parts.append(Part('upper' + side, RoundCone(S, E, 2.15, 1.9), 'suit', g, blend=g))
         parts.append(Part('fore' + side, RoundCone(E, W, 1.9, 1.75), 'suit', g, blend=g))
         parts.append(Part('glove' + side, Sphere(W + hand_dir * 0.9, 2.05), 'coral', g, blend=g))
+        if side == 'R':
+            arm_r = (E, W)
 
     # --- legs
     for side in 'LR':
@@ -427,6 +600,21 @@ def build_parts(pose):
         parts.append(Part('shin' + side, RoundCone(knee, ankle, 2.25, 2.0), 'suit', g, blend=g))
         parts.append(Part('boot' + side, RoundBox(ankle + Rf @ np.array([0, 1.0, -0.4]), (2.25, 3.0, 1.6), 1.35, Rf),
                           'coral', g, blend=g, decal=decal_boot))
+    # --- the multitool: a gauntlet on the right forearm, or folded up on the backpack
+    tool = pose.get('tool')
+    if tool:
+        if tool['where'] == 'arm':
+            tp_, tip = gauntlet_parts(arm_r[0], arm_r[1], tool['deploy'], tool['lit'], Rt @ np.array([0.0, 0.0, 1.0]))
+        elif tool['where'] == 'hand':
+            E_, W_ = arm_r
+            tp_, tip = tool_parts_v1(W_ + nz(W_ - E_) * 0.9, tool['fwd'], Rt @ np.array([0.0, 0.0, 1.0]), tool['open'], tool['lit'])
+        elif TOOL_DESIGN == 'v1':
+            tp_, tip = tool_parts_v1(tp(TOOL_PACK), Rt @ TOOL1_PACK_FWD, Rt @ np.array([1.0, 0.0, 0.0]), 0.0, False)
+        else:
+            tp_, tip = device_parts(tp(TOOL_PACK), Rt @ nz([0.0, 0.22, 1.0]), Rt @ np.array([1.0, 0.0, 0.0]),
+                                    Rt @ nz(np.cross([0.0, 0.22, 1.0], [1.0, 0.0, 0.0])))
+        parts += tp_
+        pose['_tip'] = tip
     return parts, (stalk_base, stalk_tip)
 
 
@@ -581,6 +769,13 @@ def render(parts, compass_deg, stalk=None, bulb=1.0, cam=CAM, center=(0, 0, 19.0
             vl = np.where(shine, 5, vl)
             vl = np.where(glint, 4, vl)
             col[sel] = cols[vl]
+        elif name == 'lens':
+            lv = np.where(ndl[sel] > 0.2, 3, 2)
+            col[sel] = cols[lv]
+        elif name in ('gun', 'armor', 'gold'):           # polished armour: a hard specular edge
+            R_ = fc - 2.0 * (n[sel] @ fc)[:, None] * n[sel]
+            lv = np.clip(level[sel] + ((R_ @ Lc) > 0.9), 0, 3)
+            col[sel] = cols[lv]
         elif name == 'bulb':
             lv = np.where(ndl[sel] > 0.45, 3, 2)
             lv = np.clip(lv - int(round((1.0 - bulb) * 2)), 0, 3)
@@ -821,6 +1016,186 @@ def pose_jump(t):
     return p
 
 
+def with_tool(p, hand, deploy=1.0, lit=True, pole=(1.0, -0.35, -0.8)):
+    """Arm out with the gauntlet on: the wrist goes to a torso-frame point (IK), the elbow
+    hangs out and back; the gauntlet follows the forearm."""
+    Rt = euler(*p['pelvis_rot']) @ euler(*p['torso_rot'])
+    pel = np.asarray(p['pelvis'], float)
+    p['arms']['R'] = ('ik', pel + Rt @ np.asarray(hand, float), Rt @ np.array(pole))
+    p['tool'] = dict(where='arm', deploy=deploy, lit=lit)
+    return p
+
+
+def pose_idle_tool(t):
+    breath = 0.5 - 0.5 * math.cos(TAU * t)
+    p = pose_idle(t)
+    return with_tool(p, TOOL_HOLD + np.array([0.0, 0.12 * math.sin(TAU * t), 0.35 * breath - 0.15]))
+
+
+def pose_walk_tool(t):
+    p = pose_walk(t)
+    return with_tool(p, TOOL_HOLD + np.array([0.0, 0.3 * math.sin(TAU * t), 0.3 * math.cos(4 * math.pi * (t - 0.3))]))
+
+
+def pose_run_tool(t):
+    p = pose_run(t)
+    return with_tool(p, np.array([8.4, 2.4, 5.4]) + np.array([0.0, 0.4 * math.sin(TAU * t), 0.45 * math.cos(4 * math.pi * (t - 0.4))]))
+
+
+def pose_jump_tool(t):
+    k = JUMP_KEYS[int(round(t * len(JUMP_KEYS))) % len(JUMP_KEYS)]
+    p = pose_jump(t)
+    lift = float(np.clip(k['arm'][0] * 0.55, -0.6, 1.3))          # rides up with the arm swing
+    return with_tool(p, TOOL_HOLD + np.array([0.3, 0.2, 0.6 + lift]))
+
+
+def pose_use(t):
+    """Working: feet planted wide, leaning in, the gauntlet out at arm's length with a little
+    kick on each pulse; the left hand comes up to steady the right forearm."""
+    p = base_pose()
+    pulse = max(0.0, math.sin(TAU * t)) ** 2
+    p['pelvis'] = np.array([0.3, -0.2, STAND_Z - 0.8 + 0.15 * math.sin(TAU * t)])
+    p['pelvis_rot'] = (-0.06, 0.0, 0.0)
+    p['torso_rot'] = (0.05, 0.1 - 0.03 * pulse, 0.0)
+    p['head_rot'] = (0.02, 0.06, 0.0)
+    p['head_off'] = np.array([0.0, 0.0, -0.15 - 0.1 * pulse])
+    p['feet'] = {'L': (np.array([-3.4, 2.0, ANKLE_H]), 0.0, -0.16),
+                 'R': (np.array([3.1, -1.6, ANKLE_H]), 0.0, 0.2)}
+    Rt = euler(*p['pelvis_rot']) @ euler(*p['torso_rot'])
+    pel = np.asarray(p['pelvis'], float)
+    p['arms']['L'] = ('ik', pel + Rt @ np.array([2.0, 5.0, 4.0]), Rt @ np.array([-1.0, -0.2, -0.8]))
+    p['antenna'] = (0.4 * math.sin(TAU * t), 0.6 + 0.4 * pulse)
+    return with_tool(p, TOOL_AIM - np.array([0.0, 0.5 * pulse, -0.12 * pulse]))
+
+
+REST_R = arm_fk('R', 0.0, 0.2, 0.3)[2]
+# Equip, as key poses (played in reverse to put the tool away): reach back to the backpack,
+# take the folded device, bring it up in front of the chest, it bursts open into a ring of
+# plates, the plates fly onto the forearm and lock, the emitter lights, settle at the ready.
+EQUIP_KEYS = [
+    dict(hand=REST_R * 0.45 + TOOL_PACK_WRIST * 0.55 + np.array([0.5, 0.0, 0.8]), held=False, yaw=-0.08, look=-0.1),
+    dict(hand=TOOL_PACK_WRIST, held=False, yaw=-0.16, look=-0.22),
+    dict(hand=TOOL_PACK_WRIST + np.array([0.4, 2.0, 2.6]), held=True, deploy=0.0, yaw=-0.1, look=-0.12),
+    dict(hand=np.array([4.4, 5.2, 7.4]), held=True, deploy=0.18, yaw=0.08, look=0.1),
+    dict(hand=np.array([4.6, 5.6, 7.8]), held=True, deploy=0.42, yaw=0.1, look=0.16),
+    dict(hand=np.array([5.4, 5.8, 7.0]), held=True, deploy=0.62, yaw=0.08, look=0.12),
+    dict(hand=np.array([7.4, 5.0, 6.0]), held=True, deploy=0.85, yaw=0.04, look=0.06),
+    dict(hand=np.array([8.6, 4.0, 5.3]), held=True, deploy=1.0, yaw=0.0, look=0.02),
+    dict(hand=TOOL_HOLD, held=True, deploy=1.0, yaw=0.0, look=0.0),
+]
+EQUIP_FRAMES = 18                 # in-betweens over the key poses, eased
+EQUIP_LIT_AT = 6.5                # key position where the emitter lights
+
+
+def equip_u(i):
+    """Key-pose position (0 .. keys-1) of equip frame i: eased in and out."""
+    x = i / (EQUIP_FRAMES - 1)
+    x = x * x * (3 - 2 * x) * 0.3 + x * 0.7
+    return x * (len(EQUIP_KEYS) - 1)
+
+
+def pose_equip(t):
+    u = equip_u(int(round(t * EQUIP_FRAMES)) % EQUIP_FRAMES)
+    a = min(int(u), len(EQUIP_KEYS) - 2)
+    f = u - a
+    k0, k1 = EQUIP_KEYS[a], EQUIP_KEYS[a + 1]
+    s_ = f * f * (3 - 2 * f)
+    p = pose_idle(0.0)
+    p['torso_rot'] = (lerp(k0['yaw'], k1['yaw'], s_), p['torso_rot'][1] + 0.03, 0.0)
+    p['head_rot'] = (lerp(k0['look'], k1['look'], s_), -0.04, 0.0)
+    hand = lerp(np.asarray(k0['hand']), np.asarray(k1['hand']), s_)
+    held = k1['held'] if f >= 0.5 else k0['held']
+    if held:
+        dep = lerp(k0.get('deploy', 0.0), k1.get('deploy', 0.0), f)
+        return with_tool(p, hand, dep, u >= EQUIP_LIT_AT, pole=(0.9, -0.6, -0.7))
+    Rt = euler(*p['pelvis_rot']) @ euler(*p['torso_rot'])
+    pel = np.asarray(p['pelvis'], float)
+    p['arms']['R'] = ('ik', pel + Rt @ hand, Rt @ np.array([0.9, 0.2, -1.0]))
+    return p
+
+
+# ------------------------------------------------------------------ v1 poses: the handheld tool
+def with_tool_v1(p, hand, fwd, open_=1.0, lit=True):
+    Rt = euler(*p['pelvis_rot']) @ euler(*p['torso_rot'])
+    pel = np.asarray(p['pelvis'], float)
+    p['arms']['R'] = ('ik', pel + Rt @ np.asarray(hand, float), Rt @ np.array([0.7, -0.35, -1.0]))
+    p['tool'] = dict(where='hand', fwd=Rt @ nz(fwd), open=open_, lit=lit)
+    return p
+
+
+def pose_idle_tool_v1(t):
+    breath = 0.5 - 0.5 * math.cos(TAU * t)
+    return with_tool_v1(pose_idle(t), TOOL1_HOLD + np.array([0.0, 0.1 * math.sin(TAU * t), 0.35 * breath - 0.15]),
+                        TOOL1_HOLD_FWD + np.array([0.0, 0.0, 0.04 * math.sin(TAU * t + 0.8)]))
+
+
+def pose_walk_tool_v1(t):
+    return with_tool_v1(pose_walk(t), TOOL1_HOLD + np.array([0.0, 0.25 * math.sin(TAU * t), 0.3 * math.cos(4 * math.pi * (t - 0.3))]),
+                        TOOL1_HOLD_FWD + np.array([0.0, 0.0, 0.05 * math.cos(4 * math.pi * (t - 0.35))]))
+
+
+def pose_run_tool_v1(t):
+    return with_tool_v1(pose_run(t), np.array([5.0, 2.4, 4.8]) + np.array([0.0, 0.3 * math.sin(TAU * t), 0.45 * math.cos(4 * math.pi * (t - 0.4))]),
+                        np.array([-0.05, 1.0, 0.1 + 0.06 * math.cos(4 * math.pi * (t - 0.45))]))
+
+
+def pose_jump_tool_v1(t):
+    k = JUMP_KEYS[int(round(t * len(JUMP_KEYS))) % len(JUMP_KEYS)]
+    lift = float(np.clip(k['arm'][0] * 0.55, -0.6, 1.3))
+    return with_tool_v1(pose_jump(t), TOOL1_HOLD + np.array([0.15, 0.2, 0.6 + lift]), TOOL1_HOLD_FWD + np.array([0.0, 0.0, 0.1 * lift]))
+
+
+def pose_use_v1(t):
+    p = pose_use(t)
+    pulse = max(0.0, math.sin(TAU * t)) ** 2
+    p['arms']['L'] = ('fk', 0.45, 0.32, 0.85)
+    return with_tool_v1(p, TOOL1_AIM - np.array([0.0, 0.45 * pulse, -0.12 * pulse]),
+                        TOOL1_AIM_FWD + np.array([0.0, 0.0, 0.05 * pulse]))
+
+
+EQUIP_KEYS_V1 = [
+    dict(hand=REST_R * 0.45 + TOOL_PACK_WRIST * 0.55 + np.array([0.5, 0.0, 0.8]), held=False, yaw=-0.08, look=-0.1),
+    dict(hand=TOOL_PACK_WRIST, held=False, yaw=-0.16, look=-0.22),
+    dict(hand=TOOL_PACK_WRIST + np.array([0.4, 1.4, 2.4]), held=True, fwd=(0.1, 0.3, 1.0), open_=0.0, yaw=-0.12, look=-0.16),
+    dict(hand=np.array([5.3, 3.0, 6.3]), held=True, fwd=(0.0, 0.8, 0.62), open_=0.0, yaw=-0.04, look=-0.05),
+    dict(hand=np.array([4.8, 4.6, 4.9]), held=True, fwd=(-0.05, 1.0, 0.14), open_=0.35, yaw=0.02, look=0.02),
+    dict(hand=np.array([4.8, 3.9, 4.0]), held=True, fwd=(-0.06, 1.0, -0.06), open_=0.85, yaw=0.01, look=0.04),
+    dict(hand=np.array([4.8, 3.2, 3.4]), held=True, fwd=(-0.08, 1.0, -0.26), open_=1.0, yaw=0.0, look=0.02),
+    dict(hand=TOOL1_HOLD, held=True, fwd=TOOL1_HOLD_FWD, open_=1.0, yaw=0.0, look=0.0),
+]
+EQUIP_FRAMES_V1 = 12
+EQUIP_LIT_AT_V1 = 4.5
+
+
+def equip_u_v1(i):
+    x = i / (EQUIP_FRAMES_V1 - 1)
+    x = x * x * (3 - 2 * x) * 0.35 + x * 0.65
+    return x * (len(EQUIP_KEYS_V1) - 1)
+
+
+def pose_equip_v1(t):
+    u = equip_u_v1(int(round(t * EQUIP_FRAMES_V1)) % EQUIP_FRAMES_V1)
+    a = min(int(u), len(EQUIP_KEYS_V1) - 2)
+    f = u - a
+    k0, k1 = EQUIP_KEYS_V1[a], EQUIP_KEYS_V1[a + 1]
+    s_ = f * f * (3 - 2 * f)
+    p = pose_idle(0.0)
+    p['torso_rot'] = (lerp(k0['yaw'], k1['yaw'], s_), p['torso_rot'][1] + 0.03, 0.0)
+    p['head_rot'] = (lerp(k0['look'], k1['look'], s_), -0.04, 0.0)
+    hand = lerp(np.asarray(k0['hand']), np.asarray(k1['hand']), s_)
+    held = k1['held'] if f >= 0.5 else k0['held']
+    if held:
+        f0 = np.asarray(k0.get('fwd', k1.get('fwd')), float)
+        f1 = np.asarray(k1.get('fwd', f0), float)
+        return with_tool_v1(p, hand, nz(lerp(nz(f0), nz(f1), s_)), lerp(k0.get('open_', 0.0), k1.get('open_', 0.0), s_),
+                            u >= EQUIP_LIT_AT_V1)
+    Rt = euler(*p['pelvis_rot']) @ euler(*p['torso_rot'])
+    pel = np.asarray(p['pelvis'], float)
+    p['arms']['R'] = ('ik', pel + Rt @ hand, Rt @ np.array([0.9, 0.2, -1.0]))
+    return p
+
+
+V1 = TOOL_DESIGN == 'v1'
 ALL8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 ANIMS = {
     'idle':  dict(frames=16, fps=8,  fn=pose_idle,  dirs=ALL8, loop=True),
@@ -828,12 +1203,33 @@ ANIMS = {
     'run':   dict(frames=10, fps=15, fn=pose_run,   dirs=ALL8, loop=True),
     'climb': dict(frames=12, fps=12, fn=pose_climb, dirs=['N', 'NE', 'NW'], loop=True),
     'jump':  dict(frames=len(JUMP_KEYS), fps=12, fn=pose_jump, dirs=ALL8, loop=False),
+    # with the multitool out
+    'equip':      dict(frames=EQUIP_FRAMES_V1 if V1 else EQUIP_FRAMES, fps=22 if V1 else 20,
+                       fn=pose_equip_v1 if V1 else pose_equip, dirs=ALL8, loop=False, tool=True),
+    'idle_tool':  dict(frames=16, fps=8,  fn=pose_idle_tool_v1 if V1 else pose_idle_tool, dirs=ALL8, loop=True, tool=True),
+    'walk_tool':  dict(frames=12, fps=12, fn=pose_walk_tool_v1 if V1 else pose_walk_tool, dirs=ALL8, loop=True, tool=True),
+    'run_tool':   dict(frames=10, fps=15, fn=pose_run_tool_v1 if V1 else pose_run_tool, dirs=ALL8, loop=True, tool=True),
+    'jump_tool':  dict(frames=len(JUMP_KEYS), fps=12, fn=pose_jump_tool_v1 if V1 else pose_jump_tool, dirs=ALL8,
+                       loop=False, tool=True),
+    'use':        dict(frames=6, fps=12, fn=pose_use_v1 if V1 else pose_use, dirs=ALL8, loop=True, tool=True),
 }
 
 
 def render_pose(pose, d):
     parts, stalk = build_parts(pose)
     return render(parts, DIRS[d], stalk=stalk, bulb=pose['bulb'])
+
+
+def tool_tip(pose, d):
+    """Pixel position of the multitool's lens in the frame, and whether the body hides it."""
+    parts, _ = build_parts(pose)
+    tip = pose['_tip']
+    Ryaw = rz(-DIRS[d] * D2R)
+    fc, rc, uc = CAM.f @ Ryaw, CAM.r @ Ryaw, CAM.u @ Ryaw
+    x, y = CAM.ax + tip @ rc / CAM.s, CAM.ay - tip @ uc / CAM.s
+    body = Scene([q for q in parts if q.group != 'tool'])
+    hit, _ = march(body, (tip - fc * 60.0)[None, :], fc, np.zeros(1), np.array([59.0]))
+    return [round(float(x), 1), round(float(y), 1), 0 if hit[0] else 1]
 
 
 # ================================================================== props for previews
@@ -960,6 +1356,7 @@ def build(quick=False):
     # sprite sheets + manifest
     manifest = {
         'name': 'astronaut',
+        'tool_design': TOOL_DESIGN,
         'frame_size': [FRAME_W, FRAME_H],
         'anchor': list(ANCHOR),
         'anchor_note': 'Pixel coordinate (from top-left of each frame) of the point between the feet on the ground. '
@@ -992,6 +1389,16 @@ def build(quick=False):
             info['phases'] = JUMP_PHASES
             info['note'] = 'Pose set, not a timed loop: pick frames from the jump state (crouch, takeoff, ' \
                            'rise, apex, fall, land) and lift the sprite by the jump height.'
+        if name == 'equip' and V1:
+            info['lit_frame'] = next(i for i in range(EQUIP_FRAMES_V1) if equip_u_v1(i) >= EQUIP_LIT_AT_V1)
+        elif name == 'equip':
+            info['lit_frame'] = next(i for i in range(EQUIP_FRAMES) if equip_u(i) >= EQUIP_LIT_AT)
+            info['open_frames'] = [next(i for i in range(EQUIP_FRAMES) if equip_u(i) >= 3.0),
+                                   next(i for i in range(EQUIP_FRAMES) if equip_u(i) >= 6.0)]
+            info['equip_note'] = 'open_frames: from the device bursting open to the plates locking on the arm.'
+        if a.get('tool'):
+            info['tool_tip'] = [[tool_tip(a['fn'](i / a['frames']), d) for i in range(a['frames'])] for d in a['dirs']]
+            info['tool_tip_note'] = 'Per direction, per frame: [x, y, visible] of the multitool lens in frame pixels.'
         if name == 'climb':
             info['climb_speed_px_per_sec'] = round(CLIMB_RISE * a['fps'] / a['frames'], 3)
             info['ladder_rung_spacing_px'] = RUNG

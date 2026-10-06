@@ -8,6 +8,11 @@ extends Node2D
 ## shoulder to run, Space / A to jump (hold for a higher, floatier jump). Tilting the
 ## stick part-way walks slower.
 ##
+## The multitool (see Multitool) rides on the backpack: toggle_tool() draws it with a short
+## animation and puts it back by playing that in reverse. While it is out, every animation has
+## a version with the tool in hand; while it works on something, the astronaut plants their
+## feet, faces the target and holds it out ("use").
+##
 ## Terrain: you walk on WALK ground and glide along anything in the way. STEEP ground
 ## (crater walls, cliffs, boulders) can't be walked but can be jumped over, onto or down;
 ## land on it and you skid down to the next safe footing. SOLID things always block.
@@ -18,6 +23,8 @@ const DIRS: Array[String] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"]
 const GLIDE_ANGLES: Array[float] = [0.0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2]
 
 enum Jump { GROUNDED, CROUCH, AIR, LAND, SLIDE }
+enum Tool { HOLSTERED, EQUIPPING, READY, HOLSTERING }
+const SPRITE_JSON := "res://assets/characters/astronaut/astronaut.json"
 
 ## Speeds are in sprite units/s (1 unit = 1 sprite pixel of height) and are converted to
 ## map units with the map's character_scale.
@@ -62,8 +69,18 @@ var facing := "SE"
 ## Overrides the controls when non-zero (used by automated test runs).
 var forced_input := Vector2.ZERO
 var forced_run := false
+## Off while a cutscene plays: the astronaut stands still and ignores the pad.
+var controls_enabled := true
+## A cutscene is moving the astronaut (puppet_walk / puppet_face); physics and input pause.
+var puppet := false
+## Never shown as a silhouette behind scenery (walking through an airlock door).
+var ignore_occlusion := false
 ## Jump on a timer (automated test runs); 0 = off.
 var auto_jump_every := 0.0
+## The multitool: on the backpack, being drawn, in hand, or being put away.
+var tool_state := Tool.HOLSTERED
+## While the tool is working on something: the world point to face and aim at (else null).
+var work_target: Variant = null
 
 var _scale := 1.0
 var _dust: CPUParticles2D
@@ -76,6 +93,10 @@ var _auto_t := 0.0
 var _stuck := 0.0
 var _dot2: ImageTexture
 var _dot1: ImageTexture
+var _tips := {}           # animation -> direction -> per frame [x, y, visible] of the tool's lens
+var _lit_frame := 5       # equip frame where the lens lights
+## Equip frames from the device bursting open to the armour locking onto the arm.
+var open_frames := Vector2i(-1, -1)
 
 @onready var sprite: AnimatedSprite2D = $Sprite
 @onready var shadow: Sprite2D = $Shadow
@@ -87,6 +108,7 @@ func _ready() -> void:
 	_dot1 = _dot_texture(1)
 	_dot2 = _dot_texture(2)
 	sprite.play("idle_" + facing)
+	_load_tool_tips()
 	_dust = _make_foot_dust()
 	add_child(_dust)
 	move_child(_dust, 0)  # under the astronaut
@@ -119,18 +141,122 @@ func is_airborne() -> bool:
 	return _jump == Jump.AIR
 
 
+## Cutscenes: walk straight toward a world point (no collisions) at a fraction of walking
+## speed. Returns true once there.
+func puppet_walk(target: Vector2, pace: float, delta: float) -> bool:
+	var to := target - world_pos
+	var step := walk_speed * pace * _scale * delta
+	if to.length() <= step:
+		world_pos = target
+		_sync()
+		return true
+	world_pos += to.normalized() * step
+	_set_facing(to)
+	_animate("walk", walk_anim_scale * pace)
+	_sync()
+	return false
+
+
+## Cutscenes: stand still, facing a world direction.
+func puppet_face(d: Vector2) -> void:
+	_set_facing(d)
+	_animate("idle", 1.0)
+	_sync()
+
+
+func _set_facing(d: Vector2) -> void:
+	if d.length() > 0.001:
+		var sd := Vector2(d.x, -d.y)
+		facing = DIRS[posmod(int(round(sd.angle() / (PI / 4.0))), 8)]
+
+
+## Take the multitool out, or put it away (only with both feet on the ground).
+func toggle_tool() -> void:
+	if _jump != Jump.GROUNDED:
+		return
+	if tool_state == Tool.HOLSTERED:
+		tool_state = Tool.EQUIPPING
+		sprite.speed_scale = 1.0
+		sprite.play("equip_" + facing)
+	elif tool_state == Tool.READY:
+		tool_state = Tool.HOLSTERING
+		work_target = null
+		sprite.speed_scale = 1.3
+		sprite.play_backwards("equip_" + facing)
+
+
+## Put the multitool straight in hand (or away), no animation: after a scene change.
+func set_tool_out(on: bool) -> void:
+	tool_state = Tool.READY if on else Tool.HOLSTERED
+	_animate("idle", 1.0)
+
+
+## True once the lens has lit during the draw (and until it goes dark while putting it away).
+func tool_lit() -> bool:
+	match tool_state:
+		Tool.READY:
+			return true
+		Tool.EQUIPPING, Tool.HOLSTERING:
+			return sprite.frame >= _lit_frame
+	return false
+
+
+## Map position of the multitool's lens in the current frame; z = 1 if the body doesn't hide it.
+func tool_tip() -> Vector3:
+	var name := String(sprite.animation)
+	var cut := name.rfind("_")
+	var table: Dictionary = _tips.get(name.substr(0, cut), {})
+	var row: Array = table.get(name.substr(cut + 1), [])
+	if row.is_empty():
+		var p := global_position + sprite.position + Vector2(0, -22)
+		return Vector3(p.x, p.y, 0.0)
+	var f: Array = row[clampi(sprite.frame, 0, row.size() - 1)]
+	var q := global_position + sprite.position + sprite.offset + Vector2(f[0], f[1])
+	return Vector3(q.x, q.y, f[2])
+
+
+## Unit world direction the astronaut faces.
+func facing_dir() -> Vector2:
+	var a := DIRS.find(facing) * PI / 4.0
+	return Vector2(cos(a), -sin(a))
+
+
+func _load_tool_tips() -> void:
+	var m = JSON.parse_string(FileAccess.get_file_as_string(SPRITE_JSON))
+	if m == null:
+		return
+	for anim in m["animations"]:
+		var info: Dictionary = m["animations"][anim]
+		if info.has("lit_frame"):
+			_lit_frame = int(info["lit_frame"])
+		if info.has("open_frames"):
+			open_frames = Vector2i(int(info["open_frames"][0]), int(info["open_frames"][1]))
+		if not info.has("tool_tip"):
+			continue
+		var t := {}
+		for i in info["directions"].size():
+			t[info["directions"][i]] = info["tool_tip"][i]
+		_tips[anim] = t
+
+
 ## What the camera follows: halfway between the ground and the astronaut in the air.
 func camera_focus() -> Vector2:
 	return global_position + sprite.position * 0.5
 
 
 func _physics_process(delta: float) -> void:
-	if terrain == null:
+	if terrain == null or puppet:
 		return
 	var input := forced_input
-	if input == Vector2.ZERO:
+	if input == Vector2.ZERO and controls_enabled:
 		input = Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	var running := forced_run or Input.is_action_pressed("run")
+	var running := forced_run or (controls_enabled and Input.is_action_pressed("run"))
+	if tool_state == Tool.EQUIPPING or tool_state == Tool.HOLSTERING:
+		_step_tool_draw(delta)
+		return
+	if tool_state == Tool.READY and work_target != null:
+		_step_working(delta)
+		return
 	var tilt := input.length()
 	_read_jump_input(delta)
 
@@ -162,6 +288,33 @@ func _physics_process(delta: float) -> void:
 	_sync()
 
 
+# ---------------------------------------------------------------- the multitool
+## Drawing or putting away the tool: stand still and let the animation play out.
+func _step_tool_draw(delta: float) -> void:
+	_dust.emitting = false
+	_step_vertical(delta)
+	if not sprite.is_playing():
+		tool_state = Tool.READY if tool_state == Tool.EQUIPPING else Tool.HOLSTERED
+		sprite.speed_scale = 1.0
+		_animate("idle", 1.0)
+	_sync()
+
+
+## Working: feet planted, turned to the target, tool held out.
+func _step_working(delta: float) -> void:
+	_dust.emitting = false
+	var to: Vector2 = work_target - world_pos
+	if to.length() > 0.5:
+		var sd := Vector2(to.x, -to.y)
+		facing = DIRS[posmod(int(round(sd.angle() / (PI / 4.0))), 8)]
+	var anim := StringName("use_" + facing)
+	if sprite.animation != anim:
+		sprite.play(anim)
+	sprite.speed_scale = 1.0
+	_step_vertical(delta)
+	_sync()
+
+
 # ---------------------------------------------------------------- movement
 ## Moves if the feet can be at the new spot; when blocked, glides along the obstacle.
 func _try_move(motion: Vector2) -> bool:
@@ -173,7 +326,21 @@ func _try_move(motion: Vector2) -> bool:
 		if _can_be(world_pos + m, airborne):
 			world_pos += m
 			return true
-	return false
+	# head-on into something round (a tree trunk, a boulder): take the open direction closest
+	# to where the stick points, even a little backwards, and work around it
+	var dir := motion.normalized()
+	var best := Vector2.ZERO
+	var best_dot := -0.35
+	for k in 16:
+		var t := Vector2.from_angle(k * TAU / 16.0)
+		var dt := t.dot(dir)
+		if dt > best_dot and _can_be(world_pos + t * motion.length() * 0.7, airborne):
+			best = t * motion.length() * 0.7
+			best_dot = dt
+	if best == Vector2.ZERO:
+		return false
+	world_pos += best
+	return true
 
 
 ## On foot every sample around the feet must be walkable; in the air the ground there just
@@ -203,7 +370,7 @@ func _not_solid(p: Vector2) -> bool:
 # ---------------------------------------------------------------- jump, fall, skid
 func _read_jump_input(delta: float) -> void:
 	_jump_buffer = maxf(0.0, _jump_buffer - delta)
-	var pressed := Input.is_action_just_pressed("jump")
+	var pressed := controls_enabled and Input.is_action_just_pressed("jump") and work_target == null
 	if auto_jump_every > 0.0:
 		_auto_t += delta
 		if _auto_t >= auto_jump_every:
@@ -325,7 +492,7 @@ func _show_jump_frame() -> void:
 			f = 10 if _jt < land_time * 0.5 else 11
 		Jump.SLIDE:
 			f = 10                                      # crouched, arms out: skidding
-	var anim := StringName("jump_" + facing)
+	var anim := StringName(("jump_tool_" if tool_state == Tool.READY else "jump_") + facing)
 	if sprite.animation != anim:
 		sprite.animation = anim
 	if sprite.is_playing():
@@ -400,10 +567,12 @@ func _sync() -> void:
 	var lift := clampf(above / 70.0, 0.0, 1.0)
 	shadow.scale = Vector2.ONE * lerpf(1.0, 0.55, lift)
 	shadow.modulate.a = lerpf(1.0, 0.45, lift)
-	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_depth", world_pos.y)
+	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_depth", -1.0e6 if ignore_occlusion else world_pos.y)
 
 
 func _animate(kind: String, speed_scale: float) -> void:
+	if tool_state == Tool.READY:
+		kind += "_tool"
 	var anim := "%s_%s" % [kind, facing]
 	if sprite.animation != StringName(anim):
 		var keep_phase := String(sprite.animation).begins_with(kind + "_")

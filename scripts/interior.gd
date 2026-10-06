@@ -1,0 +1,77 @@
+extends Node2D
+## Inside the main base: storage (the airlock comes in here), the power room to the right and
+## the oxygen room to the left. The power is out. E at the airlock door goes back outside.
+##
+## Test hooks (after "--"): --spawn=X,Y  --walk=DX,DY[,run]  --capture=PATH
+## --seconds=S  --burst=N  --gap=S  --arrive (play coming in through the door)  --exit (use the door)
+
+const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
+const DEPTH_MAP: Texture2D = preload("res://assets/maps/base_interior/base_interior_depth.png")
+
+var terrain: MapTerrain
+var door: AirlockDoor
+
+@onready var player: Player = $Actors/Player
+@onready var multitool: Multitool = $Multitool
+@onready var fx: InteriorFX = $InteriorFX
+
+
+func _ready() -> void:
+	terrain = MapTerrain.new(MAP_JSON)
+	player.setup(terrain, DEPTH_MAP)
+	player.camera.zoom_locked = true                     # no zooming out indoors
+	player.camera.setup(player, $Map, terrain.max_view_px)
+	multitool.setup("", player, terrain, $Actors, DEPTH_MAP)
+	fx.setup(MAP_JSON, player)
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
+	door = AirlockDoor.new()
+	$Actors.add_child(door)
+	door.setup(meta["door"], MAP_JSON.get_base_dir(), player, player.camera, terrain, multitool, "EXIT")
+	door.entered.connect(_leave)
+	if GameState.tool_out:
+		player.set_tool_out(true)
+	var args := _args()
+	if GameState.arrive == "interior" or args.has("arrive"):
+		door.arrive()
+	GameState.arrive = ""
+	_run_test_hooks(args)
+
+
+func _leave() -> void:
+	GameState.arrive = "door"
+	GameState.tool_out = player.tool_state == Player.Tool.READY
+	get_tree().change_scene_to_file("res://scenes/overworld.tscn")
+
+
+static func _args() -> Dictionary:
+	var args := {}
+	for a in OS.get_cmdline_user_args():
+		var kv := a.trim_prefix("--").split("=", true, 1)
+		args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	return args
+
+
+func _run_test_hooks(args: Dictionary) -> void:
+	if args.has("spawn"):
+		var xy: PackedStringArray = args["spawn"].split(",")
+		player.teleport(Vector2(float(xy[0]), float(xy[1])))
+	if args.has("walk"):
+		var w: PackedStringArray = args["walk"].split(",")
+		player.forced_input = Vector2(float(w[0]), float(w[1]))
+		player.forced_run = w.size() > 2 and w[2] == "run"
+	if args.has("exit"):
+		get_tree().create_timer(0.4).timeout.connect(func() -> void:
+			player.teleport(door.stand_point())
+			door.call("_start"))
+	if not args.has("capture"):
+		return
+	await get_tree().create_timer(float(args.get("seconds", "1.5"))).timeout
+	var path: String = args["capture"]
+	var count := int(args.get("burst", "1"))
+	var gap := float(args.get("gap", "0.12"))
+	for i in count:
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(path if count == 1 else path.get_basename() + "_%d.png" % i)
+		if i < count - 1:
+			await get_tree().create_timer(gap).timeout
+	get_tree().quit()

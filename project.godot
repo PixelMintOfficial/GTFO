@@ -15,6 +15,10 @@ config/description="Cozy isometric pixel game on a red planet."
 run/main_scene="res://scenes/overworld.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
+[autoload]
+
+GameState="*res://scripts/game_state.gd"
+
 [display]
 
 window/size/viewport_width=384

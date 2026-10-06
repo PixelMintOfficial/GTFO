@@ -4,7 +4,8 @@ shader_type canvas_item;
 // The map's depth image stores, for every map pixel, the camera depth (world Y) of the
 // surface drawn there, packed into R (high byte) and G (low byte); B marks dome glass.
 // Scenery nearer than the sprite turns the covered pixels into a soft silhouette,
-// or a tinted see-through look when the scenery is glass.
+// or a tinted see-through look when the scenery is glass. Swaying plants (B = 96) never
+// cover the sprite: they thin out around it instead (flora_depth.gdshader).
 
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
 uniform vec2 map_size = vec2(3100.0, 1880.0);
@@ -24,7 +25,8 @@ void fragment() {
 	vec4 c = texture(TEXTURE, UV) * COLOR;
 	vec4 d = texture(depth_map, map_pos / map_size);
 	float depth = (round(d.r * 255.0) * 256.0 + round(d.g * 255.0)) / depth_scale;
-	if (depth < sprite_depth - tolerance) {
+	bool plant = abs(d.b * 255.0 - 96.0) < 12.0;
+	if (!plant && depth < sprite_depth - tolerance) {
 		if (d.b > 0.5) {
 			c.rgb = mix(c.rgb, glass_tint.rgb, 0.35);
 			c.a *= 0.55;
