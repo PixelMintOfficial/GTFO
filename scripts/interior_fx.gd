@@ -100,6 +100,8 @@ func _process(delta: float) -> void:
 			m[0] = r.position + Vector2(randf() * r.size.x, randf() * r.size.y * 0.3)
 	_update_sparks(delta)
 	_update_vapor(delta)
+	for i in _vents.size():                              # the snapped pipe, still hissing
+		Audio.loop("amb_gas_leak", "gas:%d" % i, _vents[i][0] as Vector2)
 	var room := ""                                        # which room you are in
 	for rm in _rooms:
 		if _player.world_pos.distance_to(rm[1]) < rm[2] - 4.0:
@@ -107,6 +109,7 @@ func _process(delta: float) -> void:
 	if room != "" and room != _room:
 		_label = room
 		_label_t = 0.0
+		Audio.play("ui_room")
 	if room != "":
 		_room = room
 	_label_t += delta
@@ -127,6 +130,7 @@ func _update_sparks(delta: float) -> void:
 			var a := randf_range(-PI * 0.97, -PI * 0.03)
 			_sparks.append([sp[0] as Vector2, Vector2(cos(a), sin(a)) * randf_range(30.0, 95.0), 0.0, randf_range(0.35, 0.85)])
 		_flashes.append([sp[0] as Vector2, 0.0])
+		Audio.play("spark", sp[0] as Vector2)
 		sp[1] = randf_range(0.08, 0.2) if randf() < 0.35 else randf_range(1.2, 4.0)
 	var i := 0
 	while i < _sparks.size():

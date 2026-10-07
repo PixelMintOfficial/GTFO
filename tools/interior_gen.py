@@ -24,6 +24,7 @@ Day and night: the light mask (_light.png) says how much of each pixel is its ow
 
 Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _light.png, _sun.png, .json, anim/,
 and machines/: the power room's reactor and the oxygen generator on their own, as transparent sprites.
+--repair-metadata-only refreshes machine interaction anchors without rendering the art.
 """
 import json
 import math
@@ -1215,6 +1216,7 @@ def build():
     meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R']) for name, rm in ROOMS.items()}
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
     meta['door'] = export_door()
+    meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
     meta['fx'] = dict(
         shafts=[dict(hull=[[round(float(x), 1), round(float(y), 1)] for x, y in s['hull']],
                      hole=[round(float(v), 1) for v in M.project(*s['hole'].mean(axis=0))]) for s in sh],
@@ -1234,6 +1236,32 @@ def build():
 
 def pxl(P):
     return [round(float(v), 1) for v in M.project(*P)]
+
+
+def repair_machine_info(reactor_c, gen_c):
+    """Gameplay anchors derived from the same model centres as the machine art."""
+    return [dict(id=key, label=label,
+                 world=[round(float(v), 2) for v in c[:2]],
+                 stand_world=[round(float(v), 2) for v in (c + np.array([0, -30, 0]))[:2]],
+                 progress_px=pxl(c + np.array([0, 0, 43])))
+            for key, label, c in [('power', 'POWER GENERATOR', reactor_c),
+                                  ('oxygen', 'O2 GENERATOR', gen_c)]]
+
+
+def refresh_repair_metadata():
+    path = os.path.join(OUT, 'base_interior.json')
+    with open(path) as fh:
+        meta = json.load(fh)
+    # build() establishes these offsets before exporting projected positions.
+    M.AX, M.AY = meta['origin_px']
+    rs = np.random.default_rng(42)
+    _, reactor_c, _ = power_props(rs)
+    _, gen_c, _, _ = oxygen_props(rs)
+    meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
+    with open(path, 'w') as fh:
+        json.dump(meta, fh, indent=1)
+        fh.write('\n')
+    print('Machine repair anchors refreshed; existing art preserved.')
 
 
 def board_info(b):
@@ -1325,4 +1353,7 @@ def export_door():
 
 if __name__ == '__main__':
     np.seterr(all='ignore')
-    build()
+    if '--repair-metadata-only' in sys.argv:
+        refresh_repair_metadata()
+    else:
+        build()

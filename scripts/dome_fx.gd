@@ -23,6 +23,8 @@ var _sprites: Array = []   # [Sprite2D, frame count, fps]
 var _rim: Array = []       # [Vector2, phase around the rim]
 var _doors: Array = []     # [Vector2, phase]
 var _beacon := Vector2.ZERO
+var _beacon_lit := false
+var _door_lit := []
 var _t := 0.0
 
 
@@ -47,13 +49,33 @@ func setup(meta_path: String) -> void:
 	var b = anim.get("beacon")
 	if b != null:
 		_beacon = Vector2(b[0], b[1])
+	_door_lit.resize(_doors.size())
+	_door_lit.fill(false)
 
 
 func _process(delta: float) -> void:
 	_t += delta
 	for s in _sprites:
 		(s[0] as Sprite2D).frame = int(_t * s[2]) % int(s[1])
+	_tick_lights()
 	queue_redraw()
+
+
+## The blinking lights are audible if you are standing under them: tick in step with the
+## strobe _draw() draws, so the sound and the light are the same event.
+func _tick_lights() -> void:
+	if _beacon != Vector2.ZERO:
+		var c := fmod(_t, beacon_period)
+		var on := c < 0.12 or (c > 0.3 and c < 0.42)
+		if on and not _beacon_lit:
+			Audio.play("beacon", _beacon)
+		_beacon_lit = on
+	for i in _doors.size():
+		var l: Array = _doors[i]
+		var on := fmod(_t + float(l[1]) * door_blink_period, door_blink_period) < door_blink_period * 0.4
+		if on and not _door_lit[i]:
+			Audio.play("door_lamp", l[0] as Vector2)
+		_door_lit[i] = on
 
 
 func _draw() -> void:

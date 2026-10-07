@@ -2,7 +2,7 @@ class_name AirlockDoor
 extends Node2D
 ## An airlock door the astronaut can go through.
 ##
-## Walk up to it and an "E" prompt appears over it. Press E and a little cutscene plays: the
+## Walk up to it and an "F" prompt appears over it. Press F and a little cutscene plays: the
 ## camera moves in behind the astronaut, they step up to the door, its warning light blinks,
 ## the door unseals and its halves slide away into their pockets with a blast of venting gas,
 ## they walk in, it closes behind them, and the screen fades out (then `entered` is emitted).
@@ -42,6 +42,8 @@ var _frames := 12
 var _st := 0.0
 var _t := 0.0
 var _prompt := false
+var _was_prompt := false
+var _lamp_on := false
 var _puffs: Array = []          # [pos, vel, r, growth, age, life, drag]
 var _glints: Array = []         # [pos, vel, age, life]
 var _air: Node2D
@@ -116,6 +118,7 @@ func arrive() -> void:
 	camera.focus_override = _focus()
 	camera.snap_to(_focus())
 	camera.set_level(0)
+	Audio.play("door_vent", _sound_at(), 0.9, -4.0)
 	_burst(10)
 
 
@@ -127,9 +130,12 @@ func _process(delta: float) -> void:
 	match state:
 		State.IDLE:
 			_prompt = _in_reach()
+			if _prompt and not _was_prompt:
+				Audio.play("door_prompt")
+			_was_prompt = _prompt
 			if multitool != null:
 				multitool.suppressed = _prompt
-			if _prompt and Input.is_action_just_pressed("interact"):
+			if _prompt and not multitool.inventory_suppressed and Input.is_action_just_pressed("interact"):
 				_start()
 		State.APPROACH:
 			if player.puppet_walk(stand_point(), 1.0, delta):
@@ -139,17 +145,21 @@ func _process(delta: float) -> void:
 			if _st > 0.6:
 				sprite.visible = true
 				sprite.frame = 0
+				Audio.play("door_unseal", _sound_at())
+				Audio.play("door_vent", _sound_at())
 				_burst(28)
 				camera.shake(1.4, 0.3)
 				_go(State.OPEN)
 		State.OPEN:
 			var k := clampf(_st / 0.75, 0.0, 1.0)
+			Audio.loop("door_slide", "door", _sound_at())
 			sprite.frame = mini(_frames - 1, int(k * (_frames - 1) + 0.5))
 			if randf() < 40.0 * delta:
 				_burst(2)
 			if k >= 1.0:
 				_go(State.HOLD)
 		State.HOLD:
+			Audio.release("door")
 			if randf() < 10.0 * delta:
 				_burst(1)
 			if _st > 0.35:
@@ -164,8 +174,11 @@ func _process(delta: float) -> void:
 				_go(State.CLOSE)
 		State.CLOSE:
 			var k := clampf(_st / 0.6, 0.0, 1.0)
+			Audio.loop("door_slide", "door", _sound_at())
 			sprite.frame = mini(_frames - 1, int((1.0 - k) * (_frames - 1) + 0.5))
 			if k >= 1.0:
+				Audio.release("door")
+				Audio.play("door_close", _sound_at())
 				_burst(5)
 				camera.shake(1.0, 0.15)
 				_go(State.FADE_OUT)
@@ -191,18 +204,36 @@ func _process(delta: float) -> void:
 				_go(State.CLOSE_OUT)
 		State.CLOSE_OUT:
 			var k := clampf(_st / 0.6, 0.0, 1.0)
+			Audio.loop("door_slide", "door", _sound_at())
 			sprite.frame = mini(_frames - 1, int((1.0 - k) * (_frames - 1) + 0.5))
 			if k >= 1.0:
 				sprite.visible = false
+				Audio.release("door")
+				Audio.play("door_close", _sound_at())
 				_burst(4)
 				player.puppet = false
 				player.controls_enabled = true
 				camera.release_focus()
 				state = State.IDLE
 				arrived.emit()
+	_tick_lamp()
 	_update_gas(delta)
 	_air.queue_redraw()
 	_lit.queue_redraw()
+
+
+## Where the door's sounds come from: the foot of the door, in map pixels.
+func _sound_at() -> Vector2:
+	return terrain.to_screen(world, terrain.height_at(world)).round()
+
+
+## The amber lamp blinks on the same schedule _draw_lit() draws it on; tick with it.
+func _tick_lamp() -> void:
+	var working := state != State.IDLE and state != State.APPROACH
+	var on := working and fmod(_t, 0.5) < 0.3
+	if on and not _lamp_on:
+		Audio.play("door_lamp", lamp)
+	_lamp_on = on
 
 
 func _start() -> void:
@@ -304,7 +335,7 @@ func _draw_lit() -> void:
 		_draw_prompt()
 
 
-## "[E] OPEN" floating over the door.
+## "[F] OPEN" floating over the door.
 func _draw_prompt() -> void:
 	var w := PixelFont.width(label) + 13
 	var top := (lamp + Vector2(0, -16 + round(sin(_t * 4.0)))).round()
@@ -314,7 +345,7 @@ func _draw_prompt() -> void:
 	var key := Rect2(box.position + Vector2(2, 1), Vector2(8, 9))
 	_lit.draw_rect(key, KEY)
 	_lit.draw_rect(Rect2(key.position + Vector2(0, 8), Vector2(8, 1)), Color("#8f8ba8"))
-	PixelFont.draw(_lit, key.position + Vector2(3, 2), "E", Color("#241f36"))
+	PixelFont.draw(_lit, key.position + Vector2(3, 2), "F", Color("#241f36"))
 	PixelFont.draw(_lit, box.position + Vector2(12, 3), label, Color("#ffd27a"))
 	_lit.draw_rect(Rect2(top + Vector2(-1, 12), Vector2(3, 1)), Color("#ffd27a", 0.8))
 	_lit.draw_rect(Rect2(top + Vector2(0, 13), Vector2(1, 1)), Color("#ffd27a", 0.8))
@@ -338,7 +369,7 @@ static func _ensure_action() -> void:
 		return
 	InputMap.add_action("interact")
 	var key := InputEventKey.new()
-	key.physical_keycode = KEY_E
+	key.physical_keycode = KEY_F
 	InputMap.action_add_event("interact", key)
 	var pad := InputEventJoypadButton.new()
 	pad.button_index = JOY_BUTTON_X

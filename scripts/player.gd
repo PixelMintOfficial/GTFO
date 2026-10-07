@@ -77,6 +77,10 @@ var puppet := false
 var ignore_occlusion := false
 ## Jump on a timer (automated test runs); 0 = off.
 var auto_jump_every := 0.0
+## What the boots are hitting, as a sound name ("step_dust", "step_snow", "step_metal", ...).
+## The scene sets it: the overworld reads the land under the feet, the interior is always its
+## tiled floor. Takes nothing, returns a String.
+var step_source: Callable
 ## The multitool: on the backpack, being drawn, in hand, or being put away.
 var tool_state := Tool.HOLSTERED
 ## While the tool is working on something: the world point to face and aim at (else null).
@@ -93,6 +97,7 @@ var _auto_t := 0.0
 var _stuck := 0.0
 var _dot2: ImageTexture
 var _dot1: ImageTexture
+var _step_frame := -1      # last animation frame a footstep was checked against
 var _tips := {}           # animation -> direction -> per frame [x, y, visible] of the tool's lens
 var _lit_frame := 5       # equip frame where the lens lights
 ## Equip frames from the device bursting open to the armour locking onto the arm.
@@ -178,11 +183,13 @@ func toggle_tool() -> void:
 		tool_state = Tool.EQUIPPING
 		sprite.speed_scale = 1.0
 		sprite.play("equip_" + facing)
+		Audio.play("tool_unfold", global_position)
 	elif tool_state == Tool.READY:
 		tool_state = Tool.HOLSTERING
 		work_target = null
 		sprite.speed_scale = 1.3
 		sprite.play_backwards("equip_" + facing)
+		Audio.play("tool_fold", global_position)
 
 
 ## Put the multitool straight in hand (or away), no animation: after a scene change.
@@ -282,6 +289,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			_animate("idle", 1.0)
 		_kick_dust(moved, running, screen_dir)
+		_listen_for_footfall(moved)
 	else:
 		_dust.emitting = false
 		_show_jump_frame()
@@ -386,6 +394,8 @@ func _read_jump_input(delta: float) -> void:
 
 func _step_vertical(delta: float) -> void:
 	var ground := terrain.height_at(world_pos)
+	if _jump != Jump.SLIDE and Audio.is_looping("slide"):
+		Audio.release("slide")           # however the skid ended, the scrape stops with it
 	match _jump:
 		Jump.GROUNDED:
 			_feet = ground
@@ -436,6 +446,7 @@ func _start_slide() -> void:
 ## Skid down ground too steep to stand on until there is safe footing.
 func _slide(delta: float) -> void:
 	_jt += delta
+	Audio.loop("slide", "slide", global_position)
 	var before := world_pos
 	var down := terrain.downhill(world_pos)
 	if down != Vector2.ZERO:
@@ -502,6 +513,13 @@ func _show_jump_frame() -> void:
 
 ## Dust ring flattened onto the ground plane, plus pebbles kicked up on landing.
 func _burst(strength: float, landing: bool) -> void:
+	if landing:
+		# A short hop and a drop off a cliff are the same animation but not the same sound.
+		var hard := strength > 0.8
+		Audio.play("land_hard" if hard else "land_soft", global_position, 1.0,
+				lerpf(-7.0, 1.0, clampf(strength / 1.25, 0.0, 1.0)))
+	else:
+		Audio.play("jump", global_position)
 	var root := get_parent()
 	var ring := CPUParticles2D.new()
 	ring.one_shot = true
@@ -595,6 +613,33 @@ func _kick_dust(moving: bool, running: bool, screen_dir: Vector2) -> void:
 	_dust.direction = Vector2(-screen_dir.x, -0.6 - absf(screen_dir.y) * 0.2)
 	_dust.initial_velocity_min = 6.0 if running else 3.0
 	_dust.initial_velocity_max = 16.0 if running else 8.0
+
+
+## A footstep every time a boot lands. The gait puts the left foot's strike at the start of
+## the cycle and the right foot's half way through it (see foot_cycle in
+## tools/astronaut_sprite_gen.py: stance begins at phase 0 for L, 0.5 for R), so the contact
+## frames are frame 0 and the middle frame, whatever length the sheet is. Watching the drawn
+## frame rather than a timer means the sound stays on the feet at any speed.
+func _listen_for_footfall(moving: bool) -> void:
+	if not moving:
+		_step_frame = -1
+		return
+	var anim := String(sprite.animation)
+	var running := anim.begins_with("run")
+	if not running and not anim.begins_with("walk"):
+		_step_frame = -1
+		return
+	var f := sprite.frame
+	if f == _step_frame:
+		return
+	_step_frame = f
+	var count := sprite.sprite_frames.get_frame_count(sprite.animation)
+	if f != 0 and f != count / 2:
+		return
+	var sound := "step_dust"
+	if step_source.is_valid():
+		sound = step_source.call()
+	Audio.play(sound, global_position, 1.06 if running else 1.0, 1.5 if running else -2.0)
 
 
 func _make_foot_dust() -> CPUParticles2D:

@@ -38,22 +38,34 @@ describes how the game is built, the rules that keep it consistent, and how we w
 | What | Version used | Notes |
 |---|---|---|
 | Godot | **4.7.2 stable** | GL Compatibility renderer (set in `project.godot`). Use the same minor version. |
-| Python | 3.14 | Only for the art generators in `tools/`. |
-| Python packages | NumPy 2.4, Pillow 12.3, SciPy 1.17 | `pip install numpy pillow scipy` |
+| Python | 3.13+ | Only for the generators in `tools/`. |
+| Python packages | NumPy, Pillow, SciPy | `make env` builds `.venv` from `tools/requirements.txt` with [uv](https://docs.astral.sh/uv/). |
+| ffmpeg | any recent | Only for `sfx_gen.py`: decodes the source recordings. |
+| bsdtar or unzip | any | Only for `sfx_gen.py --fetch`: unpacks the sound packs. |
 | RAM | several GB free | `mars_map_gen.py` renders a 7751×4350 map. Close other heavy apps. |
+
+**`make` is the way in.** `make help` lists every target; the rest of this file names them as
+it goes. Nothing in the pipeline needs to be remembered as a command line.
 
 1. Clone, then open `project.godot` in Godot 4.7.2. The first open imports every texture,
    which takes a while (the map is big). `.godot/` is rebuilt locally and is git-ignored.
 2. Press Play: `scenes/overworld.tscn` is the main scene. On a fresh run the satellite crash
    intro plays first; any button skips it.
-3. You only need Python if you change art, maps or data (§6).
+3. You only need Python if you change art, sound, maps or data (§6): `make env`.
+4. The sound's source recordings are not in the repo (they are large and they are other
+   people's work). `make sources` downloads and checksums them into `assets/audio/sources/`.
+   You only need them to *regenerate* sound; the baked `assets/audio/*.wav` are committed.
 
 ---
 
 ## 3. Project map
 
 ```
+Makefile               the one entry point: generate, import, check, screenshot, listen
 project.godot          viewport 384x216, integer scaling, nearest filtering, pixel snapping
+.claude/
+  settings.json        permissions, and a hook that reminds you to regenerate
+  skills/              how to work here: art-pipeline, sound-pipeline, verify
 scenes/
   overworld.tscn       main scene: the red planet
   interior.tscn        inside the main base (storage / power room / oxygen room)
@@ -62,14 +74,18 @@ scripts/
   game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
   day_night.gd         DayNight: the clock, the light through the day, lights kept lit at night
   day_clock.gd         DayClock: the time panel (sky window, day number, part of the day) and the new-day title
+  audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.8)
+  world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
+  inventory_ui.gd      six-slot hotbar and paused backpack; draws existing sprites and PixelFont
   map_terrain.gd       MapTerrain: walkability, ground height, biome, world<->pixel projection
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
   multitool.gd         Multitool: equip, job picking (mine/gather/lift/fix) and their effects
   world_prop.gd        WorldProp: a loose thing the tool works on (rock, chunk, scrap, crate)
-  airlock_door.gd      AirlockDoor: "[E] ENTER/EXIT" prompt and the door cutscene, both ways
+  airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
+  repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter
   crash_site.gd        the satellite crash intro and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
@@ -86,19 +102,26 @@ shaders/
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
   crash_reveal         uncovers the untouched ground behind the crashing satellite
   dust_gusts           dithered wind-gust overlay
-tools/                 the art pipeline (Python): generates everything in assets/
+tools/                 the pipeline (Python): generates everything in assets/
   astronaut_sprite_gen.py   the astronaut and the multitool: SDF model, rig, every animation
   godot_spriteframes.py     astronaut.json -> astronaut_frames.tres (SpriteFrames)
   mars_map_gen.py           the overworld: terrain, biomes, domes, props, plants, all map data
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
+  sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
+  requirements.txt          what make env installs
   *_viewer.html             browser previews of the sprites and the map
+  wire_repair.html          browser companion to the native circuit panel
+data/repair_circuits.json   authored five-circuit sequences for power and oxygen machines
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
   maps/red_planet/          generated overworld: map, depth, walk, biome, light, fx, props, flora, anim, previews
   maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview
     machines/               the reactor and the oxygen generator as standalone sprites (+ machines.json, 4x previews)
+  audio/                    generated sound: *.wav, audio.json, viewer.html, SOURCES.md,
+                            CREDITS.md (ship this), preview.json
+  audio/sources/            the open-licence recordings, git-ignored (make sources)
 ```
 
 ---
@@ -126,6 +149,11 @@ Scripts must **read positions from this data** (door positions, LED pixels, crac
 so on). Never hard-code a map pixel position in a script. If you need one, the generator
 exports it.
 
+`base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
+(interaction position in world units), and `progress_px` (bar anchor in map pixels).
+`interior_gen.py` derives these from the actual machine model centres; its
+`--repair-metadata-only` option updates just this data using the existing projection origin.
+
 ### 4.2 Coordinates: one projection everywhere
 - **World**: X right, Y away from the camera, Z up, in *world units*. Gameplay lives here.
 - **Map pixels**: `screen = (origin_x + X / world_units_per_px, origin_y − (depth_to_px · Y + Z) · px_per_unit)`.
@@ -142,6 +170,7 @@ exports it.
 ### 4.3 Draw order, depth and y-sorting
 - **Overworld nodes, in draw order:** `Map` → `CrashSite` → `BiomeFX` → `DomeFX` → `Actors`
   (y-sorted: Player, props, doors) → `Multitool` → `WindFX` → `MapScreen`.
+  (`Ambience` sits in the tree between `Multitool` and `WindFX` but draws nothing; see §4.8.)
 - **Interior nodes, in draw order:** `Map` → `InteriorFX` → `Actors` → `Multitool`.
 - Anything that moves in front of or behind the pre-rendered scenery must use a depth shader
   with `sprite_depth` = world Y of its feet:
@@ -179,14 +208,23 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | run | Shift | right shoulder | player.gd |
 | jump (hold for higher) | Space | A | player.gd |
 | tool_toggle (take out / put away) | T | Y | multitool.gd |
-| tool_use (hold: mine, gather, fix; tap: lift / set down) | E | X | multitool.gd |
-| interact (doors) | E | X | airlock_door.gd |
+| tool_use (hold: mine, gather, fix; tap: lift / set down) | F | X | multitool.gd |
+| interact (doors) | F | X | airlock_door.gd |
+| toggle_inventory | E | Start | inventory_ui.gd |
+| hotbar select | 1-6 / mouse wheel / click | left shoulder cycles | inventory_ui.gd |
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
 
-E is shared: while a door's prompt is showing, the door sets `multitool.suppressed = true`,
-so E opens the door instead of using the tool. Anything else that wants E must use the same
-mechanism. Never bind a second meaning to E without it.
+F / gamepad X is shared: while a door's prompt is showing, the door sets
+`multitool.suppressed = true`, so it opens the door instead of using the tool.
+Inventory pauses the world and independently sets `multitool.inventory_suppressed`;
+after closing, F / X must be released before interactions resume. The inventory consumes
+modal input before map/camera handlers. Do not add another meaning to these buttons
+without the same suppression mechanism.
+Machine repairs use `multitool.repair_suppressed` independently, pause the world and consume
+modal input. F/X must be released after closing. On the board, arrows/WASD/d-pad select
+movable modules; Enter/Space/F/A turns clockwise, Q/left shoulder turns back, Esc/B closes.
+Mouse left/right click turns clockwise/back. Bolted modules and plates are skipped.
 
 ### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
@@ -195,6 +233,16 @@ mechanism. Never bind a second meaning to E without it.
   - `tool_out`: the multitool stays out across the airlock;
   - `clock`: game hours since the start (`DayNight` turns it into the day, hour and part of
     the day).
+  - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
+    quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
+    resources stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
+    `inventory_changed`. A full bag leaves gathered props in the world.
+  - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
+    their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
+    chunks. Generated JSON is unchanged. Saving to disk is not implemented.
+  - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
+    Each stores its current puzzle, countdown, circuit index and completed repair tasks.
+    Closing a panel or changing scenes preserves the attempt; leaving pauses its countdown.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -211,6 +259,51 @@ FX scripts draw procedurally in `_draw()`:
   machines (sparks, for example) is drawn as solid pixels in a `dn_unlit` layer, with only
   the halo additive.
 - Keep light and matter in separate nodes (see §4.4): smoke in one, the fire in it in another.
+
+### 4.8 Sound
+There is no music. There is the environment of the red planet and the sounds of working on it.
+
+**Sound is data.** `tools/sfx_gen.py` writes `assets/audio/*.wav` plus `audio.json`, and the
+`Audio` autoload plays what that file says. Which file, which bus, how loud, how far it
+carries, how much its pitch wanders per play, whether it loops, how long it fades: all of it
+is in the JSON. **Nothing about a sound is decided in GDScript.** Retuning the mix is a
+generator change, not a code change.
+
+| File | Contents |
+|---|---|
+| `assets/audio/*.wav` | 16-bit mono PCM at 22050 Hz. Looping ones carry a `smpl` chunk, which is how Godot knows where the loop is |
+| `assets/audio/audio.json` | bus levels, and per sound: its files (variants), bus, `gain_db`, `loop`, `seconds`, `pitch` range, `dist` (how far it is heard, map px), `fade`, and a `note` saying which recording it came from and why |
+| `assets/audio/SOURCES.md`, `CREDITS.md` | every source pack, author, licence, URL. **`CREDITS.md` must ship with the game**: some packs are CC BY |
+| `assets/audio/viewer.html` | listen to every sound, with its waveform, at the game's real levels |
+| `assets/audio/sources/` | the raw recordings. Git-ignored; `make sources` fetches and checksums them |
+
+Three ways to make a noise, all through the autoload:
+
+```gdscript
+Audio.play("rock_burst", screen_px)            # one-shot, positional (map pixels)
+Audio.play("ui_map_open")                      # one-shot, flat
+Audio.loop("beam_mine", "beam:mine", tip_px)   # held until release("beam:mine")
+Audio.bed("amb_ice", weight)                   # ambience, crossfaded 0..1
+```
+
+- Buses (`amb`, `sfx`, `ui`) are created **in code** in `Audio._ensure_buses()`, for the same
+  reason input actions are (§4.5). Don't add them to `project.godot` or a bus layout resource.
+- Positions are **map pixels**; the 2D listener is the active camera. A sound further away
+  than its `dist` is never started, so the comms dome's blinkers cost nothing from the base.
+- **Put the call where the event already is.** Whatever owns the state owns its sound:
+  `interior_fx.gd` plays `spark` where it spawns the sparks, `dome_fx.gd` ticks the beacon in
+  step with the strobe it draws, the rock's crack sounds where its frame changes, footsteps
+  come off the drawn gait. Never add a second timer that re-derives when something happens;
+  it will drift out of step with the picture.
+- Footsteps: contact is frame 0 and the middle frame of the walk/run cycle (the gait plants
+  the left foot at phase 0 and the right at 0.5 — see `foot_cycle` in
+  `astronaut_sprite_gen.py`), so they stay on the feet at any speed. The surface comes from
+  `player.step_source`, which the scene sets: the overworld reads the biome image, the
+  interior is always its tiled floor.
+- Leaving a scene: `Audio.enter_scene()` at the top of the scene's `_ready`, or a beam will
+  follow the astronaut through the airlock. Quitting: see §8.
+
+---
 
 ---
 
@@ -236,26 +329,41 @@ consts in the named files.
   - T plays an 18-frame equip animation: the device on the backpack unfolds into a red-and-gold
     gauntlet on the right forearm.
   - With the tool out, every animation has a `_tool` version.
-  - The tool **picks its job from the target in reach** (40 units). An icon over the nearest
+  - The tool **picks its job from the target in reach** (40 units). Use F / gamepad X.
+    An icon over the nearest
     target shows which job it will do:
 
     | Job | Colour | Target | How it works |
     |---|---|---|---|
-    | mine | orange `#ff8a3a` | ore rock | hold E for 1.6 s; the rock bursts into chunks |
-    | gather | teal `#4fe0c8` | ore chunk, scrap | hold E for 0.55 s; a spiral pulls it in |
-    | lift | violet `#b583ff` | crate | tap E to float it so it follows you; tap again to set it down |
-    | fix | cyan `#7fd8ff` | dead lamp | hold E for 2.4 s; the lamp flickers back on |
+    | mine | orange `#ff8a3a` | ore rock | hold F for 1.6 s; the rock bursts into chunks |
+    | gather | teal `#4fe0c8` | ore chunk, scrap | hold F for 0.55 s; a spiral pulls it into the backpack |
+    | lift | violet `#b583ff` | crate | tap F to float it so it follows you; tap again to set it down |
+    | fix | cyan `#7fd8ff` | dead lamp | hold F for 2.4 s; the lamp flickers back on |
 
-  - **There are no counters or inventory on screen. That is a decision (§9), not a gap.**
+  - Inventory now shows resource stack counts (§12); there are no health/resource bars.
+- **Inventory** (`inventory_ui.gd`): six-slot bottom hotbar; E / Start toggles the paused
+  24-slot backpack. Click two slots to swap, or arrows/d-pad and Enter/A to pick/place.
+  Esc/B cancels a pending swap first, then closes. 1-6/wheel/left shoulder select hotbar;
+  selecting the multitool equips it, selecting resources/empty slots holsters it.
+  T/Y remains available. Ore/scrap have no consume/crafting action yet. Crates remain
+  world objects handled by lift. Opening/closing without changing selection preserves
+  the existing tool state. Inventory is blocked during intro/door cutscenes or map pause.
+- **Machine repairs** (`scripts/repair/`): F/X near the power or O2 generator opens one
+  rotating-wire circuit. Each machine has five authored layouts; after 30 active seconds
+  without a solution it advances to the next, reshuffles and resets the timer. Bolted wires
+  conduct but stay fixed. A matching supply-to-output route completes wiring once (50%).
+  Local machine bars show overall progress. The future cracks task accounts for the other
+  50% through `GameState.repair_for(id).complete_task("cracks")`; the task and repaired
+  machine art are not implemented yet.
 - **Doors** (`airlock_door.gd`):
-  - Within 30 units, a `[E] ENTER` / `[E] EXIT` prompt shows.
-  - Pressing E starts a cutscene: the camera moves behind the astronaut, the warning lamp
+  - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
+  - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
     blinks, the door unseals and vents gas, the astronaut walks in, the door closes, and
     the screen fades.
 - **Intro** (`crash_site.gd`): the satellite crash-lands near the base, once per run, and any
   button skips it. Afterwards the wreck keeps smouldering.
 - **Map screen**: M toggles it. It pauses the game and shows where you are and what the camera
-  sees.
+  sees. Sound carries on while it is open (the `Audio` autoload always processes).
 - **Day and night** (`day_night.gd`, `day_clock.gd`):
   - A game day lasts **12 real minutes** (`day_minutes`). The game starts on **day 1 at 08:00**.
     The clock runs indoors too, and stops while the map screen is open.
@@ -267,6 +375,9 @@ consts in the named files.
   - The time panel sits top left, and a "DAY N" title comes up at dawn. It is hidden during the
     crash intro and comes in with "DAY 1" when it ends.
   - Time changes nothing in play yet (no sleep, no night dangers).
+- **Sound** (§4.8, §7.6): the three lands each have their own ambience, crossfaded by the land
+  you are standing in; the pools, spires, burning wreck and powered domes can be heard from
+  near them; everything you do makes a noise. No music.
 
 ---
 
@@ -276,7 +387,12 @@ consts in the named files.
 All art is **rendered by code**. Signed-distance-field (SDF) models are ray-marched straight
 at pixel resolution through the game's exact camera, then cel-shaded from hand-picked colour
 ramps, dithered, inner-lined and outlined. This is why everything matches. Do not import
-hand-drawn, AI-generated, downloaded or upscaled art into the game. If something new is needed,
+hand-drawn, AI-generated, downloaded or upscaled art into the game.
+
+This rule is about **art**. Sound is deliberately different: real recordings carry the weight
+of the physical world in a way synthesis does not, so the natural half of the soundtrack is
+open-licence field recordings and only the alien tech is generated. The consistency comes from
+one mastering chain instead (§4.8, §7.6). If something new is needed,
 **model it in the generator** with the existing primitives (`Sphere`, `Ellipsoid`,
 `RoundBox`, `RoundCone`, `Torus`, `Disc`, and the interior's `Cut` / `Either` for carving) and
 the existing renderer (`render_groups` / `render_sprite`).
@@ -289,6 +405,7 @@ the existing renderer (`render_groups` / `render_sprite`).
 | `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 3 minutes, several GB of RAM |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
 | `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | a few seconds |
+| `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
 
 **The generators share code.** `mars_map_gen.py` imports `astronaut_sprite_gen.py` (SDF
 primitives, ray-marcher, base palette), and `props_gen.py` and `interior_gen.py` import both.
@@ -311,6 +428,9 @@ before you run the game.
 The generators write the JSON keys that the scripts read. If you rename, remove or reshape a
 key, update **every** reader in the same change (search `scripts/` for the key). Keys that are
 waiting for a future feature are documented in §11. Don't remove them.
+
+`audio.json` is the same kind of contract: `scripts/audio.gd` is the only reader, and every
+field in it exists because something in the game asks for it (§4.8).
 
 ### 6.4 Recipes
 - **A new prop or machine:**
@@ -430,13 +550,40 @@ waiting for a future feature are documented in §11. Don't remove them.
 ### 7.5 UI and text
 - All text is `PixelFont` (3×5 glyphs): scale 1 for prompts, scale 2 for titles. Extend its
   glyph table if you need a letter; never use a vector font.
-- Prompts read `[E] LABEL`, in capitals.
+- Prompts read `[F] LABEL` for world interactions, in capitals; E opens the backpack.
 - Room titles fade in at the top of the screen on a dark translucent plate with a coral
   underline (`interior_fx.gd`). Reuse this look.
 - The **time panel** (top left) is the model for any panel: a dark translucent plate
   (`#120f1d`-ish at 84 %) with a 1 px `#22182c` edge, pixel-rounded corners, a faint top
   highlight, PixelFont text and the part of the day's colour as the accent.
 - No HUD clutter (see §9).
+
+### 7.6 Sound (the ear)
+The same rule as the eye: everything must sound as if one person made it.
+
+- **No music.** Not "no music yet": the planet is quiet, and that quiet is the point. What
+  fills it is wind, machinery, and the noise of your own work.
+- **Two layers, and the line between them is deliberate:**
+  - *recorded* — wind, snow underfoot, fire, water, stone, sheet metal, switches. Real
+    recordings, because nothing synthesised sounds like real snow. Open licences only (§10.2).
+  - *synthesised* — the multitool's beams and lens, the lamps, the crystal spires, the
+    beacons, the UI. Generated in `sfx_gen.py`, because a recording of Earth hardware sounds
+    like Earth hardware, and none of this is from Earth.
+- **One mastering chain.** Every sound, recorded or not, is resampled to mono 22050 Hz,
+  filtered, loudness-matched with `rms_to` and peak-limited by the same code. That is what
+  makes a field recording sit next to a synthesised beam. Do not bypass it.
+- 22050 Hz reaches 11 kHz. That is a choice, like the 384×216 viewport: it is all the wind,
+  grit and metal here need, and it keeps the whole soundtrack a few MB.
+- **Nothing is a note.** Struck things use inharmonic partials; the spires breathe one tone
+  that never resolves anywhere. The moment two sounds imply a key, it is music (see above).
+- **Quiet by default.** Ambience sits around -21 dBFS RMS, one-shots around -18, UI ticks
+  near the threshold of notice. A sound that makes you look at the mixer is too loud.
+- **Earth wildlife is not on this planet.** Several otherwise-perfect "forest" recordings are
+  full of birdsong and crickets; `--probe` measures onset rate in the 2-8 kHz band so you can
+  tell before you listen. The alien forest is a low drone plus synthesised voices instead.
+- Anything that happens on screen and matters should be audible, and anything audible should
+  be happening on screen. Sound is placed where the light is: the pools, spires and embers get
+  their positions by clustering the glow points the map generator already exports.
 
 ---
 
@@ -447,30 +594,66 @@ errors to the terminal). The scenes take test hooks after `--`; the full lists a
 headers of `overworld.gd` and `interior.gd`:
 
 ```
+make verify                        # import + both scenes headless, fails on any error/warning
+make shot ARGS="--spawn=-827,1440 --seconds=2"
+make sounds                        # listen to every sound at the game's real levels
+```
+
+Or by hand:
+
+```
 godot --headless --path . --import                                   # re-import after regenerating
-godot --headless --path . res://scenes/overworld.tscn --quit-after 300 -- --no-intro   # errors?
-godot --headless --path . res://scenes/interior.tscn --quit-after 300
+godot --headless --path . res://scenes/overworld.tscn --quit-after 20000 -- --no-intro --quit=4
+godot --headless --path . res://scenes/interior.tscn --quit-after 20000 -- --quit=4
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
 godot --path . res://scenes/overworld.tscn -- --no-intro --time=22 --capture=night.png   # check a change by night too
+godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
+godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
+godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
+node tools/test_wire_repair.cjs                                     # browser circuit model checks
+godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 ```
 
 Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
+- `--quit=SECONDS`, `--audio-debug` (both scenes)
 - overworld only: `--equip`, `--use`, `--face=DX,DY`, `--door`, `--intro` / `--no-intro`,
   `--zoom=L`, `--open-map`, `--debug`
-- interior only: `--arrive`, `--exit`
+- interior only: `--arrive`, `--exit`, `--repair=power|oxygen`,
+  `--repair-done=power|oxygen` (wiring credit for screenshots), `--repair-bars`
+  (ignore ambient F input during progress-bar captures)
+- repair panel: `--reduced-motion` disables turn and completion animation; receiving
+  power activates immediately. The browser follows `prefers-reduced-motion`.
 - both: `--time=HOUR` (e.g. `--time=22` for night), `--day=N`, `--day-speed=X` (time runs X
   times faster)
 
+**Quit with `--quit=SECONDS`, not with `--quit-after`.** `--quit-after` counts *frames*, and a
+headless frame can take under a millisecond, so it is unpredictable in wall-clock time and it
+ends the process behind the game's back. `--quit` runs for a real number of seconds and then
+awaits `Audio.quiet()` before quitting, because a sound still playing when the engine tears
+down is reported as a leaked playback (the mixer drops a stopped playback the next time it
+mixes, and during shutdown there is no next mix). Keep `--quit-after` as a high backstop in
+case a scene hangs — high enough that it cannot win the race. If you ever see
+`ObjectDB instances were leaked` together with `resources still in use`, that is this.
+
+**Sound has no screenshot.** Prove it twice:
+- `--audio-debug` prints every event as it plays (`[audio] rock_crack at (…) pitch=1.10`),
+  which shows the trigger fired, in the right order, in the right place. This is how an
+  automated run checks sound.
+- `make sounds` opens `assets/audio/viewer.html`: click a waveform to hear it, at the real
+  `gain_db` and bus levels. Looping sounds latch, so you can stack a land's bed with what
+  lives in it. Then say what you heard.
+
 **Definition of done:**
-1. Both scenes run headless with **no errors or warnings**.
+1. Both scenes run headless with **no errors or warnings** (`make check`).
 2. You captured screenshots of what you changed and **looked at them**, at 1:1 and zoomed in,
    **by day and by night** (`--time=12`, `--time=22`).
 3. Walk tests show the astronaut can reach everything they should, and nothing else.
-4. Previews and viewers (`assets/maps/red_planet/preview/`, `tools/*_viewer.html`) still look
-   right if your generator writes them.
+4. Any sound you touched fires in an `--audio-debug` run, and you listened to it in the viewer.
+5. Previews and viewers (`assets/maps/red_planet/preview/`, `assets/audio/viewer.html`,
+   `tools/*_viewer.html`) still look right if your generator writes them.
 
 ---
 
@@ -484,13 +667,17 @@ Useful hooks:
 - **Trails are not drawn on the ground**: they form where the plants thin out, and lamps line
   them.
 - The base starts dead and broken; it gets repaired through play.
-- **No counters, inventory numbers or HUD bars** for now. The one exception is the time
-  panel: the day number and the part of the day.
+- **No HUD bars**; inventory stack counts, a six-slot hotbar, local machine repair
+  progress bars and the time panel (day number and part of the day) are approved (§12).
 - **A day/night cycle** with four parts of the day; lights stay lit at night.
-- The multitool picks its job from the target. One button (E) uses it.
+- The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
   Each room has two different irregular holes, kept as data so they can be traced later.
+- **No music.** Sound is the environment and the work, nothing else (§7.6).
+- **Sound is data, not code**: every sound is declared in `sfx_gen.py` and read from
+  `audio.json`. The alien tech is synthesised; the natural world is recorded, under an open
+  licence, through one mastering chain (§4.8, §7.6).
 
 ---
 
@@ -518,6 +705,12 @@ Useful hooks:
   `.godot/` or `__pycache__/` (see `.gitignore`).
 - **Keep the folder `assets/` lowercase**, and match the case of every path exactly. Windows
   ignores case; Linux, and therefore other people's machines, does not.
+- **Sound sources are other people's work.** `assets/audio/sources/` is git-ignored: the repo
+  keeps the baked `*.wav`, and `PACKS` in `sfx_gen.py` records every source's author, licence,
+  URL and SHA-256 so `make sources` can fetch and verify them. Only **CC0 or CC BY** may go in.
+  A checksum mismatch stops the build on purpose: a pack whose contents changed is a pack whose
+  licence you have not read. `assets/audio/CREDITS.md` is generated from that table and lists
+  the CC BY packs; **the licence requires the game to ship it**.
 - Move or rename resources in Godot's FileSystem dock so references update, or update every
   `res://` path by hand.
 - Line endings are normalised by git. Don't reformat or convert whole files; keep diffs to
@@ -526,6 +719,11 @@ Useful hooks:
 ### 10.3 For AI agents specifically
 - Follow this file over your own habits. Match the surrounding code: its naming, comment
   density, typing and idioms.
+- `.claude/skills/` holds the procedures for the three things you will actually be doing:
+  `art-pipeline` (anything visual), `sound-pipeline` (anything audible), `verify` (proving it
+  works). Read the matching one before the first change of a task; this file is still the law.
+- `make help` is the list of everything the pipeline can do. Prefer it to hand-written command
+  lines, so a change to how the project builds only has to be made once.
 - Don't guess at APIs or data. Read the code and the JSON. Search for every reader before you
   change a data key or a public function.
 - Make the smallest change that does the job. No drive-by refactors, renames or
@@ -540,23 +738,35 @@ Useful hooks:
 ---
 
 ## 11. Current state and open threads
-- **The repair loop is not built yet.** The pieces are in place, waiting for it:
+- **The repair loop is partly implemented.** Wiring is playable; these pieces remain:
   - **Dome cracks to trace and fix:**
     - `red_planet_fx.json → cracks` has, per hole: room, id, shape, outline polygon, crack
       strokes, centre, world position, and patch image and position;
     - the images are in `assets/maps/red_planet/anim/cracks/`.
-  - **The power room circuit board** (shown but not interactive yet):
+  - **The power room cabinet art** remains the original generated asset:
     - `base_interior.json → fx.circuit_board` has `center`, `socket`, the 4 `corners`
       (map px) and `world`;
     - `interior_fx.gd` pulses the empty socket.
-  - **The reactor and the oxygen generator** are broken. How they get repaired is not
-    designed yet (§10.1).
+  - **Reactor/O2 wiring is implemented:** F/X, five circuits each, timed replacement,
+    session state, bolted wires and local progress bars. The native panel uses octagons,
+    detailed PCB housings, a blue-green recess and neon green power (owner-approved).
+    One circuit earns 50% repair; cracks and the fully repaired assets are still pending.
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
-- **Not built yet:** inventory or resources (deliberately hidden, see §9), interiors for the
-  nursery and comms domes, saving and loading (the clock would be saved with
-  `GameState.clock`), anything that depends on the time of day, sound and music.
+- **Inventory is implemented:** session backpack, resource stacks, quick access and slot
+  swaps. Resources are gathered through the existing tool; crafting/consumption is not
+  implemented. No new generated item art or map data keys.
+- **Sound is built** (§4.8, §7.6): ambience for the three lands and the dead base, positional
+  pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
+  the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel
+  and the UI. What is missing:
+  - no volume controls and nothing saved (there are no settings and no save file yet);
+  - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
+    the game is distributed (§10.2).
+- **Not built yet:** interiors for the nursery and comms domes, saving and loading (the clock
+  would be saved with `GameState.clock`), anything that depends on the time of day, music
+  (and there will not be any, §9).
 
 ---
 
@@ -584,3 +794,31 @@ Write one line per decision: date — decision (who approved it).
   night, a light round the astronaut. A time panel with a day counter (top left), the only HUD
   element (owner).
 - 2026-10-07 — No drawn paths: trails form where the forest thins out naturally (owner).
+- 2026-10-07 — Inventory feature request approves a visible six-slot hotbar, 24-slot
+  backpack and resource stack counts. E opens/closes inventory; existing world interactions
+  move to F (gamepad X unchanged). PixelFont/palette/generated sprites are reused; inventory
+  pauses gameplay. Ore/scrap are stored in GameState, persist through scenes, and can be
+  rearranged; no crafting or new resource-use jobs (owner's explicit inventory request).
+- 2026-10-07 — Power/O2 generators get F/X circuit repair and local repair-progress bars.
+  Five circuits per machine; one successful circuit completes wiring, with a new circuit
+  after 30 active seconds if unsolved. Wiring earns 50%; cracks and fixed machine art come
+  later. The panel uses minimal copy, a blue-green circuit-board palette and neon green
+  connected wires. Octagonal detailed housings replace hexagons; fixed wires use bolts
+  instead of padlocks (owner's explicit repair integration and octagon requests).
+- 2026-10-07 — Enlarge the circuit terminals into a charged capacitor bank and receiving
+  relay. A single bright pulse follows the player's actual connected route from source to
+  receiver after solving; the relay closes and status LEDs light on arrival. The effect
+  is skippable and does not delay repair credit (owner's terminal/animation request).
+- 2026-10-07 — The pipeline gets a `Makefile`, a pinned Python env (`make env`, uv + `.venv`,
+  `tools/requirements.txt`) and `.claude/` skills for working here (owner, requested).
+- 2026-10-07 — Sound: ambience and interaction sounds, **no music**. Built by
+  `tools/sfx_gen.py` into `assets/audio/` + `audio.json`, played by the `Audio` autoload.
+  Hybrid by decision: open-licence field recordings (CC0 and CC BY) for the natural world,
+  synthesis for the alien tech, both through one mastering chain. Source packs are fetched and
+  checksummed rather than committed; `CREDITS.md` must ship (owner).
+- 2026-10-07 — Scenes take `--quit=SECONDS`, which stops the sound before quitting, and
+  `--audio-debug`, which prints every sound event. `make check` uses them, and runs the
+  inventory and repair suites too (owner, requested).
+- 2026-10-07 — The backpack and the circuit panel get sound: a real buckle for the pack, a
+  real metal click per module turned, and synthesis for the screens and the charge reaching
+  the relay. Everything that ends the process goes through `Audio.quit()` (owner, requested).
