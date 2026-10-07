@@ -27,6 +27,8 @@ var _hover := -1
 var _keyboard := false
 var _rotations: Dictionary = {}
 var _notice_time := 0.0
+## Waiting for the charge to reach the relay, so the repair lands with it.
+var _arrival := false
 var _flow: CircuitPowerFlow
 var _completion_seen := false
 ## Native accessibility hook; the browser also follows the OS reduced-motion preference.
@@ -52,6 +54,7 @@ func open(state: MachineRepair) -> void:
 	opened = true
 	visible = true
 	_keyboard = false
+	Audio.play("ui_panel_open")
 	_switched()
 	_notice_time = 0.0
 	_canvas.queue_redraw()
@@ -65,6 +68,10 @@ func close() -> void:
 	_flow = null
 	opened = false
 	visible = false
+	if _arrival:                           # closed before the charge landed: credit it anyway,
+		_arrival = false                   # the repair is done whether or not it was watched
+		Audio.play("repair_done")
+	Audio.play("ui_panel_close")
 	closed.emit()
 
 
@@ -85,8 +92,12 @@ func _changed() -> void:
 	if not repair.puzzle.solved or _completion_seen:
 		return
 	_completion_seen = true
+	Audio.play("wire_connect")
 	if reduced_motion:
+		Audio.play("repair_done")          # no pulse to wait for
 		return
+	Audio.play("power_pulse")
+	_arrival = true                        # repair_done lands when the charge reaches the relay
 	var route := PackedVector2Array([_terminal_center(true) + Vector2(5, 0)])
 	for index in repair.puzzle.connected_path:
 		route.append(cell_center(index))
@@ -104,6 +115,9 @@ func _process(delta: float) -> void:
 	repair.advance(delta)
 	if _flow != null:
 		_flow.advance(delta)
+		if _arrival and _flow.arrived():
+			_arrival = false
+			Audio.play("repair_done")
 	_notice_time = maxf(0.0, _notice_time - delta)
 	for index in _rotations.keys():
 		_rotations[index][1] -= delta
@@ -147,6 +161,7 @@ func _input(event: InputEvent) -> void:
 
 func _turn(index: int, clockwise := true) -> void:
 	if repair.rotate(index, clockwise):
+		Audio.play("wire_turn")
 		var offset := -PI / 2.0 if clockwise else PI / 2.0
 		if _rotations.has(index):
 			offset += _rotation_angle(index)
@@ -162,6 +177,7 @@ func _rotation_angle(index: int) -> float:
 
 func _move_focus(direction: String) -> void:
 	_keyboard = true
+	Audio.play("ui_slot")
 	var p := repair.puzzle
 	var step: Vector2i = {"left": Vector2i.LEFT, "right": Vector2i.RIGHT, "up": Vector2i.UP, "down": Vector2i.DOWN}[direction]
 	var at := Vector2i(_focus % p.cols, _focus / p.cols)

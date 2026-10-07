@@ -1,0 +1,5 @@
+# The art and sound generators in tools/ (see AGENTS.md section 2).
+# make env  installs these into .venv with uv.
+numpy>=2.4
+pillow>=12.3
+scipy>=1.17

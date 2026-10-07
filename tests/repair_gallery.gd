@@ -42,4 +42,4 @@ func _ready() -> void:
 		get_viewport().get_texture().get_image().save_png(out.path_join(machine_id + "-connected.png"))
 		room.repairs.panel.close()
 	room.queue_free()
-	get_tree().quit()
+	await Audio.quit()

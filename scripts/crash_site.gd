@@ -154,6 +154,7 @@ func _process(delta: float) -> void:
 				_sat_pos = _sky
 				_sat_last = _sky
 		State.FALL:
+			Audio.loop("crash_roar", "crash", _sat_pos)
 			var k := clampf(_st / fall_time, 0.0, 1.0)
 			var e := k * k * (0.4 + 0.6 * k)                       # gathering speed
 			_sat_pos = _sky.lerp(_bend, e).lerp(_bend.lerp(_touch, e), e)
@@ -161,9 +162,12 @@ func _process(delta: float) -> void:
 			_trail()
 			if k >= 1.0:
 				_enter(State.SKID)
+				Audio.release("crash")
+				Audio.play("debris", _touch, 0.9, -2.0)
 				_camera.shake(2.5, 0.4)
 				_dust_burst(_touch, 10, 14.0, 50.0)
 		State.SKID:
+			Audio.loop("crash_skid", "skid", _sat_pos)
 			var k := clampf(_st / skid_time, 0.0, 1.0)
 			var e := 1.0 - pow(1.0 - k, 2.2)                       # ploughing to a stop
 			_sat_pos = _touch.lerp(_rest, e)
@@ -176,6 +180,8 @@ func _process(delta: float) -> void:
 			if k >= 1.0:
 				_land(true)
 		State.SETTLE:
+			if _st < delta * 2.0:
+				Audio.play("debris", _rest, 1.0, -4.0)
 			_smoulder = clampf(_st / 1.6, 0.0, 1.0)
 			_biome.embers = _smoulder
 			if _st >= settle_time:
@@ -203,9 +209,12 @@ func _land(dramatic: bool) -> void:
 	_sat.visible = false
 	_before.visible = false
 	_reveal.set_shader_parameter("front", -1.0)
+	Audio.release("crash")
+	Audio.release("skid")
 	if dramatic:
 		_flash = 1.0
 		_ring = 0.0
+		Audio.play("crash_impact", _rest)
 		_camera.shake(5.0, 0.8)
 		_dust_burst(_rest, 34, 30.0, 95.0)
 		for i in 22:

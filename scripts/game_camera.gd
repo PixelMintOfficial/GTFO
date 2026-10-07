@@ -83,6 +83,7 @@ func set_level(i: int) -> void:
 	if i == level:
 		return
 	level = i
+	Audio.play("ui_zoom")
 	if _tween != null:
 		_tween.kill()
 	_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)

@@ -12,7 +12,7 @@ func _check(condition: bool, label: String) -> void:
 	if not condition:
 		_failures += 1
 		push_error("INVENTORY TEST: " + label)
-		get_tree().quit(1)
+		get_tree().quit(1)          # fail fast; teardown noise does not matter on a failed run
 
 
 func _key(code: int, pressed := true, echo := false) -> void:
@@ -240,4 +240,4 @@ func _ready() -> void:
 	var returned_tool: Multitool = returned.get_node("Multitool")
 	_check(GameState.removed_props.size() == removed_count and returned_tool._props.size() == prop_count, "world ledger reconstructs chunks without duplicates")
 	print("INVENTORY TESTS: %d checks, %d failures" % [_checks, _failures])
-	get_tree().quit(0 if _failures == 0 else 1)
+	await Audio.quit(0 if _failures == 0 else 1)

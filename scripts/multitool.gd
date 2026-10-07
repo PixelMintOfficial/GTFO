@@ -157,6 +157,7 @@ func _process(delta: float) -> void:
 	var lit := _player.tool_lit()
 	if lit and not _was_lit and _player.tool_state == Player.Tool.EQUIPPING and _player.tool_tip().z > 0.5:
 		var tp := _tip()                                 # the lens comes alive
+		Audio.play("tool_lens", tp)
 		_lens_flash = 1.0
 		_rings.append([tp, 0.0, 0.35, IDLE_LENS, 9.0])
 		for i in 8:
@@ -183,7 +184,10 @@ func _process(delta: float) -> void:
 			_carry(delta)
 	else:
 		if not _working:
+			var was: Variant = _target
 			_target = _find_target() if can else null
+			if _target != null and not is_same(_target, was):
+				Audio.play("tool_target")                # the job icon appearing
 		if hold and _target != null and _target["job"] != "lift":
 			_work(delta)
 		else:
@@ -277,11 +281,15 @@ func _work(delta: float) -> void:
 	var job: String = _target["job"]
 	_player.work_target = _target["world"]
 	var tp := _tip()
+	Audio.loop("beam_" + job, "beam:" + job, tp)
 	match job:
 		"mine":
 			var rock: WorldProp = _target
 			rock.progress = minf(1.0, rock.progress + delta / TIMES["mine"])
-			rock.sprite.frame = mini(3, int(rock.progress * 4.0))
+			var stage := mini(3, int(rock.progress * 4.0))
+			if stage != rock.sprite.frame:                # a new crack opening in the rock
+				Audio.play("rock_crack", rock.center_px(), 1.0, -3.0 + 2.0 * stage)
+			rock.sprite.frame = stage
 			rock.sprite.modulate = Color.WHITE.lerp(Color(1.3, 0.92, 0.78), rock.progress * 0.7)
 			_hit = rock.center_px() + Vector2(randf_range(-2.5, 2.5), randf_range(-2.0, 2.0)).round()
 			var away := (_hit - tp).normalized()
@@ -324,6 +332,8 @@ func _work(delta: float) -> void:
 			if l["progress"] >= 1.0:
 				l["lit"] = true
 				l["t"] = 0.0
+				Audio.play("lamp_on", l["head"])
+				Audio.loop("amb_lamp", "lamp:%d" % _lamps.find(l), l["head"])
 				_rings.append([l["head"], 0.0, 0.45, LAMP_WARM, 16.0])
 				for i in 10:
 					var a2 := TAU * i / 10.0
@@ -335,6 +345,8 @@ func _work(delta: float) -> void:
 func _stop_work() -> void:
 	_working = false
 	_player.work_target = null
+	for job in ["mine", "gather", "fix"]:
+		Audio.release("beam:" + job)
 
 
 ## UI cancels an active job; selecting away from the tool also sets down a lifted crate.
@@ -347,6 +359,7 @@ func cancel_work() -> void:
 
 func _burst_rock(rock: WorldProp) -> void:
 	var c := rock.center_px()
+	Audio.play("rock_burst", c)
 	_player.camera.shake(2.6, 0.4)
 	_rings.append([c, 0.0, 0.45, COLORS["mine"], 24.0])
 	_lens_flash = 0.6
@@ -382,6 +395,8 @@ func _pick_up(crate: WorldProp) -> void:
 	_lifted = crate
 	_lift_t = 0.0
 	_target = null
+	Audio.play("lift_grab", crate.center_px())
+	Audio.loop("lift_loop", "lift", crate.center_px())
 	_rings.append([crate.center_px(), 0.0, 0.4, COLORS["lift"], 12.0])
 
 
@@ -394,6 +409,7 @@ func _carry(delta: float) -> void:
 	if _terrain.surface(w) != MapTerrain.Surface.SOLID:
 		_lifted.place(w)
 	_lifted.set_lift(LIFT_PX * k + sin(_t * 3.2) * 1.4 * k)
+	Audio.loop("lift_loop", "lift", _lifted.center_px())
 	if randf() < 10.0 * delta:
 		var c := _lifted.global_position + Vector2(randf_range(-6, 6), -_lifted.lift + randf_range(-1, 2))
 		_parts.append([c, Vector2(randf_range(-3, 3), randf_range(8, 16)), 0.0, 0.7, COLORS["lift"], 1, 0.0, 3])
@@ -402,6 +418,7 @@ func _carry(delta: float) -> void:
 func _drop() -> void:
 	var c := _lifted
 	_lifted = null
+	Audio.release("lift")
 	var to := c.world - _player.world_pos
 	if to.length() < c.radius + 4.0:                     # never on top of the astronaut
 		c.place(_player.world_pos + to.normalized() * (c.radius + 4.0) if to.length() > 0.01
@@ -428,6 +445,7 @@ func _step_effects(delta: float) -> void:
 		p.position = (z[1] as Vector2).lerp(Vector2(tp.x, tp.y) + Vector2(0, p.lift), e)
 		p.scale = Vector2.ONE * lerpf(0.7, 0.08, e)
 		if z[2] >= 1.0:
+			Audio.play("gather_pop", Vector2(tp.x, tp.y))
 			_rings.append([Vector2(tp.x, tp.y), 0.0, 0.3, COLORS["gather"], 7.0])
 			for k in 6:
 				var a := TAU * k / 6.0
@@ -448,6 +466,7 @@ func _step_effects(delta: float) -> void:
 		p.set_lift(sin(PI * t) * 16.0 * (1.0 - 0.3 * t))
 		if h[3] >= 1.0:
 			p.set_lift(0.0)
+			Audio.play("debris", p.global_position, 1.15, -9.0)
 			_puff(p.global_position, 4)
 			_hops.remove_at(i)
 			continue
@@ -461,6 +480,7 @@ func _step_effects(delta: float) -> void:
 		c.set_lift(dr[1] * (1.0 - t2 * t2))
 		if dr[2] >= 1.0:
 			c.set_lift(0.0)
+			Audio.play("lift_drop", c.global_position)
 			_puff(c.global_position, 8)
 			_player.camera.shake(1.0, 0.15)
 			_dropping.remove_at(i)

@@ -7,6 +7,8 @@ extends Node2D
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ## --repair=power|oxygen opens that machine's circuit; --repair-done marks wiring for captures.
 ## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
+## --audio-debug (print every sound as it plays)
+## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
 
 const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
 const DEPTH_MAP: Texture2D = preload("res://assets/maps/base_interior/base_interior_depth.png")
@@ -21,12 +23,16 @@ var repairs: MachineRepairs
 
 
 func _ready() -> void:
+	Audio.debug = _args().has("audio-debug")
+	Audio.enter_scene()
+	Audio.bed("amb_interior", 1.0)             # wind through the smashed windows, from inside
 	terrain = MapTerrain.new(MAP_JSON)
 	player.setup(terrain, DEPTH_MAP)
 	player.camera.zoom_locked = true                     # no zooming out indoors
 	player.camera.setup(player, $Map, terrain.max_view_px)
 	multitool.setup("", player, terrain, $Actors, DEPTH_MAP)
 	fx.setup(MAP_JSON, player)
+	player.step_source = func() -> String: return "step_metal"
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
 	door = AirlockDoor.new()
 	$Actors.add_child(door)
@@ -61,7 +67,17 @@ static func _args() -> Dictionary:
 	return args
 
 
+## Quit after a fixed number of seconds, stopping the sound first: anything still playing when
+## the engine tears down is reported as a leaked playback. Prefer this to --quit-after, which
+## counts frames and so depends on how fast the machine runs.
+func _quit_after(seconds: float) -> void:
+	await get_tree().create_timer(seconds).timeout
+	await Audio.quit()
+
+
 func _run_test_hooks(args: Dictionary) -> void:
+	if args.has("quit"):
+		_quit_after(float(args["quit"]))
 	if args.has("repair-bars"):
 		repairs.set_process_unhandled_input(false)
 	if args.has("repair-done"):
@@ -90,4 +106,4 @@ func _run_test_hooks(args: Dictionary) -> void:
 		get_viewport().get_texture().get_image().save_png(path if count == 1 else path.get_basename() + "_%d.png" % i)
 		if i < count - 1:
 			await get_tree().create_timer(gap).timeout
-	get_tree().quit()
+	await Audio.quit()

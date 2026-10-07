@@ -245,4 +245,4 @@ func _ready() -> void:
 	_check(GameState.repair_for("power") == power and GameState.repair_for("oxygen") == oxygen, "repairs persist across scene reload")
 	room.queue_free()
 	print("Repair: ", _checks, " checks; ", _failures, " failures; 1000 shuffled native circuits.")
-	get_tree().quit(1 if _failures else 0)
+	await Audio.quit(1 if _failures else 0)

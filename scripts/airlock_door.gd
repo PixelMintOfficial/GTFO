@@ -42,6 +42,8 @@ var _frames := 12
 var _st := 0.0
 var _t := 0.0
 var _prompt := false
+var _was_prompt := false
+var _lamp_on := false
 var _puffs: Array = []          # [pos, vel, r, growth, age, life, drag]
 var _glints: Array = []         # [pos, vel, age, life]
 var _air: Node2D
@@ -109,6 +111,7 @@ func arrive() -> void:
 	camera.focus_override = _focus()
 	camera.snap_to(_focus())
 	camera.set_level(0)
+	Audio.play("door_vent", _sound_at(), 0.9, -4.0)
 	_burst(10)
 
 
@@ -120,6 +123,9 @@ func _process(delta: float) -> void:
 	match state:
 		State.IDLE:
 			_prompt = _in_reach()
+			if _prompt and not _was_prompt:
+				Audio.play("door_prompt")
+			_was_prompt = _prompt
 			if multitool != null:
 				multitool.suppressed = _prompt
 			if _prompt and not multitool.inventory_suppressed and Input.is_action_just_pressed("interact"):
@@ -132,17 +138,21 @@ func _process(delta: float) -> void:
 			if _st > 0.6:
 				sprite.visible = true
 				sprite.frame = 0
+				Audio.play("door_unseal", _sound_at())
+				Audio.play("door_vent", _sound_at())
 				_burst(28)
 				camera.shake(1.4, 0.3)
 				_go(State.OPEN)
 		State.OPEN:
 			var k := clampf(_st / 0.75, 0.0, 1.0)
+			Audio.loop("door_slide", "door", _sound_at())
 			sprite.frame = mini(_frames - 1, int(k * (_frames - 1) + 0.5))
 			if randf() < 40.0 * delta:
 				_burst(2)
 			if k >= 1.0:
 				_go(State.HOLD)
 		State.HOLD:
+			Audio.release("door")
 			if randf() < 10.0 * delta:
 				_burst(1)
 			if _st > 0.35:
@@ -157,8 +167,11 @@ func _process(delta: float) -> void:
 				_go(State.CLOSE)
 		State.CLOSE:
 			var k := clampf(_st / 0.6, 0.0, 1.0)
+			Audio.loop("door_slide", "door", _sound_at())
 			sprite.frame = mini(_frames - 1, int((1.0 - k) * (_frames - 1) + 0.5))
 			if k >= 1.0:
+				Audio.release("door")
+				Audio.play("door_close", _sound_at())
 				_burst(5)
 				camera.shake(1.0, 0.15)
 				_go(State.FADE_OUT)
@@ -184,17 +197,35 @@ func _process(delta: float) -> void:
 				_go(State.CLOSE_OUT)
 		State.CLOSE_OUT:
 			var k := clampf(_st / 0.6, 0.0, 1.0)
+			Audio.loop("door_slide", "door", _sound_at())
 			sprite.frame = mini(_frames - 1, int((1.0 - k) * (_frames - 1) + 0.5))
 			if k >= 1.0:
 				sprite.visible = false
+				Audio.release("door")
+				Audio.play("door_close", _sound_at())
 				_burst(4)
 				player.puppet = false
 				player.controls_enabled = true
 				camera.release_focus()
 				state = State.IDLE
 				arrived.emit()
+	_tick_lamp()
 	_update_gas(delta)
 	_air.queue_redraw()
+
+
+## Where the door's sounds come from: the foot of the door, in map pixels.
+func _sound_at() -> Vector2:
+	return terrain.to_screen(world, terrain.height_at(world)).round()
+
+
+## The amber lamp blinks on the same schedule _draw_air() draws it on; tick with it.
+func _tick_lamp() -> void:
+	var working := state != State.IDLE and state != State.APPROACH
+	var on := working and fmod(_t, 0.5) < 0.3
+	if on and not _lamp_on:
+		Audio.play("door_lamp", lamp)
+	_lamp_on = on
 
 
 func _start() -> void:
