@@ -10,3 +10,14 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# The Python environment for the generators in tools/ (make env rebuilds it)
+.venv/
+
+# Screenshots from test runs (make shot)
+/shots/
+
+# The sound generator's source recordings: other people's work, ~100 MB, fetched on demand
+# by `make sources` (checksums are in tools/sfx_gen.py). The baked assets/audio/*.wav are
+# what the game ships.
+/assets/audio/sources/
