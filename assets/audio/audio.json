@@ -659,6 +659,148 @@
    "note": "Real rock falling: what comes down after the impact.",
    "group": "The satellite crash"
   },
+  "ui_bag_open": {
+   "files": [
+    "ui_bag_open.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -14.0,
+   "loop": false,
+   "seconds": 0.27,
+   "note": "rubberduck keys_01: real buckle and strap metal. The backpack is a thing you open, not a menu that appears.",
+   "group": "The backpack"
+  },
+  "ui_bag_close": {
+   "files": [
+    "ui_bag_close.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -15.0,
+   "loop": false,
+   "seconds": 0.286,
+   "note": "The same buckle, shorter and duller: closing it.",
+   "group": "The backpack"
+  },
+  "ui_slot": {
+   "files": [
+    "ui_slot.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -21.0,
+   "loop": false,
+   "seconds": 0.066,
+   "pitch": [
+    0.97,
+    1.05
+   ],
+   "note": "Moving along the hotbar. Near-threshold: it happens constantly.",
+   "group": "The backpack"
+  },
+  "ui_pick": {
+   "files": [
+    "ui_pick.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -16.0,
+   "loop": false,
+   "seconds": 0.14,
+   "note": "Lifting an item out of a slot.",
+   "group": "The backpack"
+  },
+  "ui_place": {
+   "files": [
+    "ui_place.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -16.0,
+   "loop": false,
+   "seconds": 0.16,
+   "note": "Putting it back, with a real handling tick so it has an object in it.",
+   "group": "The backpack"
+  },
+  "ui_deny": {
+   "files": [
+    "ui_deny.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -14.0,
+   "loop": false,
+   "seconds": 0.34,
+   "note": "The backpack is full - the one failure the player meets regularly, so it says no without scolding.",
+   "group": "The backpack"
+  },
+  "ui_panel_open": {
+   "files": [
+    "ui_panel_open.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -11.0,
+   "loop": false,
+   "seconds": 0.6,
+   "note": "A dead service panel coming alive: a real latch, then a synthesised screen finding its feet.",
+   "group": "The circuit panel"
+  },
+  "ui_panel_close": {
+   "files": [
+    "ui_panel_close.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.4,
+   "note": "The screen going back to sleep.",
+   "group": "The circuit panel"
+  },
+  "wire_turn": {
+   "files": [
+    "wire_turn_0.wav",
+    "wire_turn_1.wav",
+    "wire_turn_2.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -17.0,
+   "loop": false,
+   "seconds": 0.18,
+   "pitch": [
+    0.94,
+    1.08
+   ],
+   "note": "Kenney impactMetal_light (centroid 1684 Hz), cut short: one module clicking round a quarter turn. Three variants and a pitch spread, because solving a board is dozens of these.",
+   "group": "The circuit panel"
+  },
+  "wire_connect": {
+   "files": [
+    "wire_connect.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -11.0,
+   "loop": false,
+   "seconds": 0.5,
+   "note": "The circuit completing.",
+   "group": "The circuit panel"
+  },
+  "power_pulse": {
+   "files": [
+    "power_pulse.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 0.75,
+   "note": "The charge running the solved route to the relay, timed to the pulse the panel draws.",
+   "group": "The circuit panel"
+  },
+  "repair_done": {
+   "files": [
+    "repair_done.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 1.096,
+   "note": "A machine's wiring finished: the warmth of lamp_on, because it is the same feeling - something here works again.",
+   "group": "The circuit panel"
+  },
   "ui_map_open": {
    "files": [
     "ui_map_open.wav"

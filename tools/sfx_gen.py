@@ -816,6 +816,92 @@ def syn_servo(name):
     return run(body, [bp(60, 5200), rms_to(-20.0)])
 
 
+def syn_slot(name):
+    """Moving along the hotbar: the smallest possible confirmation, high and dry."""
+    sec = 0.07
+    out = sine(sec, 2100.0) * dec(sec, 0.012) + 0.3 * sine(sec, 3150.0) * dec(sec, 0.007)
+    return run(out, [hp(900), norm(-14.0)])
+
+
+def syn_pick(name):
+    """Lifting an item out of a slot: a short rise, as if it came away cleanly."""
+    sec = 0.14
+    out = 0.7 * sweep(sec, 780.0, 1560.0, 1.3) * ramp(sec, [(0, 0), (0.15, 1.0), (1, 0.0)])
+    out += 0.25 * sine(sec, 2340.0) * dec(sec, 0.03)
+    return run(out, [hp(500), norm(-11.0)])
+
+
+def syn_place(name):
+    """Putting it down again: the same shape, falling."""
+    sec = 0.16
+    out = 0.7 * sweep(sec, 1400.0, 640.0, 0.8) * ramp(sec, [(0, 0), (0.1, 1.0), (1, 0.0)])
+    out += 0.3 * sine(sec, 430.0) * dec(sec, 0.06)
+    return run(out, [hp(300), norm(-11.0)])
+
+
+def syn_deny(name):
+    """The backpack is full. Two flat low notes: unmistakably "no", never harsh - the player
+    has not done anything wrong, they are just out of room."""
+    sec = 0.34
+    out = np.zeros(_ns(sec))
+    for at in (0.0, 0.14):
+        buzz = (0.6 * sine(0.12, 196.0) + 0.3 * sine(0.12, 148.0)) * dec(0.12, 0.045)
+        _add(out, buzz, at)
+    return run(out, [lp(2600), norm(-12.0)])
+
+
+def syn_panel_on(name):
+    """A dead service panel coming alive: contact, then the screen finding its feet."""
+    rng = seeded(name)
+    sec = 0.6
+    out = 0.35 * sweep(sec, 60.0, 220.0, 1.8) * ramp(sec, [(0, 0), (0.1, 1.0), (0.6, 0.7), (1, 0.2)])
+    out += 0.3 * sine(sec, 440.0) * ramp(sec, [(0, 0), (0.25, 0.0), (0.35, 0.9), (1, 0.35)])
+    out += 0.2 * run(noise(sec, rng), [bp(1800, 7000)]) * ramp(sec, [(0, 0), (0.3, 0.5), (1, 0.0)])
+    _add(out, 0.5 * modes(0.2, [820.0, 1310.0], [0.05, 0.03]), 0.3)
+    return run(out, [hp(70), lp(8000), norm(-9.0)])
+
+
+def syn_panel_off(name):
+    """And going back to sleep."""
+    sec = 0.4
+    out = 0.5 * sweep(sec, 420.0, 90.0, 0.7) * ramp(sec, [(0, 0.9), (1, 0.0)])
+    out += 0.2 * sine(sec, 220.0) * dec(sec, 0.1)
+    return run(out, [lp(5000), norm(-12.0)])
+
+
+def syn_connect(name):
+    """A circuit completing: two tones a fifth apart, the second arriving as the first ends.
+    The only moment in the game that is allowed to sound like good news."""
+    sec = 0.5
+    out = 0.55 * sine(sec, 784.0) * dec(sec, 0.13)
+    _add(out, 0.45 * sine(0.4, 1175.0) * dec(0.4, 0.11), 0.07)
+    _add(out, 0.2 * sine(0.3, 1568.0) * dec(0.3, 0.07), 0.13)
+    out += 0.15 * sweep(sec, 300.0, 900.0, 1.5) * dec(sec, 0.06)
+    return run(out, [hp(250), norm(-9.0)])
+
+
+def syn_pulse(name):
+    """The charge running from the capacitor bank to the relay: a surge that travels, then
+    arrives. Matches the single bright pulse the panel draws along the solved route."""
+    rng = seeded(name)
+    sec = 0.75
+    out = 0.5 * sweep(sec, 90.0, 520.0, 2.0) * ramp(sec, [(0, 0), (0.08, 0.8), (0.75, 1.0), (1, 0.0)])
+    out += 0.35 * run(noise(sec, rng), [bp(1200, 8000)]) * ramp(sec, [(0, 0), (0.1, 0.4), (0.7, 0.7), (1, 0.0)])
+    _add(out, 0.6 * modes(0.3, [392.0, 588.0, 988.0], [0.1, 0.07, 0.04], [1.0, 0.6, 0.3]), 0.62)
+    return run(out, [hp(60), lp(9000), norm(-7.0)])
+
+
+def syn_repair_done(name):
+    """A machine's wiring finished: the same warmth as a lamp coming back on, because it is
+    the same feeling - something on this outpost works again."""
+    sec = 1.1
+    hum = 0.5 * sine(sec, 110.0) + 0.25 * sine(sec, 220.0) + 0.12 * sine(sec, 330.0)
+    out = hum * ramp(sec, [(0, 0), (0.1, 0.9), (0.35, 0.75), (1, 0.0)])
+    _add(out, 0.4 * sine(0.6, 659.0) * dec(0.6, 0.18), 0.05)
+    _add(out, 0.3 * sine(0.5, 988.0) * dec(0.5, 0.14), 0.16)
+    return run(out, [hp(80), lp(6500), norm(-8.0)])
+
+
 def _add(dst, src, at_sec):
     """Mix src into dst starting at at_sec (clipped to dst)."""
     i = _ns(at_sec) if at_sec > 0 else 0
@@ -1091,6 +1177,56 @@ RECIPES = {
         chain=[trim(), hp(80), lp(8500), fade(0.002, 0.15), rms_to(-20.0), declick()],
         note='Real rock falling: what comes down after the impact.'),
 
+    # ---------------------------------------------------------------- the backpack
+    'ui_bag_open': dict(
+        bus='ui', gain_db=-14.0,
+        take=('oga_rubberduck_metalwood', 'keys_01.ogg'),
+        chain=[trim(), head(0.45), hp(220), lp(7500), env([(0, 0), (0.03, 1.0), (1, 0.0)]),
+               rms_to(-20.0), declick()],
+        note='rubberduck keys_01: real buckle and strap metal. The backpack is a thing you '
+             'open, not a menu that appears.'),
+    'ui_bag_close': dict(
+        bus='ui', gain_db=-15.0,
+        take=('oga_rubberduck_metalwood', 'keys_04.ogg'),
+        chain=[trim(), head(0.35), hp(220), lp(6000), env([(0, 0), (0.03, 1.0), (1, 0.0)]),
+               rms_to(-21.0), declick()],
+        note='The same buckle, shorter and duller: closing it.'),
+    'ui_slot': dict(bus='ui', gain_db=-21.0, pitch=(0.97, 1.05), synth=syn_slot,
+                    note='Moving along the hotbar. Near-threshold: it happens constantly.'),
+    'ui_pick': dict(bus='ui', gain_db=-16.0, synth=syn_pick,
+                    note='Lifting an item out of a slot.'),
+    'ui_place': dict(bus='ui', gain_db=-16.0, synth=syn_place,
+                     layer=[('oga_rubberduck_sfx100v2', 'sfx100v2_items_01.ogg', -16.0,
+                             [trim(), hp(1500), head(0.12)])],
+                     note='Putting it back, with a real handling tick so it has an object in it.'),
+    'ui_deny': dict(bus='ui', gain_db=-14.0, synth=syn_deny,
+                    note='The backpack is full - the one failure the player meets regularly, '
+                         'so it says no without scolding.'),
+
+    # ---------------------------------------------------------------- the circuit panel
+    'ui_panel_open': dict(
+        bus='ui', gain_db=-11.0, synth=syn_panel_on,
+        layer=[('oga_rubberduck_metalwood', 'lock_open_01.ogg', -13.0, [trim(), lp(5000), head(0.4)])],
+        note='A dead service panel coming alive: a real latch, then a synthesised screen '
+             'finding its feet.'),
+    'ui_panel_close': dict(bus='ui', gain_db=-13.0, synth=syn_panel_off,
+                           note='The screen going back to sleep.'),
+    'wire_turn': dict(
+        bus='ui', gain_db=-17.0, pitch=(0.94, 1.08),
+        take=('kenney_impacts', 'impactMetal_light_00[0-2].ogg'),
+        chain=[trim(), head(0.18), hp(700), lp(9000), fade(0.001, 0.09), rms_to(-22.0), declick()],
+        note='Kenney impactMetal_light (centroid 1684 Hz), cut short: one module clicking '
+             'round a quarter turn. Three variants and a pitch spread, because solving a '
+             'board is dozens of these.'),
+    'wire_connect': dict(bus='ui', gain_db=-11.0, synth=syn_connect,
+                         note='The circuit completing.'),
+    'power_pulse': dict(bus='sfx', gain_db=-9.0, synth=syn_pulse,
+                        note='The charge running the solved route to the relay, timed to the '
+                             'pulse the panel draws.'),
+    'repair_done': dict(bus='sfx', gain_db=-9.0, synth=syn_repair_done,
+                        note='A machine\'s wiring finished: the warmth of lamp_on, because it '
+                             'is the same feeling - something here works again.'),
+
     # ---------------------------------------------------------------- UI
     'ui_map_open': dict(bus='ui', gain_db=-13.0,
                         take=('oga_rubberduck_sfx100v2', 'sfx100v2_switch_01.ogg'),
@@ -1171,6 +1307,10 @@ GROUPS = [
     ('tool_', 'The multitool'), ('beam_', 'The multitool'), ('rock_', 'The multitool'),
     ('gather_', 'The multitool'), ('lift_', 'The multitool'), ('lamp_', 'The multitool'),
     ('spark', 'Inside the dead base'),
+    ('ui_bag', 'The backpack'), ('ui_slot', 'The backpack'), ('ui_pick', 'The backpack'),
+    ('ui_place', 'The backpack'), ('ui_deny', 'The backpack'),
+    ('ui_panel', 'The circuit panel'), ('wire_', 'The circuit panel'),
+    ('power_pulse', 'The circuit panel'), ('repair_done', 'The circuit panel'),
     ('door_', 'The airlock'),
     ('crash_', 'The satellite crash'), ('debris', 'The satellite crash'),
     ('beacon', 'Lights and beacons'),

@@ -85,6 +85,10 @@ Rules that keep it consistent:
 - **Positions are map pixels** (the 2D listener is the active camera). Sounds further away
   than their `dist` are never started at all.
 - **Loops are keyed**, and anything that starts one must release it on every exit path.
+- Voices are limited (20 positional, 10 flat). When they run out the longest-running one is
+  stolen rather than the new sound dropped, because a busy moment is exactly when the
+  important sound would go missing. If something never fires, check it is not being stolen
+  immediately by a burst of ticks.
 - **Scene changes**: `Audio.enter_scene()` at the top of the scene's `_ready`, or a beam will
   follow the astronaut through the airlock.
 - Footsteps come from the drawn gait (frame 0 and the middle frame of the walk/run cycle), not
@@ -101,6 +105,19 @@ godot --headless --path . res://scenes/overworld.tscn --quit-after 4000 \
 ```
 `--audio-debug` prints every event (`[audio] rock_crack at (…) pitch=1.10`), which shows the
 trigger fired, in the right order, at the right place. Then `make sounds` and actually listen.
+
+The existing test suites are the best audio check there is, because they drive real input
+through every system:
+
+```bash
+godot --headless --path . res://tests/inventory_test.tscn -- --audio-debug \
+  | grep '^\[audio\]' | sed 's/ at (.*//; s/ pitch=.*//' | sort | uniq -c | sort -rn
+```
+That one run exercises all four tool jobs, the airlock, the map, the backpack and the beds,
+and the count per sound tells you what is firing far too often as well as what is silent.
+
+Anything that ends the process must call **`Audio.quit(code)`** rather than
+`get_tree().quit(code)`, so the sound is stopped first.
 
 **`--quit=SECONDS`, not `--quit-after`.** Anything still playing when the engine tears down is
 reported as a leaked playback: the mixer only drops a stopped playback when it next mixes, and

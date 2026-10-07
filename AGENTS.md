@@ -698,7 +698,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   implemented. No new generated item art or map data keys.
 - **Sound is built** (§4.7, §7.6): ambience for the three lands and the dead base, positional
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
-  the four multitool jobs, the airlock cutscene, the crash, and the UI. What is missing:
+  the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel
+  and the UI. What is missing:
   - no volume controls and nothing saved (there are no settings and no save file yet);
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
@@ -750,4 +751,8 @@ Write one line per decision: date — decision (who approved it).
   synthesis for the alien tech, both through one mastering chain. Source packs are fetched and
   checksummed rather than committed; `CREDITS.md` must ship (owner).
 - 2026-10-07 — Scenes take `--quit=SECONDS`, which stops the sound before quitting, and
-  `--audio-debug`, which prints every sound event. `make check` uses them (owner, requested).
+  `--audio-debug`, which prints every sound event. `make check` uses them, and runs the
+  inventory and repair suites too (owner, requested).
+- 2026-10-07 — The backpack and the circuit panel get sound: a real buckle for the pack, a
+  real metal click per module turned, and synthesis for the screens and the charge reaching
+  the relay. Everything that ends the process goes through `Audio.quit()` (owner, requested).

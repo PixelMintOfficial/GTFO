@@ -54,6 +54,7 @@ func setup(player: Player, tool: Multitool) -> void:
 	_portrait = player.sprite.sprite_frames.get_frame_texture("idle_SE", 0)
 	GameState.inventory_changed.connect(_refresh)
 	tool.inventory_full.connect(func() -> void:
+		Audio.play("ui_deny")
 		_notice = "BACKPACK FULL"
 		_notice_time = 2.0)
 	_refresh()
@@ -74,6 +75,7 @@ func toggle() -> void:
 	if not opened and (get_tree().paused or not _player.controls_enabled or _player.puppet):
 		return
 	opened = not opened
+	Audio.play("ui_bag_open" if opened else "ui_bag_close")
 	get_tree().paused = opened
 	_tool.inventory_suppressed = true
 	if opened:
@@ -107,6 +109,7 @@ func _apply_selection() -> void:
 
 
 func _select(index: int) -> void:
+	Audio.play("ui_slot")
 	GameState.select_slot(index)
 	_focus = index
 	_pending_selection = true
@@ -121,10 +124,12 @@ func _activate(index: int) -> void:
 			GameState.select_slot(index)
 		if not GameState.inventory[index].is_empty():
 			_picked = index
+			Audio.play("ui_pick")
 	else:
 		_selection_changed = _selection_changed or GameState.selected_slot in [_picked, index]
 		GameState.swap_slots(_picked, index)
 		_picked = -1
+		Audio.play("ui_place")
 	_refresh()
 
 

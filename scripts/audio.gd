@@ -27,7 +27,7 @@ const MANIFEST := "res://assets/audio/audio.json"
 const PANNING := 0.55
 ## How many sounds can overlap. Footsteps, sparks and debris are the ones that stack.
 const VOICES := 20
-const FLAT_VOICES := 6
+const FLAT_VOICES := 10
 ## A loop with no fade in the manifest.
 const FADE := 0.15
 
@@ -41,6 +41,8 @@ var _free_flat: Array[AudioStreamPlayer] = []
 var _loops := {}                        # key -> Loop
 var _rng := RandomNumberGenerator.new()
 var _shut := false                      # after quiet(): stay silent, whoever asks
+var _age := {}                          # player -> when it was last started (for voice stealing)
+var _now := 0.0
 
 
 ## One held sound: a loop or an ambience bed, fading towards a target level.
@@ -306,15 +308,31 @@ func _make_flat() -> AudioStreamPlayer:
 	return AudioStreamPlayer.new()
 
 
+## A free voice, or the one that has been going longest. Dropping the sound instead would be
+## silent and arbitrary: a busy moment is exactly when something important (a repair landing,
+## a rock bursting) is most likely to be the one that goes missing.
 func _take_2d() -> AudioStreamPlayer2D:
-	for p in _free:
-		if not p.playing:
-			return p
-	return null                    # all twenty busy: drop it rather than cut one off
+	return _take(_free)
 
 
 func _take_flat() -> AudioStreamPlayer:
-	for p in _free_flat:
+	return _take(_free_flat)
+
+
+func _take(pool: Array) -> Node:
+	var oldest: Node = null
+	var since := -1.0
+	for p in pool:
 		if not p.playing:
+			_age[p] = _now
+			_now += 1.0
 			return p
-	return null
+		var age: float = _now - float(_age.get(p, 0.0))
+		if age > since:
+			since = age
+			oldest = p
+	if oldest != null:
+		oldest.stop()
+		_age[oldest] = _now
+		_now += 1.0
+	return oldest
