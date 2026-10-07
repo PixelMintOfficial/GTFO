@@ -1,7 +1,7 @@
 class_name MachineRepair
 extends RefCounted
-## Session state for one machine. The circuit attempt survives closing the panel and
-## changing scenes. Future repair tasks use complete_task(), never puzzle internals.
+## Session state for one machine: untimed cracks first, then the 30s circuit attempt.
+## Both puzzles survive closing and changing scenes; inventory is spent only on crack success.
 
 signal changed
 signal circuit_switched
@@ -12,6 +12,7 @@ const TASK_WEIGHTS := {"wiring": 0.5, "cracks": 0.5}
 var machine_id: String
 var layouts: Array[Dictionary]
 var puzzle: CircuitPuzzle
+var cracks: CrackPuzzle
 var layout_index := 0
 var remaining := ATTEMPT_SECONDS
 var completed_tasks: Dictionary = {}
@@ -42,13 +43,15 @@ func task_completed(task: String) -> bool:
 func complete_task(task: String) -> bool:
 	if not TASK_WEIGHTS.has(task) or task_completed(task):
 		return false
+	if task == "wiring" and not task_completed("cracks"):
+		return false
 	completed_tasks[task] = true
 	changed.emit()
 	return true
 
 
 func rotate(index: int, clockwise := true) -> bool:
-	if task_completed("wiring") or not puzzle.rotate(index, clockwise):
+	if not task_completed("cracks") or task_completed("wiring") or not puzzle.rotate(index, clockwise):
 		return false
 	if puzzle.solved:
 		complete_task("wiring")
@@ -59,7 +62,7 @@ func rotate(index: int, clockwise := true) -> bool:
 
 ## Called only by the open repair panel. Walking away pauses this attempt.
 func advance(delta: float) -> void:
-	if task_completed("wiring") or delta <= 0.0:
+	if not task_completed("cracks") or task_completed("wiring") or delta <= 0.0:
 		return
 	remaining = maxf(0.0, remaining - delta)
 	if remaining <= 0.0:
@@ -68,6 +71,14 @@ func advance(delta: float) -> void:
 		_new_puzzle()
 		circuit_switched.emit()
 		changed.emit()
+
+
+func finish_cracks() -> bool:
+	if task_completed("cracks") or cracks == null or not cracks.solved():
+		return false
+	if not GameState.consume_item("scrap", CrackPuzzle.SCRAP_COST):
+		return false
+	return complete_task("cracks")
 
 
 func _new_puzzle() -> void:
