@@ -4,6 +4,8 @@ extends Node2D
 ## windows, sparks spitting from the torn wiring, gas leaking from the oxygen generator's snapped
 ## pipe, fault lights blinking, the reactor's broken core glowing a dim red, the empty socket on
 ## the power room's circuit board pulsing, and the room's name fading in as you walk into it.
+## The sun's shafts and the dust in them fade with the daylight (DayNight); at night only the
+## base's own lights are left.
 
 const DUST := Color("#ffe6b4")
 const SPARK_HOT := Color("#fff0a0")
@@ -28,6 +30,7 @@ var _room := ""
 var _label := ""
 var _label_t := 99.0
 var _glow: Node2D
+var _lit: Node2D                # sparks: their own light, bright by night too
 var _toast: Node2D
 var _halos := {}
 var _discs := {}
@@ -69,6 +72,10 @@ func setup(meta_path: String, player: Player) -> void:
 	_glow.material = add
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
+	_lit = Node2D.new()
+	_lit.set_meta("dn_unlit", true)
+	_lit.draw.connect(_draw_lit)
+	add_child(_lit)
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
@@ -108,6 +115,7 @@ func _process(delta: float) -> void:
 	_label_t += delta
 	queue_redraw()
 	_glow.queue_redraw()
+	_lit.queue_redraw()
 	_toast.queue_redraw()
 
 
@@ -166,6 +174,9 @@ func _draw() -> void:
 		var k: float = p[2] / p[3]
 		var r := int(round(lerpf(1.0, 4.5, sqrt(k))))
 		_disc(self, p[0], r, Color(VAPOR, 0.42 * (1.0 - k) * minf(1.0, k * 8.0)))
+
+
+func _draw_lit() -> void:
 	# sparks: solid so they show on the white machines, cooling from yellow to orange
 	for s in _sparks:
 		var k: float = s[2] / s[3]
@@ -173,24 +184,25 @@ func _draw() -> void:
 		var p: Vector2 = (s[0] as Vector2).round()
 		var tail: Vector2 = ((s[0] as Vector2) - (s[1] as Vector2) * 0.05).round()   # a streak behind
 		if tail != p:
-			draw_line(tail + Vector2(0.5, 0.5), p + Vector2(0.5, 0.5), Color(SPARK_COOL, 0.85 * (1.0 - k)), 1.0)
-		draw_rect(Rect2(p, Vector2(2, 2) if k < 0.35 else Vector2.ONE), col)
+			_lit.draw_line(tail + Vector2(0.5, 0.5), p + Vector2(0.5, 0.5), Color(SPARK_COOL, 0.85 * (1.0 - k)), 1.0)
+		_lit.draw_rect(Rect2(p, Vector2(2, 2) if k < 0.35 else Vector2.ONE), col)
 	for f in _flashes:                                   # the short: a white-hot star
 		var c: Vector2 = (f[0] as Vector2).round()
 		var r := 3 if f[1] < 0.08 else 2
 		var col := Color(1.0, 0.98, 0.85, 1.0 - f[1] / 0.16)
-		draw_rect(Rect2(c - Vector2(r, 0), Vector2(2 * r + 1, 1)), col)
-		draw_rect(Rect2(c - Vector2(0, r), Vector2(1, 2 * r + 1)), col)
-		draw_rect(Rect2(c - Vector2(1, 1), Vector2(3, 3)), Color(1, 1, 0.9, col.a))
+		_lit.draw_rect(Rect2(c - Vector2(r, 0), Vector2(2 * r + 1, 1)), col)
+		_lit.draw_rect(Rect2(c - Vector2(0, r), Vector2(1, 2 * r + 1)), col)
+		_lit.draw_rect(Rect2(c - Vector2(1, 1), Vector2(3, 3)), Color(1, 1, 0.9, col.a))
 
 
 func _draw_glow() -> void:
+	var sun := DayNight.daylight
 	for sh in _shafts:                                   # the light breathing a little
-		_glow.draw_colored_polygon(sh[0], Color(1.0, 0.8, 0.5, 0.035 + 0.025 * sin(_t * 0.8)))
+		_glow.draw_colored_polygon(sh[0], Color(1.0, 0.8, 0.5, (0.035 + 0.025 * sin(_t * 0.8)) * sun))
 	for m in _motes:
 		var sh: Array = _shafts[m[3]]
-		if Geometry2D.is_point_in_polygon(m[0], sh[0]):
-			var a := 0.45 + 0.45 * sin(_t * 2.3 + m[2] * 3.0)
+		if sun > 0.05 and Geometry2D.is_point_in_polygon(m[0], sh[0]):
+			var a := (0.45 + 0.45 * sin(_t * 2.3 + m[2] * 3.0)) * sun
 			_glow.draw_rect(Rect2((m[0] as Vector2).round(), Vector2.ONE), Color(DUST, a))
 	for l in _leds:
 		var on := true

@@ -4,6 +4,8 @@ shader_type canvas_item;
 // anchored to the world (not the screen), so they parallax with the camera. The result
 // is quantised and Bayer-dithered so it stays pixel art at the game's resolution.
 
+#include "res://shaders/day_night.gdshaderinc"
+
 uniform sampler2D noise_tex : repeat_enable, filter_linear;
 uniform vec2 view_origin = vec2(0.0);    // world position of the view's top-left pixel
 uniform float view_scale = 1.0;          // world pixels per screen pixel (camera zoom-out)
@@ -33,5 +35,5 @@ void fragment() {
 	float n = texture(noise_tex, a).r * 0.65 + texture(noise_tex, b).r * 0.35;
 	float gust = smoothstep(1.0 - coverage, 1.0 - coverage + 0.32, n);
 	float level = floor(gust * 3.0 + bayer4(screen_px) * 0.999) / 3.0;
-	COLOR = vec4(dust_color.rgb, level * strength);
+	COLOR = vec4(dn_sky(dust_color.rgb), level * strength);
 }

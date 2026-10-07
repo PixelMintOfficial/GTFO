@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/overworld.gd" id="1_overworld"]
 [ext_resource type="Texture2D" path="res://assets/maps/red_planet/red_planet_map.png" id="2_map"]
@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://scripts/biome_fx.gd" id="7_biome"]
 [ext_resource type="Script" path="res://scripts/crash_site.gd" id="8_crash"]
 [ext_resource type="Script" path="res://scripts/multitool.gd" id="9_tool"]
+[ext_resource type="Script" path="res://scripts/day_night.gd" id="10_day"]
 [ext_resource type="Script" path="res://scripts/world_ambience.gd" id="10_ambience"]
 
 [node name="Overworld" type="Node2D"]
@@ -43,3 +44,6 @@ script = ExtResource("4_wind")
 
 [node name="MapScreen" type="CanvasLayer" parent="."]
 script = ExtResource("5_map")
+
+[node name="DayNight" type="Node" parent="."]
+script = ExtResource("10_day")

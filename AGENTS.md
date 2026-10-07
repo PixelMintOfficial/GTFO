@@ -1,8 +1,8 @@
 # AGENTS.md — working on GTFO
 
 GTFO is a cozy isometric pixel-art game set on a red planet. You are an astronaut on a broken
-outpost: three domes linked by winding roads across three lands (red dust, an alien forest,
-ice). The main base is dead when the game starts. You get into it, find it wrecked, and bring
+outpost: three domes linked by winding trails across three lands (red dust, an alien forest,
+ice), under a sky that turns from morning to night as you play. The main base is dead when the game starts. You get into it, find it wrecked, and bring
 it back to life with your multitool.
 
 This file is for **everyone who works on the game: people and AI agents alike**. Read all of
@@ -71,8 +71,10 @@ scenes/
   interior.tscn        inside the main base (storage / power room / oxygen room)
   player.tscn          the astronaut: Shadow, AnimatedSprite2D (depth-occlusion shader), GameCamera
 scripts/
-  game_state.gd        autoload GameState: the only state carried between scenes
-  audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.7)
+  game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
+  day_night.gd         DayNight: the clock, the light through the day, lights kept lit at night
+  day_clock.gd         DayClock: the time panel (sky window, day number, part of the day) and the new-day title
+  audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.8)
   world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
   inventory_ui.gd      six-slot hotbar and paused backpack; draws existing sprites and PixelFont
   map_terrain.gd       MapTerrain: walkability, ground height, biome, world<->pixel projection
@@ -92,6 +94,9 @@ scripts/
   map_screen.gd        M: full map overview (pauses the game)
   pixel_font.gd        PixelFont: the 3x5 pixel font for every bit of in-game text
 shaders/
+  day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky())
+  map_light            the map: time of day, with its light mask kept lit (and indoors the sun mask)
+  graded               any other sunlit thing (given automatically by DayNight)
   depth_occlusion      the astronaut behind scenery: silhouette, or tinted behind glass
   prop_depth           props behind scenery: hidden, or tinted behind glass
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
@@ -111,8 +116,9 @@ data/repair_circuits.json   authored five-circuit sequences for power and oxygen
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
-  maps/red_planet/          generated overworld: map, depth, walk, biome, fx, props, flora, anim, previews
-  maps/base_interior/       generated interior: map, depth, walk, json, anim (door), preview
+  maps/red_planet/          generated overworld: map, depth, walk, biome, light, fx, props, flora, anim, previews
+  maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview
+    machines/               the reactor and the oxygen generator as standalone sprites (+ machines.json, 4x previews)
   audio/                    generated sound: *.wav, audio.json, viewer.html, SOURCES.md,
                             CREDITS.md (ship this), preview.json
   audio/sources/            the open-licence recordings, git-ignored (make sources)
@@ -132,7 +138,10 @@ data images and JSON written by the same generator so they always match the pict
 | `*_depth.png` | per map pixel: camera depth (world Y × `depth_scale`) as 16 bits in R (high) and G (low); **B = 255** means dome glass, **B = 96** means a live plant (overworld) |
 | `*_walk.png` | a 1-world-unit grid, pixel (u, v): R, G = 16-bit ground height `(z + height_offset) × height_scale`; **B = 255** walkable, **128** too steep (you can jump over, onto or down it), **0** solid |
 | `red_planet_biome.png` | RGB = how much red dust / forest / ice (sums to 255) |
-| `*_map.json` / `base_interior.json` | projection constants (`game`), spawn, domes, zoom frames, door, fx |
+| `*_light.png` | grey: how much of each map pixel is its own light (lamps, lit windows, LEDs, glowing plants, pools and crystals, the light pooling round them, the stars). Kept lit at night |
+| `base_interior_sun.png` | grey: how much of each pixel is daylight coming in (shafts, sunlit patches, the windows' glow). Taken away at night |
+| `flora/*.png` | plant sheets: colour frames on top; below them the same frames' depth in **R** and, in **G**, 255 where the plant glows on its own |
+| `*_map.json` / `base_interior.json` | projection constants (`game`, incl. `light_png` / `sun_png`), spawn, domes, zoom frames, door, fx |
 | `red_planet_fx.json` | plants, glows, halos, crash scene, dome cracks, airlock doors |
 | `red_planet_props.json` | sprite sheets and placements of the multitool test props, dead lamps |
 
@@ -161,7 +170,7 @@ exports it.
 ### 4.3 Draw order, depth and y-sorting
 - **Overworld nodes, in draw order:** `Map` → `CrashSite` → `BiomeFX` → `DomeFX` → `Actors`
   (y-sorted: Player, props, doors) → `Multitool` → `WindFX` → `MapScreen`.
-  (`Ambience` sits in the tree between `Multitool` and `WindFX` but draws nothing; see §4.7.)
+  (`Ambience` sits in the tree between `Multitool` and `WindFX` but draws nothing; see §4.8.)
 - **Interior nodes, in draw order:** `Map` → `InteriorFX` → `Actors` → `Multitool`.
 - Anything that moves in front of or behind the pre-rendered scenery must use a depth shader
   with `sprite_depth` = world Y of its feet:
@@ -171,7 +180,24 @@ exports it.
 - `snap_2d_transforms_to_pixel` is on, so **y-sort keys and offsets must differ by whole
   pixels**. Half-pixel offsets tie and swap draw order at random.
 
-### 4.4 Input
+### 4.4 Day and night: how things are lit
+`DayNight` sets five shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`,
+`dn_lamp`, declared in `project.godot`). Everything in the world must take them:
+- **A shader that draws the world** `#include`s `res://shaders/day_night.gdshaderinc` and passes
+  its sunlit colour through `day_night(colour, map_px)` (or `dn_sky(colour)` when it has no map
+  position). See `depth_occlusion`, `prop_depth`, `flora_depth`.
+- **A world node with no material** gets the `graded` material from `DayNight` automatically,
+  including nodes added later. Smoke, dust, gas, snow, sprites: nothing to do.
+- **Lights must say so**, or they go dark at night: draw them in a child node with an additive
+  `CanvasItemMaterial`, or in a node tagged `set_meta("dn_unlit", true)` (fire, sparks, beacons,
+  warning lamps, beams and world-space prompts do this). On the map, a part drawn with an
+  `EMISSIVE` ramp is written into the light mask by the generator; a plant part, into its sheet's
+  glow row.
+- **Sunlight effects fade at night**: multiply them by `DayNight.daylight` (sun glints, the
+  interior's shafts and their dust).
+- UI on its own `CanvasLayer` is never graded.
+
+### 4.5 Input
 Actions are registered **in code**, in each script's static `_ensure_actions()`, with a
 `has_action` guard, keyboard *and* gamepad. Add new actions the same way. Don't add them to
 `project.godot` by hand.
@@ -200,11 +226,13 @@ modal input. F/X must be released after closing. On the board, arrows/WASD/d-pad
 movable modules; Enter/Space/F/A turns clockwise, Q/left shoulder turns back, Esc/B closes.
 Mouse left/right click turns clockwise/back. Bolted modules and plates are skipped.
 
-### 4.5 Scenes and state
+### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
-  - `tool_out`: the multitool stays out across the airlock.
+  - `tool_out`: the multitool stays out across the airlock;
+  - `clock`: game hours since the start (`DayNight` turns it into the day, hour and part of
+    the day).
   - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
     quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
     resources stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
@@ -220,7 +248,7 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
   you went in by.
 
-### 4.6 Effects pattern
+### 4.7 Effects pattern
 FX scripts draw procedurally in `_draw()`:
 - Positions come from the fx JSON. Draw only what the camera sees, and round every
   position to whole pixels.
@@ -228,10 +256,11 @@ FX scripts draw procedurally in `_draw()`:
 - Soft shapes come from cached `ImageTexture`s: the `_halo(r)` (dithered) and `_disc(r)`
   pattern.
 - **Additive light disappears on white surfaces.** Anything that must read on the white
-  machines (sparks, for example) is drawn as solid pixels in the normal layer, with only
+  machines (sparks, for example) is drawn as solid pixels in a `dn_unlit` layer, with only
   the halo additive.
+- Keep light and matter in separate nodes (see §4.4): smoke in one, the fire in it in another.
 
-### 4.7 Sound
+### 4.8 Sound
 There is no music. There is the environment of the red planet and the sounds of working on it.
 
 **Sound is data.** `tools/sfx_gen.py` writes `assets/audio/*.wav` plus `audio.json`, and the
@@ -258,7 +287,7 @@ Audio.bed("amb_ice", weight)                   # ambience, crossfaded 0..1
 ```
 
 - Buses (`amb`, `sfx`, `ui`) are created **in code** in `Audio._ensure_buses()`, for the same
-  reason input actions are (§4.4). Don't add them to `project.godot` or a bus layout resource.
+  reason input actions are (§4.5). Don't add them to `project.godot` or a bus layout resource.
 - Positions are **map pixels**; the 2D listener is the active camera. A sound further away
   than its `dist` is never started, so the comms dome's blinkers cost nothing from the base.
 - **Put the call where the event already is.** Whatever owns the state owns its sound:
@@ -335,7 +364,18 @@ consts in the named files.
   button skips it. Afterwards the wreck keeps smouldering.
 - **Map screen**: M toggles it. It pauses the game and shows where you are and what the camera
   sees. Sound carries on while it is open (the `Audio` autoload always processes).
-- **Sound** (§4.7, §7.6): the three lands each have their own ambience, crossfaded by the land
+- **Day and night** (`day_night.gd`, `day_clock.gd`):
+  - A game day lasts **12 real minutes** (`day_minutes`). The game starts on **day 1 at 08:00**.
+    The clock runs indoors too, and stops while the map screen is open.
+  - Four parts of the day: **MORNING** 05:00–11:00, **NOON** 11:00–16:00, **EVENING**
+    16:00–20:00, **NIGHT** 20:00–05:00. A new day begins at **05:00**.
+  - The light: a pink dawn, a warm morning, a clear noon, a golden evening, a violet dusk and a
+    deep blue night (`KEYS` in `day_night.gd`). At night, what glows on its own stays lit, and
+    a soft pool of light follows the astronaut.
+  - The time panel sits top left, and a "DAY N" title comes up at dawn. It is hidden during the
+    crash intro and comes in with "DAY 1" when it ends.
+  - Time changes nothing in play yet (no sleep, no night dangers).
+- **Sound** (§4.8, §7.6): the three lands each have their own ambience, crossfaded by the land
   you are standing in; the pools, spires, burning wreck and powered domes can be heard from
   near them; everything you do makes a noise. No music.
 
@@ -352,7 +392,7 @@ hand-drawn, AI-generated, downloaded or upscaled art into the game.
 This rule is about **art**. Sound is deliberately different: real recordings carry the weight
 of the physical world in a way synthesis does not, so the natural half of the soundtrack is
 open-licence field recordings and only the alien tech is generated. The consistency comes from
-one mastering chain instead (§4.7, §7.6). If something new is needed,
+one mastering chain instead (§4.8, §7.6). If something new is needed,
 **model it in the generator** with the existing primitives (`Sphere`, `Ellipsoid`,
 `RoundBox`, `RoundCone`, `Torus`, `Disc`, and the interior's `Cut` / `Either` for carving) and
 the existing renderer (`render_groups` / `render_sprite`).
@@ -390,7 +430,7 @@ key, update **every** reader in the same change (search `scripts/` for the key).
 waiting for a future feature are documented in §11. Don't remove them.
 
 `audio.json` is the same kind of contract: `scripts/audio.gd` is the only reader, and every
-field in it exists because something in the game asks for it (§4.7).
+field in it exists because something in the game asks for it (§4.8).
 
 ### 6.4 Recipes
 - **A new prop or machine:**
@@ -404,11 +444,15 @@ field in it exists because something in the game asks for it (§4.7).
 - **A new loose interactable** (like the test props): render it as a sprite sheet in
   `props_gen.py`, place it in the props JSON, and let `WorldProp` / `Multitool` handle it.
   Give it one of the four jobs, or propose a new job first (§10).
+- **Something that glows:** give its part an `EMISSIVE` ramp in the generator (the map's
+  light mask and the plant sheets' glow row pick it up). If it is drawn by a script, draw it
+  in an additive or `dn_unlit` layer (§4.4).
 - **A new scene:**
-  1. Copy the interior's structure: a generator for the picture and data, a `MapTerrain`
-     from its JSON, the player's `setup`, and a scene FX script.
-  2. Add test hooks like `interior.gd`'s.
-  3. Move between scenes through `GameState`.
+  1. Copy the interior's structure: a generator for the picture and data (including its light
+     mask), a `MapTerrain` from its JSON, the player's `setup`, and a scene FX script.
+  2. Add a `DayNight` node and call `setup(player, $Map, terrain.light_mask, terrain.sun_mask)`.
+  3. Add test hooks like `interior.gd`'s.
+  4. Move between scenes through `GameState`.
 
 ---
 
@@ -440,6 +484,10 @@ field in it exists because something in the game asks for it (§4.7).
   soft bloom. It is added on top, never painted into the colours.
 - **Outline:** a 1 px silhouette in **`#22182c`**. Inner edges (where one surface passes in
   front of another) get a line in a darker shade of the surface's own colour.
+- **Time of day** is applied in the game, not baked into the art: the art is always rendered
+  in daylight, and `day_night.gdshaderinc` colours it. Change the look of a time of day only in
+  `KEYS` (`day_night.gd`), and keep it cozy. The night is deep blue-violet, never black, and
+  things that glow carry it.
 
 ### 7.3 Palette
 - Ramps run dark → light. **Shadows lean violet; lights lean warm cream or peach.** Every
@@ -476,9 +524,12 @@ field in it exists because something in the game asks for it (§4.7).
     spires, swaying alien plants;
   - **ice** around the comms dome: snowfields, frozen lakes, charcoal peaks and cliffs
     under snow.
-  - The comms dome sits on a stepped charcoal massif reached by ramped roads.
+  - The comms dome sits on a stepped charcoal massif reached by ramped trails.
   - Lands blend with soft, dithered, domain-warped edges, never hard lines.
-- **Roads wind; they are never straight.**
+- **Trails, not roads.** Nothing is drawn on the ground: a trail is the way through where
+  nothing grows. Toward a trail the forest thins out gradually and unevenly, and tall plants keep
+  out of the strip just in front of it (from this camera they would hide it). Lamps line the way.
+  Trails wind; they are never straight. The map screen shows them as dotted routes.
 - **The main base (v3):**
   - three smooth white rooms joined by corridors;
   - a ring of tinted, reflective honeycomb glass round each room, with straight borders
@@ -502,6 +553,9 @@ field in it exists because something in the game asks for it (§4.7).
 - Prompts read `[F] LABEL` for world interactions, in capitals; E opens the backpack.
 - Room titles fade in at the top of the screen on a dark translucent plate with a coral
   underline (`interior_fx.gd`). Reuse this look.
+- The **time panel** (top left) is the model for any panel: a dark translucent plate
+  (`#120f1d`-ish at 84 %) with a 1 px `#22182c` edge, pixel-rounded corners, a faint top
+  highlight, PixelFont text and the part of the day's colour as the accent.
 - No HUD clutter (see §9).
 
 ### 7.6 Sound (the ear)
@@ -554,6 +608,7 @@ godot --headless --path . res://scenes/interior.tscn --quit-after 20000 -- --qui
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
+godot --path . res://scenes/overworld.tscn -- --no-intro --time=22 --capture=night.png   # check a change by night too
 godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
 godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
@@ -571,6 +626,8 @@ Useful hooks:
   (ignore ambient F input during progress-bar captures)
 - repair panel: `--reduced-motion` disables turn and completion animation; receiving
   power activates immediately. The browser follows `prefers-reduced-motion`.
+- both: `--time=HOUR` (e.g. `--time=22` for night), `--day=N`, `--day-speed=X` (time runs X
+  times faster)
 
 **Quit with `--quit=SECONDS`, not with `--quit-after`.** `--quit-after` counts *frames*, and a
 headless frame can take under a millisecond, so it is unpredictable in wall-clock time and it
@@ -591,7 +648,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 
 **Definition of done:**
 1. Both scenes run headless with **no errors or warnings** (`make check`).
-2. You captured screenshots of what you changed and **looked at them**, at 1:1 and zoomed in.
+2. You captured screenshots of what you changed and **looked at them**, at 1:1 and zoomed in,
+   **by day and by night** (`--time=12`, `--time=22`).
 3. Walk tests show the astronaut can reach everything they should, and nothing else.
 4. Any sound you touched fires in an `--audio-debug` run, and you listened to it in the viewer.
 5. Previews and viewers (`assets/maps/red_planet/preview/`, `assets/audio/viewer.html`,
@@ -605,10 +663,13 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - The astronaut's proportions and animation set; multitool design **v2** (red and gold
   gauntlet) is the default.
 - Main base design **v3** is the default. The old designs stay available as versions.
-- The three lands and where they are; winding roads; the comms massif.
+- The three lands and where they are; the comms massif.
+- **Trails are not drawn on the ground**: they form where the plants thin out, and lamps line
+  them.
 - The base starts dead and broken; it gets repaired through play.
-- **No HUD bars**; inventory stack counts, a six-slot hotbar and local machine repair
-  progress bars are approved (§12).
+- **No HUD bars**; inventory stack counts, a six-slot hotbar, local machine repair
+  progress bars and the time panel (day number and part of the day) are approved (§12).
+- **A day/night cycle** with four parts of the day; lights stay lit at night.
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
@@ -616,7 +677,7 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **No music.** Sound is the environment and the work, nothing else (§7.6).
 - **Sound is data, not code**: every sound is declared in `sfx_gen.py` and read from
   `audio.json`. The alien tech is synthesised; the natural world is recorded, under an open
-  licence, through one mastering chain (§4.7, §7.6).
+  licence, through one mastering chain (§4.8, §7.6).
 
 ---
 
@@ -696,14 +757,15 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **Inventory is implemented:** session backpack, resource stacks, quick access and slot
   swaps. Resources are gathered through the existing tool; crafting/consumption is not
   implemented. No new generated item art or map data keys.
-- **Sound is built** (§4.7, §7.6): ambience for the three lands and the dead base, positional
+- **Sound is built** (§4.8, §7.6): ambience for the three lands and the dead base, positional
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
   the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel
   and the UI. What is missing:
   - no volume controls and nothing saved (there are no settings and no save file yet);
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
-- **Not built yet:** interiors for the nursery and comms domes, saving and loading, music
+- **Not built yet:** interiors for the nursery and comms domes, saving and loading (the clock
+  would be saved with `GameState.clock`), anything that depends on the time of day, music
   (and there will not be any, §9).
 
 ---
@@ -728,6 +790,10 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-06 — Broken reactor with thin wires and a circuit-board cabinet; broken oxygen
   generator, O2 bottles and scrap; walkable footprints only at body height (owner).
 - 2026-10-06 — No zooming indoors. Dome cracks keep their original look (owner).
+- 2026-10-07 — Day/night cycle: 12-minute days, MORNING/NOON/EVENING/NIGHT, lights stay lit at
+  night, a light round the astronaut. A time panel with a day counter (top left), the only HUD
+  element (owner).
+- 2026-10-07 — No drawn paths: trails form where the forest thins out naturally (owner).
 - 2026-10-07 — Inventory feature request approves a visible six-slot hotbar, 24-slot
   backpack and resource stack counts. E opens/closes inventory; existing world interactions
   move to F (gamepad X unchanged). PixelFont/palette/generated sprites are reused; inventory

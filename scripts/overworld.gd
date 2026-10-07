@@ -36,6 +36,7 @@ var doors: Array[AirlockDoor] = []
 @onready var dome_fx: DomeFX = $DomeFX
 @onready var biome_fx: BiomeFX = $BiomeFX
 @onready var crash: CrashSite = $CrashSite
+@onready var day_night: DayNight = $DayNight
 @onready var ambience: WorldAmbience = $Ambience
 
 
@@ -54,6 +55,7 @@ func _ready() -> void:
 	ambience.setup(MAP_JSON, player.camera, player, _biome_here)
 	player.step_source = _step_sound
 	multitool.setup(PROPS_JSON, player, terrain, $Actors, DEPTH_MAP)
+	day_night.setup(player, $Map, terrain.light_mask)
 	_setup_doors()
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
@@ -70,6 +72,10 @@ func _ready() -> void:
 	var skip := args.has("no-intro") or args.has("spawn") or args.has("walk") or GameState.intro_done or arriving
 	if args.has("intro") or not skip:
 		crash.finished.connect(func() -> void: GameState.intro_done = true)
+		day_night.clock_panel.visible = false            # the time panel comes in once the crash is over
+		crash.finished.connect(func() -> void:
+			day_night.clock_panel.visible = true
+			day_night.clock_panel.announce("DAY %d" % DayNight.day))
 		crash.play_intro()
 	else:
 		GameState.intro_done = true

@@ -13,7 +13,9 @@
   "spawn_world": [
    0.0,
    589.5
-  ]
+  ],
+  "light_png": "base_interior_light.png",
+  "sun_png": "base_interior_sun.png"
  },
  "name": "base_interior",
  "image": "base_interior.png",
@@ -84,6 +86,40 @@
   ],
   "height": 34.0
  },
+ "repair_machines": [
+  {
+   "id": "power",
+   "label": "POWER GENERATOR",
+   "world": [
+    236.0,
+    536.0
+   ],
+   "stand_world": [
+    236.0,
+    506.0
+   ],
+   "progress_px": [
+    1329.0,
+    155.1
+   ]
+  },
+  {
+   "id": "oxygen",
+   "label": "O2 GENERATOR",
+   "world": [
+    -236.0,
+    534.0
+   ],
+   "stand_world": [
+    -236.0,
+    504.0
+   ],
+   "progress_px": [
+    239.0,
+    157.4
+   ]
+  }
+ ],
  "fx": {
   "shafts": [
    {
@@ -282,39 +318,5 @@
     161.4
    ]
   ]
- },
- "repair_machines": [
-  {
-   "id": "power",
-   "label": "POWER GENERATOR",
-   "world": [
-    236.0,
-    536.0
-   ],
-   "stand_world": [
-    236.0,
-    506.0
-   ],
-   "progress_px": [
-    1329.0,
-    155.1
-   ]
-  },
-  {
-   "id": "oxygen",
-   "label": "O2 GENERATOR",
-   "world": [
-    -236.0,
-    534.0
-   ],
-   "stand_world": [
-    -236.0,
-    504.0
-   ],
-   "progress_px": [
-    239.0,
-    157.4
-   ]
-  }
- ]
+ }
 }

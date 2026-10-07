@@ -104,7 +104,8 @@
       -827.03,
       1439.71
     ],
-    "notes": "World X/Y: X right, Y away from the camera. Screen = (origin_x + X / world_units_per_px, origin_y - (depth_to_px * Y + z) * px_per_unit). Walk grid pixel (u, v) with u = (X + Y) / sqrt2, v = (Y - X) / sqrt2. Channels: R,G = 16-bit value (hi, lo); depth B = 255 for glass; walk B = 255 walkable, 128 too steep to walk (can be jumped over, onto or down), 0 solid. character_scale converts sprite units (1 sprite px of height) to world units."
+    "notes": "World X/Y: X right, Y away from the camera. Screen = (origin_x + X / world_units_per_px, origin_y - (depth_to_px * Y + z) * px_per_unit). Walk grid pixel (u, v) with u = (X + Y) / sqrt2, v = (Y - X) / sqrt2. Channels: R,G = 16-bit value (hi, lo); depth B = 255 for glass; walk B = 255 walkable, 128 too steep to walk (can be jumped over, onto or down), 0 solid. character_scale converts sprite units (1 sprite px of height) to world units.",
+    "light_png": "red_planet_light.png"
   },
   "biomes": {
     "png": "red_planet_biome.png",
@@ -179,9 +180,21 @@
         "nursery"
       ],
       [
-        4457,
-        1374,
-        0.75,
+        4129,
+        1308,
+        0.625,
+        "nursery"
+      ],
+      [
+        4314,
+        1364,
+        0.7,
+        "nursery"
+      ],
+      [
+        4385,
+        1372,
+        0.725,
         "nursery"
       ],
       [
@@ -203,9 +216,9 @@
         "nursery"
       ],
       [
-        4829,
-        1277,
-        0.9,
+        4728,
+        1329,
+        0.85,
         "nursery"
       ],
       [

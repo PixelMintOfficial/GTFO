@@ -4,6 +4,8 @@ shader_type canvas_item;
 // nearer than they are, seen tinted through dome glass. Like the astronaut, but they vanish
 // behind a cliff instead of showing as a silhouette.
 
+#include "res://shaders/day_night.gdshaderinc"
+
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
 uniform vec2 map_size = vec2(1.0);
 uniform float depth_scale = 25.0;
@@ -19,6 +21,7 @@ void vertex() {
 
 void fragment() {
 	vec4 c = texture(TEXTURE, UV) * COLOR;
+	c.rgb = day_night(c.rgb, map_pos);
 	vec4 d = texture(depth_map, (floor(map_pos) + 0.5) / map_size);
 	float depth = (round(d.r * 255.0) * 256.0 + round(d.g * 255.0)) / depth_scale;
 	bool plant = abs(d.b * 255.0 - 96.0) < 12.0;

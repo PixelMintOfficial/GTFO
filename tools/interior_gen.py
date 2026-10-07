@@ -17,7 +17,13 @@ Look
   with a light line round each room, an emblem in the middle. The power is out: daylight
   through the windows, sun shafts through the holes, faint emergency lights.
 
-Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, .json, anim/.
+Day and night: the light mask (_light.png) says how much of each pixel is its own light (LEDs,
+  the emergency lines, the oxygen cell), the sun mask (_sun.png) how much is daylight coming in
+  (shafts, sunlit patches, the windows' glow). The game keeps the first lit at night and takes the
+  second away.
+
+Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _light.png, _sun.png, .json, anim/,
+and machines/: the power room's reactor and the oxygen generator on their own, as transparent sprites.
 --repair-metadata-only refreshes machine interaction anchors without rendering the art.
 """
 import json
@@ -1011,11 +1017,15 @@ def shade_floor(img, D, kind, region, Xf, Yf, ys, xs, bay, prop_ao, shafts_floor
         col[sand] = col[sand] * (1 - mix[sand, None]) + SAND * tone[sand, None] * mix[sand, None]
         q = np.floor(lit * 3 + bay * 0.9) / 3
         col = col * (1 - 0.5 * q[:, None]) + SUNLIGHT * 0.5 * q[:, None] + 20 * q[:, None]
+    else:
+        q = np.zeros(n, np.float32)
     img[ys, xs] = np.clip(col, 0, 255).astype(np.uint8)
     g = np.zeros(D.shape, np.float32)
     g[ys, xs] = np.clip(glow, 0, 1)
+    sun = np.zeros(D.shape, np.float32)
+    sun[ys, xs] = q
     print(f'floor shaded in {time.time() - t0:.1f}s')
-    return g
+    return g, sun
 
 
 # ================================================================== the light through the holes
@@ -1079,6 +1089,7 @@ def build():
     jj, ii = np.mgrid[0:H, 0:W]
     bay_img = M.BAYER[jj % 4, ii % 4]
     rs = np.random.default_rng(77)
+    M.EMIT = np.zeros((H, W), np.uint8)                  # props drawn with a light ramp mark it
 
     # --- the floor (plane z = 0)
     O = view_rays(jj.ravel(), ii.ravel())
@@ -1107,6 +1118,7 @@ def build():
     o_parts, gen_c, tanks, ofx = oxygen_props(rs)
     gb = M.render_groups(s_parts + p_parts + o_parts, img, D, kind, gid, gb)
     gb = M.render_groups(door_parts(0.0), img, D, kind, gid, gb)
+    export_machines(p_parts + o_parts, dict(power_generator=reactor_c, oxygen_generator=gen_c))
     print(f'furniture in {time.time() - t0:.1f}s')
 
     # footprints for soft contact shadows on the floor and for the walk grid
@@ -1138,8 +1150,8 @@ def build():
     ys, xs = np.nonzero(fl & (gid == 0))
     pu, pv = M.to_grid(Xf[ys, xs], Yf[ys, xs])
     prop_ao = np.clip(M.sample(ao_grid, pu, pv) * 1.3, 0, 1)
-    fglow = shade_floor(img, D, kind, region[ys, xs], Xf[ys, xs], Yf[ys, xs], ys, xs, bay_img[ys, xs], prop_ao,
-                        [s['floor'] for s in sh])
+    fglow, sun = shade_floor(img, D, kind, region[ys, xs], Xf[ys, xs], Yf[ys, xs], ys, xs, bay_img[ys, xs], prop_ao,
+                             [s['floor'] for s in sh])
     wglow, _, _ = shade_walls(img, D, gid, wall_gids, bay_img)
 
     # --- outlines
@@ -1155,6 +1167,7 @@ def build():
         lvl = np.floor(np.clip(0.7 * fade, 0, 1) * 3 + bay_img * 0.9 + 0.2) / 3
         a = 0.34 * lvl
         out[m] = out[m] * (1 - a[m, None]) + np.array([255, 200, 120], np.float32) * a[m, None] + 18 * lvl[m, None]
+        sun[m] = np.maximum(sun[m], lvl[m])
     glow = np.maximum(fglow, wglow)
     for sigma, k in ((2.0, 0.24), (7.0, 0.16)):
         g = ndi.gaussian_filter(glow, sigma)
@@ -1166,6 +1179,14 @@ def build():
         for cc in cols:
             em = np.maximum(em, np.all(img == cc, axis=-1).astype(np.float32))
     out += ndi.gaussian_filter(em, 3.0)[..., None] * 60
+    # what is its own light (kept at night) and what is daylight (taken away at night)
+    wlit = np.where(np.abs(wglow - 0.6) < 1e-3, wglow, 0.0)            # the emergency line
+    wsun = np.where(np.abs(wglow - 0.6) < 1e-3, 0.0, wglow)            # the windows and the holes
+    own = np.maximum(fglow, wlit)
+    light = np.maximum.reduce([M.EMIT.astype(np.float32) / 255, own,
+                               np.clip(ndi.gaussian_filter(own, 2.0) * 2.2, 0, 0.8),
+                               np.clip(ndi.gaussian_filter(em, 3.0) * 2.5, 0, 0.85)])
+    sun = np.maximum.reduce([sun, wsun, np.clip(ndi.gaussian_filter(wsun, 4.0) * 1.6, 0, 0.7)])
     # --- the void round the cutaway, and its silhouette
     filled = kind > 0
     yy = np.arange(H, dtype=np.float32)[:, None, None] / H
@@ -1174,6 +1195,12 @@ def build():
     pad = np.pad(filled, 1)
     ring = (pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]) & ~filled
     final[ring] = M.OUTLINE
+    light[~filled] = 1.0                                  # the void round the cutaway never changes
+    light[ring] = 0.0
+    sun[~filled | ring] = 0.0
+    Image.fromarray(np.round(np.clip(light, 0, 1) * 255).astype(np.uint8), 'L').save(os.path.join(OUT, 'base_interior_light.png'))
+    Image.fromarray(np.round(np.clip(sun, 0, 1) * 255).astype(np.uint8), 'L').save(os.path.join(OUT, 'base_interior_sun.png'))
+    M.EMIT = None
     for name, txt, ang, z, colr in (('storage', 'STORAGE', 64.0, 22.5, '#e2604a'), ('storage', 'B-01', 120.0, 22.5, '#e2604a'),
                                     ('power', 'POWER', 64.0, 23.0, '#e2604a'), ('oxygen', 'OXYGEN', 90.0, 33.5, '#2aa89c')):
         x, y = M.project(*room_pt(name, ang, r_in(name), z))
@@ -1184,6 +1211,7 @@ def build():
 
     # --- game data
     meta = export_game_data(D, kind, foot, Xg, Yg)
+    meta['game'].update(light_png='base_interior_light.png', sun_png='base_interior_sun.png')
     meta.update(name='base_interior', image='base_interior.png', size=[W, H], origin_px=[M.AX, M.AY])
     meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R']) for name, rm in ROOMS.items()}
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
@@ -1271,6 +1299,42 @@ def export_game_data(D, kind, foot, Xg, Yg):
     return dict(game=dict(depth_png='base_interior_depth.png', walk_png='base_interior_walk.png', depth_scale=M.DEPTH_SCALE,
                           height_offset=M.HEIGHT_OFFSET, height_scale=M.HEIGHT_SCALE, world_units_per_px=S, depth_to_px=KY,
                           px_per_unit=PX, character_scale=1.0 / PX, grid_size=N, spawn_world=spawn))
+
+
+MACHINES = {   # name: what it is, which part groups belong to it
+    'power_generator': ('The power room reactor, smashed open: gash showing the dead core, fallen coil, '
+                        'cap knocked askew, wires spilling out.',
+                        lambda g: g in ('reactor', 'coil7', 'coil24', 'coilfallen', 'cap') or g.startswith(('wireg', 'wiret'))),
+    'oxygen_generator': ('The oxygen generator, broken down: smashed turbine chamber, bent fan, cap askew, '
+                         'blown-off panel and spilled wires, cracked cell, fallen coolant cylinder.',
+                         lambda g: g in ('gen', 'genpanel', 'fins', 'chamber', 'fan', 'o2cap', 'cool0', 'cool1', 'o2ctl')
+                         or g.startswith(('o2wire', 'cell'))),
+}
+
+
+def export_machines(parts, feet):
+    """The two machines on their own, as transparent sprites: the very parts the room is rendered
+    from, under the same light. machines.json gives each one's size and anchor (the pixel where
+    the middle of its base stands on the floor). preview/ holds 4x copies for looking at."""
+    out = os.path.join(OUT, 'machines')
+    os.makedirs(os.path.join(out, 'preview'), exist_ok=True)
+    info = {}
+    for name, (what, pick) in MACHINES.items():
+        ps = [p for p in parts if pick(p.group)]
+        box = M.sprite_box([ps], pad=3)
+        rgba = M.sprite_rgba(M.render_sprite(ps, box))
+        ys, xs = np.nonzero(rgba[..., 3])
+        y0, y1, x0, x1 = ys.min() - 1, ys.max() + 2, xs.min() - 1, xs.max() + 2      # trim to the drawing
+        rgba = rgba[y0:y1, x0:x1]
+        Image.fromarray(rgba).save(os.path.join(out, f'{name}.png'))
+        h, w = rgba.shape[:2]
+        Image.fromarray(rgba).resize((w * 4, h * 4), Image.NEAREST).save(os.path.join(out, 'preview', f'{name}_x4.png'))
+        ax, ay = M.project(*feet[name])
+        info[name] = dict(file=f'machines/{name}.png', size=[int(w), int(h)],
+                          anchor=[round(float(ax - box[0] - x0), 1), round(float(ay - box[1] - y0), 1)], note=what)
+        print(f'machine: {name} {w}x{h} px')
+    with open(os.path.join(out, 'machines.json'), 'w') as fh:
+        json.dump(info, fh, indent=1)
 
 
 def export_door():
