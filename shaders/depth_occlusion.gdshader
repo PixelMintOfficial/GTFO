@@ -7,6 +7,8 @@ shader_type canvas_item;
 // or a tinted see-through look when the scenery is glass. Swaying plants (B = 96) never
 // cover the sprite: they thin out around it instead (flora_depth.gdshader).
 
+#include "res://shaders/day_night.gdshaderinc"
+
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
 uniform vec2 map_size = vec2(3100.0, 1880.0);
 uniform float depth_scale = 25.0;
@@ -23,6 +25,7 @@ void vertex() {
 
 void fragment() {
 	vec4 c = texture(TEXTURE, UV) * COLOR;
+	c.rgb = day_night(c.rgb, map_pos);
 	vec4 d = texture(depth_map, map_pos / map_size);
 	float depth = (round(d.r * 255.0) * 256.0 + round(d.g * 255.0)) / depth_scale;
 	bool plant = abs(d.b * 255.0 - 96.0) < 12.0;

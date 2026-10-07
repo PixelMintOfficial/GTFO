@@ -22,6 +22,10 @@ var spawn := Vector2.ZERO
 var max_view_px := Vector2(1920, 1080)
 ## Boxes (map pixels) around each dome that the furthest zoom frames as a whole.
 var frames: Array[Rect2] = []
+## How much of each map pixel is its own light (kept lit at night), and how much is daylight
+## coming in (indoors: taken away at night). From the map generator; null if a map has none.
+var light_mask: Texture2D
+var sun_mask: Texture2D
 ## Things that block like buildings but can move or go away (rocks, crates): id -> (x, y, radius).
 var blockers := {}
 
@@ -49,6 +53,11 @@ func _init(json_path: String) -> void:
 		max_view_px = Vector2(meta["zoom"]["max_view_px"][0], meta["zoom"]["max_view_px"][1])
 		for f in meta["zoom"].get("frames", {}).values():
 			frames.append(Rect2(f[0], f[1], f[2], f[3]))
+	var dir := json_path.get_base_dir()
+	if game.has("light_png"):
+		light_mask = load(dir.path_join(game["light_png"]))
+	if game.has("sun_png"):
+		sun_mask = load(dir.path_join(game["sun_png"]))
 	_grid_size = int(game["grid_size"])
 	_height_offset = game["height_offset"]
 	_height_scale = game["height_scale"]

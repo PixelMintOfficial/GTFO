@@ -141,12 +141,16 @@ func _draw_glows() -> void:
 		if not p[5]:
 			continue
 		var sh: Dictionary = _sheets[p[1]]
-		var b := _wave(p[2], p[3])
+		var b := _wave(p[2], p[3]) * (1.0 + 0.35 * DayNight.night)
 		for g in sh["glows"][_frame(sh, p)]:
 			_draw_halo(p[2] + Vector2(g[0], g[1]), int(g[2]), _colors[int(g[3])], b * g[4] / 255.0)
 
 
 func _brightness(kind: int, pos: Vector2, ph: float) -> float:
+	return _base_brightness(kind, pos, ph) * (DayNight.daylight if kind == Kind.GLINT else 1.0 + 0.35 * DayNight.night)
+
+
+func _base_brightness(kind: int, pos: Vector2, ph: float) -> float:
 	match kind:
 		Kind.PLANT:
 			return _wave(pos, ph)

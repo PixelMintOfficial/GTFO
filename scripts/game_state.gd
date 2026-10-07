@@ -9,3 +9,6 @@ var arrive := ""
 var door_id := -1
 ## Whether the multitool was out, so it stays out across the airlock.
 var tool_out := false
+## The time: game hours since the game began (on day 1, at 08:00). DayNight moves it on and
+## works out the day, the hour and the part of the day from it.
+var clock := 8.0

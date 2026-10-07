@@ -13,7 +13,9 @@
   "spawn_world": [
    0.0,
    589.5
-  ]
+  ],
+  "light_png": "base_interior_light.png",
+  "sun_png": "base_interior_sun.png"
  },
  "name": "base_interior",
  "image": "base_interior.png",

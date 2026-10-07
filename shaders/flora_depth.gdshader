@@ -7,6 +7,9 @@ shader_type canvas_item;
 // Wherever the map has scenery nearer than the plant (a cliff, a rock, a prop), that part of
 // the plant is hidden. Map pixels tagged as plants (blue 96) are left to the drawing order.
 // Plants standing in front of the astronaut thin out (a dithered screen door) around them.
+// The depth rows' green marks the parts that glow on their own: they stay lit at night.
+
+#include "res://shaders/day_night.gdshaderinc"
 
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
 uniform vec2 map_size = vec2(1.0);
@@ -36,7 +39,8 @@ void fragment() {
 	if (c.a < 0.5) {
 		discard;
 	}
-	float rel = texture(TEXTURE, UV + vec2(0.0, 0.5)).r * 255.0 / 2.0 - 64.0;
+	vec4 under = texture(TEXTURE, UV + vec2(0.0, 0.5));
+	float rel = under.r * 255.0 / 2.0 - 64.0;
 	float base = (round(inst.r * 255.0) * 256.0 + round(inst.g * 255.0)) / 16.0;
 	vec4 d = texture(depth_map, (floor(map_pos) + 0.5) / map_size);
 	float scene = (round(d.r * 255.0) * 256.0 + round(d.g * 255.0)) / depth_scale;
@@ -49,5 +53,6 @@ void fragment() {
 	if (r2 < 1.0 && base < player_depth - 1.0 && bayer4(floor(map_pos)) < 0.7 * smoothstep(1.0, 0.55, r2)) {
 		discard;
 	}
-	COLOR = vec4(c.rgb, 1.0);
+	vec3 lit = under.g > 0.5 ? c.rgb * (1.0 + 0.15 * dn_night) : day_night(c.rgb, map_pos);
+	COLOR = vec4(lit, 1.0);
 }

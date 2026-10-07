@@ -79,6 +79,7 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 	_ensure_actions()
 	_fx = Node2D.new()
 	_fx.z_index = 30
+	_fx.set_meta("dn_unlit", true)                       # beams, sparks, rings, icons: the tool's own light
 	_fx.draw.connect(_draw_fx)
 	add_child(_fx)
 	_glow = Node2D.new()
@@ -89,6 +90,7 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
 	_under = Node2D.new()
+	_under.set_meta("dn_unlit", true)
 	_under.draw.connect(_draw_under)
 	actors.add_child(_under)
 	_tglow = Node2D.new()

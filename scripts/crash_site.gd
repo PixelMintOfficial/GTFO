@@ -40,6 +40,7 @@ var _before: Sprite2D
 var _reveal: ShaderMaterial
 var _sat: Sprite2D
 var _air: Node2D
+var _lit: Node2D              # fire, sparks, the beacon and the flash: lights, bright by night too
 var _focus := Vector2.ZERO
 var _sky := Vector2.ZERO
 var _bend := Vector2.ZERO
@@ -104,6 +105,11 @@ func setup(meta_path: String, camera: GameCamera, player: Player, biome: BiomeFX
 	_air.z_index = 40
 	_air.draw.connect(_draw_air)
 	add_child(_air)
+	_lit = Node2D.new()
+	_lit.z_index = 41
+	_lit.set_meta("dn_unlit", true)
+	_lit.draw.connect(_draw_lit)
+	add_child(_lit)
 	_sat = Sprite2D.new()
 	_sat.texture = load(dir.path_join(c["satellite"]["file"]))
 	_sat.hframes = int(c["satellite"]["frames"])
@@ -191,6 +197,7 @@ func _process(delta: float) -> void:
 		if _ring > 0.8:
 			_ring = -1.0
 	_air.queue_redraw()
+	_lit.queue_redraw()
 
 
 func _enter(s: State) -> void:
@@ -332,21 +339,18 @@ func _update_particles(delta: float) -> void:
 
 
 # ---------------------------------------------------------------- drawing (the air layer)
+## Smoke, dust and debris: lit by the sun, so they take the time of day.
 func _draw_air() -> void:
 	var view := _view().grow(40.0)
 	for q in _puffs:
 		var p: Vector2 = q[0]
-		if not view.has_point(p):
+		var pal: int = q[6]
+		if pal == 3 or not view.has_point(p):
 			continue
 		var k: float = q[4] / q[5]
 		var r := int(round(q[2] + q[3] * sqrt(k)))
 		var fade := ceilf((1.0 - k) * 4.0) / 4.0
-		var pal: int = q[6]
 		var c := p.round()
-		if pal == 3:                                 # fire: hot core cooling to red
-			var col: Color = FIRE[clampi(3 - int(k * 4.0), 0, 3)]
-			_disc(c, r, Color(col, fade))
-			continue
 		var cols: Array[Color] = DUST if pal == 1 else (SMOKE if k < 0.4 else SMOKE_OLD)
 		var a := fade * (0.85 if pal == 0 else 0.9)
 		_disc(c + Vector2(1, 1), r, Color(cols[0], a))
@@ -357,28 +361,42 @@ func _draw_air() -> void:
 		var p: Vector2 = (c[0] - Vector2(0, c[2])).round()
 		_air.draw_rect(Rect2(p, Vector2(2, 2)), DEBRIS)
 		_air.draw_rect(Rect2(p, Vector2.ONE), SMOKE[2])
+
+
+## Fire, sparks, the re-entry glow, the beacon, the shockwave and the flash: their own light.
+func _draw_lit() -> void:
+	var view := _view().grow(40.0)
+	for q in _puffs:
+		var p: Vector2 = q[0]
+		if int(q[6]) != 3 or not view.has_point(p):
+			continue
+		var k: float = q[4] / q[5]
+		var r := int(round(q[2] + q[3] * sqrt(k)))
+		var fade := ceilf((1.0 - k) * 4.0) / 4.0
+		var col: Color = FIRE[clampi(3 - int(k * 4.0), 0, 3)]   # hot core cooling to red
+		_disc(p.round(), r, Color(col, fade), _lit)
 	for s in _sparks:
 		var k: float = s[2] / s[3]
 		var col: Color = FIRE[3] if k < 0.3 else (FIRE[2] if k < 0.65 else FIRE[1])
 		var p: Vector2 = s[0].round()
-		_air.draw_rect(Rect2(p, Vector2.ONE), col)
-		_air.draw_rect(Rect2((s[0] - (s[1] as Vector2).normalized() * 1.5).round(), Vector2.ONE), Color(FIRE[1], 0.7))
+		_lit.draw_rect(Rect2(p, Vector2.ONE), col)
+		_lit.draw_rect(Rect2((s[0] - (s[1] as Vector2).normalized() * 1.5).round(), Vector2.ONE), Color(FIRE[1], 0.7))
 	if _sat.visible:                                 # re-entry glow around the falling satellite
-		_disc(_sat_pos.round(), 9, Color(FIRE[1], 0.25))
-		_disc(_sat_pos.round(), 5, Color(FIRE[2], 0.35))
+		_disc(_sat_pos.round(), 9, Color(FIRE[1], 0.25), _lit)
+		_disc(_sat_pos.round(), 5, Color(FIRE[2], 0.35), _lit)
 	if _smoulder > 0.0:
 		for f in _fire_at:
 			var fl := sin(_t * 23.0) * 0.5 + sin(_t * 37.0 + 1.3) * 0.5
 			var c := f.round()
-			_disc(c + Vector2(0, -1), int(4 + fl), Color(FIRE[0], 0.8 * _smoulder))
-			_disc(c + Vector2(0, -2 - int(fl > 0.3)), 3, Color(FIRE[1], _smoulder))
-			_disc(c + Vector2(0, -3), int(1.5 + fl * 0.5), Color(FIRE[2], _smoulder))
+			_disc(c + Vector2(0, -1), int(4 + fl), Color(FIRE[0], 0.8 * _smoulder), _lit)
+			_disc(c + Vector2(0, -2 - int(fl > 0.3)), 3, Color(FIRE[1], _smoulder), _lit)
+			_disc(c + Vector2(0, -3), int(1.5 + fl * 0.5), Color(FIRE[2], _smoulder), _lit)
 		var b := fmod(_t, 1.6)
 		if b < 0.1 or (b > 0.25 and b < 0.35):
-			_disc(_beacon.round(), 5, Color(BEACON, 0.35 * _smoulder))
-			_disc(_beacon.round(), 2, Color(Color.WHITE, _smoulder))
+			_disc(_beacon.round(), 5, Color(BEACON, 0.35 * _smoulder), _lit)
+			_disc(_beacon.round(), 2, Color(Color.WHITE, _smoulder), _lit)
 		else:
-			_disc(_beacon.round(), 1, Color(BEACON, 0.8 * _smoulder))
+			_disc(_beacon.round(), 1, Color(BEACON, 0.8 * _smoulder), _lit)
 	if _ring >= 0.0:                                 # shockwave racing out over the ground
 		var r := 24.0 + 340.0 * _ring
 		var a := 1.0 - _ring / 0.8
@@ -386,15 +404,15 @@ func _draw_air() -> void:
 		for i in n:
 			var ang := TAU * i / n
 			var p := (_rest + Vector2(cos(ang) * r, sin(ang) * r * 0.5)).round()
-			_air.draw_rect(Rect2(p, Vector2(2, 1)), Color(FIRE[3], a * 0.8))
-			_air.draw_rect(Rect2(p + Vector2(0, 1), Vector2(2, 1)), Color(DUST[2], a * 0.6))
+			_lit.draw_rect(Rect2(p, Vector2(2, 1)), Color(FIRE[3], a * 0.8))
+			_lit.draw_rect(Rect2(p + Vector2(0, 1), Vector2(2, 1)), Color(DUST[2], a * 0.6))
 	if _flash > 0.0:
-		_air.draw_rect(_view(), Color(1.0, 0.93, 0.8, _flash * _flash * 0.6))
-		_disc(_rest.round(), int(18 + 30 * (1.0 - _flash)), Color(FIRE[3], _flash))
+		_lit.draw_rect(_view(), Color(1.0, 0.93, 0.8, _flash * _flash * 0.6))
+		_disc(_rest.round(), int(18 + 30 * (1.0 - _flash)), Color(FIRE[3], _flash), _lit)
 
 
 ## A crisp pixel disc (drawn from a texture so it stays pixel art at any window size).
-func _disc(center: Vector2, r: int, col: Color) -> void:
+func _disc(center: Vector2, r: int, col: Color, canvas: CanvasItem = null) -> void:
 	r = maxi(r, 0)
 	if not _discs.has(r):
 		var size := 2 * r + 1
@@ -405,7 +423,7 @@ func _disc(center: Vector2, r: int, col: Color) -> void:
 				if d <= r + 0.35:
 					img.set_pixel(x, y, Color.WHITE)
 		_discs[r] = ImageTexture.create_from_image(img)
-	_air.draw_texture(_discs[r], center - Vector2(r, r), col)
+	(canvas if canvas != null else _air).draw_texture(_discs[r], center - Vector2(r, r), col)
 
 
 func _view() -> Rect2:

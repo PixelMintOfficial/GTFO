@@ -27,6 +27,7 @@ var _t := 0.0
 
 
 func setup(meta_path: String) -> void:
+	set_meta("dn_unlit", true)                           # these are lights: the sprites below take the time of day
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
 	var anim: Dictionary = meta.get("animated", {})
 	var dir := meta_path.get_base_dir()

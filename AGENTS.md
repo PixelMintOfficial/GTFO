@@ -1,8 +1,8 @@
 # AGENTS.md — working on GTFO
 
 GTFO is a cozy isometric pixel-art game set on a red planet. You are an astronaut on a broken
-outpost: three domes linked by winding roads across three lands (red dust, an alien forest,
-ice). The main base is dead when the game starts. You get into it, find it wrecked, and bring
+outpost: three domes linked by winding trails across three lands (red dust, an alien forest,
+ice), under a sky that turns from morning to night as you play. The main base is dead when the game starts. You get into it, find it wrecked, and bring
 it back to life with your multitool.
 
 This file is for **everyone who works on the game: people and AI agents alike**. Read all of
@@ -59,7 +59,9 @@ scenes/
   interior.tscn        inside the main base (storage / power room / oxygen room)
   player.tscn          the astronaut: Shadow, AnimatedSprite2D (depth-occlusion shader), GameCamera
 scripts/
-  game_state.gd        autoload GameState: the only state carried between scenes
+  game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
+  day_night.gd         DayNight: the clock, the light through the day, lights kept lit at night
+  day_clock.gd         DayClock: the time panel (sky window, day number, part of the day) and the new-day title
   map_terrain.gd       MapTerrain: walkability, ground height, biome, world<->pixel projection
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
@@ -76,6 +78,9 @@ scripts/
   map_screen.gd        M: full map overview (pauses the game)
   pixel_font.gd        PixelFont: the 3x5 pixel font for every bit of in-game text
 shaders/
+  day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky())
+  map_light            the map: time of day, with its light mask kept lit (and indoors the sun mask)
+  graded               any other sunlit thing (given automatically by DayNight)
   depth_occlusion      the astronaut behind scenery: silhouette, or tinted behind glass
   prop_depth           props behind scenery: hidden, or tinted behind glass
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
@@ -91,8 +96,8 @@ tools/                 the art pipeline (Python): generates everything in assets
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
-  maps/red_planet/          generated overworld: map, depth, walk, biome, fx, props, flora, anim, previews
-  maps/base_interior/       generated interior: map, depth, walk, json, anim (door), preview
+  maps/red_planet/          generated overworld: map, depth, walk, biome, light, fx, props, flora, anim, previews
+  maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview
 ```
 
 ---
@@ -109,7 +114,10 @@ data images and JSON written by the same generator so they always match the pict
 | `*_depth.png` | per map pixel: camera depth (world Y × `depth_scale`) as 16 bits in R (high) and G (low); **B = 255** means dome glass, **B = 96** means a live plant (overworld) |
 | `*_walk.png` | a 1-world-unit grid, pixel (u, v): R, G = 16-bit ground height `(z + height_offset) × height_scale`; **B = 255** walkable, **128** too steep (you can jump over, onto or down it), **0** solid |
 | `red_planet_biome.png` | RGB = how much red dust / forest / ice (sums to 255) |
-| `*_map.json` / `base_interior.json` | projection constants (`game`), spawn, domes, zoom frames, door, fx |
+| `*_light.png` | grey: how much of each map pixel is its own light (lamps, lit windows, LEDs, glowing plants, pools and crystals, the light pooling round them, the stars). Kept lit at night |
+| `base_interior_sun.png` | grey: how much of each pixel is daylight coming in (shafts, sunlit patches, the windows' glow). Taken away at night |
+| `flora/*.png` | plant sheets: colour frames on top; below them the same frames' depth in **R** and, in **G**, 255 where the plant glows on its own |
+| `*_map.json` / `base_interior.json` | projection constants (`game`, incl. `light_png` / `sun_png`), spawn, domes, zoom frames, door, fx |
 | `red_planet_fx.json` | plants, glows, halos, crash scene, dome cracks, airlock doors |
 | `red_planet_props.json` | sprite sheets and placements of the multitool test props, dead lamps |
 
@@ -142,7 +150,24 @@ exports it.
 - `snap_2d_transforms_to_pixel` is on, so **y-sort keys and offsets must differ by whole
   pixels**. Half-pixel offsets tie and swap draw order at random.
 
-### 4.4 Input
+### 4.4 Day and night: how things are lit
+`DayNight` sets five shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`,
+`dn_lamp`, declared in `project.godot`). Everything in the world must take them:
+- **A shader that draws the world** `#include`s `res://shaders/day_night.gdshaderinc` and passes
+  its sunlit colour through `day_night(colour, map_px)` (or `dn_sky(colour)` when it has no map
+  position). See `depth_occlusion`, `prop_depth`, `flora_depth`.
+- **A world node with no material** gets the `graded` material from `DayNight` automatically,
+  including nodes added later. Smoke, dust, gas, snow, sprites: nothing to do.
+- **Lights must say so**, or they go dark at night: draw them in a child node with an additive
+  `CanvasItemMaterial`, or in a node tagged `set_meta("dn_unlit", true)` (fire, sparks, beacons,
+  warning lamps, beams and world-space prompts do this). On the map, a part drawn with an
+  `EMISSIVE` ramp is written into the light mask by the generator; a plant part, into its sheet's
+  glow row.
+- **Sunlight effects fade at night**: multiply them by `DayNight.daylight` (sun glints, the
+  interior's shafts and their dust).
+- UI on its own `CanvasLayer` is never graded.
+
+### 4.5 Input
 Actions are registered **in code**, in each script's static `_ensure_actions()`, with a
 `has_action` guard, keyboard *and* gamepad. Add new actions the same way. Don't add them to
 `project.godot` by hand.
@@ -162,17 +187,19 @@ E is shared: while a door's prompt is showing, the door sets `multitool.suppress
 so E opens the door instead of using the tool. Anything else that wants E must use the same
 mechanism. Never bind a second meaning to E without it.
 
-### 4.5 Scenes and state
+### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
-  - `tool_out`: the multitool stays out across the airlock.
+  - `tool_out`: the multitool stays out across the airlock;
+  - `clock`: game hours since the start (`DayNight` turns it into the day, hour and part of
+    the day).
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
   you went in by.
 
-### 4.6 Effects pattern
+### 4.7 Effects pattern
 FX scripts draw procedurally in `_draw()`:
 - Positions come from the fx JSON. Draw only what the camera sees, and round every
   position to whole pixels.
@@ -180,8 +207,9 @@ FX scripts draw procedurally in `_draw()`:
 - Soft shapes come from cached `ImageTexture`s: the `_halo(r)` (dithered) and `_disc(r)`
   pattern.
 - **Additive light disappears on white surfaces.** Anything that must read on the white
-  machines (sparks, for example) is drawn as solid pixels in the normal layer, with only
+  machines (sparks, for example) is drawn as solid pixels in a `dn_unlit` layer, with only
   the halo additive.
+- Keep light and matter in separate nodes (see §4.4): smoke in one, the fire in it in another.
 
 ---
 
@@ -227,6 +255,17 @@ consts in the named files.
   button skips it. Afterwards the wreck keeps smouldering.
 - **Map screen**: M toggles it. It pauses the game and shows where you are and what the camera
   sees.
+- **Day and night** (`day_night.gd`, `day_clock.gd`):
+  - A game day lasts **12 real minutes** (`day_minutes`). The game starts on **day 1 at 08:00**.
+    The clock runs indoors too, and stops while the map screen is open.
+  - Four parts of the day: **MORNING** 05:00–11:00, **NOON** 11:00–16:00, **EVENING**
+    16:00–20:00, **NIGHT** 20:00–05:00. A new day begins at **05:00**.
+  - The light: a pink dawn, a warm morning, a clear noon, a golden evening, a violet dusk and a
+    deep blue night (`KEYS` in `day_night.gd`). At night, what glows on its own stays lit, and
+    a soft pool of light follows the astronaut.
+  - The time panel sits top left, and a "DAY N" title comes up at dawn. It is hidden during the
+    crash intro and comes in with "DAY 1" when it ends.
+  - Time changes nothing in play yet (no sleep, no night dangers).
 
 ---
 
@@ -284,11 +323,15 @@ waiting for a future feature are documented in §11. Don't remove them.
 - **A new loose interactable** (like the test props): render it as a sprite sheet in
   `props_gen.py`, place it in the props JSON, and let `WorldProp` / `Multitool` handle it.
   Give it one of the four jobs, or propose a new job first (§10).
+- **Something that glows:** give its part an `EMISSIVE` ramp in the generator (the map's
+  light mask and the plant sheets' glow row pick it up). If it is drawn by a script, draw it
+  in an additive or `dn_unlit` layer (§4.4).
 - **A new scene:**
-  1. Copy the interior's structure: a generator for the picture and data, a `MapTerrain`
-     from its JSON, the player's `setup`, and a scene FX script.
-  2. Add test hooks like `interior.gd`'s.
-  3. Move between scenes through `GameState`.
+  1. Copy the interior's structure: a generator for the picture and data (including its light
+     mask), a `MapTerrain` from its JSON, the player's `setup`, and a scene FX script.
+  2. Add a `DayNight` node and call `setup(player, $Map, terrain.light_mask, terrain.sun_mask)`.
+  3. Add test hooks like `interior.gd`'s.
+  4. Move between scenes through `GameState`.
 
 ---
 
@@ -320,6 +363,10 @@ waiting for a future feature are documented in §11. Don't remove them.
   soft bloom. It is added on top, never painted into the colours.
 - **Outline:** a 1 px silhouette in **`#22182c`**. Inner edges (where one surface passes in
   front of another) get a line in a darker shade of the surface's own colour.
+- **Time of day** is applied in the game, not baked into the art: the art is always rendered
+  in daylight, and `day_night.gdshaderinc` colours it. Change the look of a time of day only in
+  `KEYS` (`day_night.gd`), and keep it cozy. The night is deep blue-violet, never black, and
+  things that glow carry it.
 
 ### 7.3 Palette
 - Ramps run dark → light. **Shadows lean violet; lights lean warm cream or peach.** Every
@@ -356,9 +403,12 @@ waiting for a future feature are documented in §11. Don't remove them.
     spires, swaying alien plants;
   - **ice** around the comms dome: snowfields, frozen lakes, charcoal peaks and cliffs
     under snow.
-  - The comms dome sits on a stepped charcoal massif reached by ramped roads.
+  - The comms dome sits on a stepped charcoal massif reached by ramped trails.
   - Lands blend with soft, dithered, domain-warped edges, never hard lines.
-- **Roads wind; they are never straight.**
+- **Trails, not roads.** Nothing is drawn on the ground: a trail is the way through where
+  nothing grows. Toward a trail the forest thins out gradually and unevenly, and tall plants keep
+  out of the strip just in front of it (from this camera they would hide it). Lamps line the way.
+  Trails wind; they are never straight. The map screen shows them as dotted routes.
 - **The main base (v3):**
   - three smooth white rooms joined by corridors;
   - a ring of tinted, reflective honeycomb glass round each room, with straight borders
@@ -382,6 +432,9 @@ waiting for a future feature are documented in §11. Don't remove them.
 - Prompts read `[E] LABEL`, in capitals.
 - Room titles fade in at the top of the screen on a dark translucent plate with a coral
   underline (`interior_fx.gd`). Reuse this look.
+- The **time panel** (top left) is the model for any panel: a dark translucent plate
+  (`#120f1d`-ish at 84 %) with a 1 px `#22182c` edge, pixel-rounded corners, a faint top
+  highlight, PixelFont text and the part of the day's colour as the accent.
 - No HUD clutter (see §9).
 
 ---
@@ -399,6 +452,7 @@ godot --headless --path . res://scenes/interior.tscn --quit-after 300
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
+godot --path . res://scenes/overworld.tscn -- --no-intro --time=22 --capture=night.png   # check a change by night too
 ```
 
 Useful hooks:
@@ -406,10 +460,13 @@ Useful hooks:
 - overworld only: `--equip`, `--use`, `--face=DX,DY`, `--door`, `--intro` / `--no-intro`,
   `--zoom=L`, `--open-map`, `--debug`
 - interior only: `--arrive`, `--exit`
+- both: `--time=HOUR` (e.g. `--time=22` for night), `--day=N`, `--day-speed=X` (time runs X
+  times faster)
 
 **Definition of done:**
 1. Both scenes run headless with **no errors or warnings**.
-2. You captured screenshots of what you changed and **looked at them**, at 1:1 and zoomed in.
+2. You captured screenshots of what you changed and **looked at them**, at 1:1 and zoomed in,
+   **by day and by night** (`--time=12`, `--time=22`).
 3. Walk tests show the astronaut can reach everything they should, and nothing else.
 4. Previews and viewers (`assets/maps/red_planet/preview/`, `tools/*_viewer.html`) still look
    right if your generator writes them.
@@ -422,9 +479,13 @@ Useful hooks:
 - The astronaut's proportions and animation set; multitool design **v2** (red and gold
   gauntlet) is the default.
 - Main base design **v3** is the default. The old designs stay available as versions.
-- The three lands and where they are; winding roads; the comms massif.
+- The three lands and where they are; the comms massif.
+- **Trails are not drawn on the ground**: they form where the plants thin out, and lamps line
+  them.
 - The base starts dead and broken; it gets repaired through play.
-- **No counters, inventory numbers or HUD bars** for now.
+- **No counters, inventory numbers or HUD bars** for now. The one exception is the time
+  panel: the day number and the part of the day.
+- **A day/night cycle** with four parts of the day; lights stay lit at night.
 - The multitool picks its job from the target. One button (E) uses it.
 - **No zooming indoors.**
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
@@ -493,7 +554,8 @@ Useful hooks:
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
 - **Not built yet:** inventory or resources (deliberately hidden, see §9), interiors for the
-  nursery and comms domes, saving and loading, sound and music.
+  nursery and comms domes, saving and loading (the clock would be saved with
+  `GameState.clock`), anything that depends on the time of day, sound and music.
 
 ---
 
@@ -517,3 +579,7 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-06 — Broken reactor with thin wires and a circuit-board cabinet; broken oxygen
   generator, O2 bottles and scrap; walkable footprints only at body height (owner).
 - 2026-10-06 — No zooming indoors. Dome cracks keep their original look (owner).
+- 2026-10-07 — Day/night cycle: 12-minute days, MORNING/NOON/EVENING/NIGHT, lights stay lit at
+  night, a light round the astronaut. A time panel with a day counter (top left), the only HUD
+  element (owner).
+- 2026-10-07 — No drawn paths: trails form where the forest thins out naturally (owner).

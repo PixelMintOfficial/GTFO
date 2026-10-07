@@ -14,6 +14,7 @@ var door: AirlockDoor
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
 @onready var fx: InteriorFX = $InteriorFX
+@onready var day_night: DayNight = $DayNight
 
 
 func _ready() -> void:
@@ -23,6 +24,7 @@ func _ready() -> void:
 	player.camera.setup(player, $Map, terrain.max_view_px)
 	multitool.setup("", player, terrain, $Actors, DEPTH_MAP)
 	fx.setup(MAP_JSON, player)
+	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
 	door = AirlockDoor.new()
 	$Actors.add_child(door)

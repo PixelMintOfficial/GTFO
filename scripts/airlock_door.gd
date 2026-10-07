@@ -45,6 +45,7 @@ var _prompt := false
 var _puffs: Array = []          # [pos, vel, r, growth, age, life, drag]
 var _glints: Array = []         # [pos, vel, age, life]
 var _air: Node2D
+var _lit: Node2D             # the warning light, glints and the prompt: bright by night too
 var _fade: ColorRect
 var _discs := {}
 
@@ -74,6 +75,12 @@ func setup(info: Dictionary, base_dir: String, p: Player, cam: GameCamera, t: Ma
 	_air.position = -position                            # draws in map pixels
 	_air.draw.connect(_draw_air)
 	add_child(_air)
+	_lit = Node2D.new()
+	_lit.z_index = 41
+	_lit.position = -position
+	_lit.set_meta("dn_unlit", true)
+	_lit.draw.connect(_draw_lit)
+	add_child(_lit)
 	var layer := CanvasLayer.new()
 	layer.layer = 20
 	add_child(layer)
@@ -195,6 +202,7 @@ func _process(delta: float) -> void:
 				arrived.emit()
 	_update_gas(delta)
 	_air.queue_redraw()
+	_lit.queue_redraw()
 
 
 func _start() -> void:
@@ -280,15 +288,18 @@ func _draw_air() -> void:
 		_disc(c, r, Color(VAPOR[1], a))
 		if r >= 2:
 			_disc(c - Vector2(r, r) * 0.3, int(r * 0.55), Color(VAPOR[2], a))
+
+
+func _draw_lit() -> void:
 	for g in _glints:
 		var k2: float = g[2] / g[3]
-		_air.draw_rect(Rect2((g[0] as Vector2).round(), Vector2.ONE), Color(1, 1, 1, 1.0 - k2))
+		_lit.draw_rect(Rect2((g[0] as Vector2).round(), Vector2.ONE), Color(1, 1, 1, 1.0 - k2))
 	# the door's warning light while it works
 	if state in [State.UNLOCK, State.OPEN, State.HOLD, State.WALK_IN, State.CLOSE, State.ARRIVE_IN, State.WALK_OUT, State.CLOSE_OUT]:
 		if fmod(_t, 0.5) < 0.3:
-			_disc(lamp.round(), 6, Color(AMBER, 0.25))
-			_disc(lamp.round(), 3, Color(AMBER, 0.6))
-			_disc(lamp.round(), 1, Color(1, 0.95, 0.8, 1.0))
+			_disc(lamp.round(), 6, Color(AMBER, 0.25), _lit)
+			_disc(lamp.round(), 3, Color(AMBER, 0.6), _lit)
+			_disc(lamp.round(), 1, Color(1, 0.95, 0.8, 1.0), _lit)
 	if _prompt:
 		_draw_prompt()
 
@@ -298,18 +309,18 @@ func _draw_prompt() -> void:
 	var w := PixelFont.width(label) + 13
 	var top := (lamp + Vector2(0, -16 + round(sin(_t * 4.0)))).round()
 	var box := Rect2(top - Vector2(round(w / 2.0), 0), Vector2(w, 11))
-	_air.draw_rect(box.grow(1), Color("#120f1d", 0.9))
-	_air.draw_rect(box, Color("#241f36", 0.95))
+	_lit.draw_rect(box.grow(1), Color("#120f1d", 0.9))
+	_lit.draw_rect(box, Color("#241f36", 0.95))
 	var key := Rect2(box.position + Vector2(2, 1), Vector2(8, 9))
-	_air.draw_rect(key, KEY)
-	_air.draw_rect(Rect2(key.position + Vector2(0, 8), Vector2(8, 1)), Color("#8f8ba8"))
-	PixelFont.draw(_air, key.position + Vector2(3, 2), "E", Color("#241f36"))
-	PixelFont.draw(_air, box.position + Vector2(12, 3), label, Color("#ffd27a"))
-	_air.draw_rect(Rect2(top + Vector2(-1, 12), Vector2(3, 1)), Color("#ffd27a", 0.8))
-	_air.draw_rect(Rect2(top + Vector2(0, 13), Vector2(1, 1)), Color("#ffd27a", 0.8))
+	_lit.draw_rect(key, KEY)
+	_lit.draw_rect(Rect2(key.position + Vector2(0, 8), Vector2(8, 1)), Color("#8f8ba8"))
+	PixelFont.draw(_lit, key.position + Vector2(3, 2), "E", Color("#241f36"))
+	PixelFont.draw(_lit, box.position + Vector2(12, 3), label, Color("#ffd27a"))
+	_lit.draw_rect(Rect2(top + Vector2(-1, 12), Vector2(3, 1)), Color("#ffd27a", 0.8))
+	_lit.draw_rect(Rect2(top + Vector2(0, 13), Vector2(1, 1)), Color("#ffd27a", 0.8))
 
 
-func _disc(center: Vector2, r: int, col: Color) -> void:
+func _disc(center: Vector2, r: int, col: Color, canvas: CanvasItem = null) -> void:
 	r = maxi(r, 0)
 	if not _discs.has(r):
 		var size := 2 * r + 1
@@ -319,7 +330,7 @@ func _disc(center: Vector2, r: int, col: Color) -> void:
 				if Vector2(x - r, y - r).length() <= r + 0.35:
 					img.set_pixel(x, y, Color.WHITE)
 		_discs[r] = ImageTexture.create_from_image(img)
-	_air.draw_texture(_discs[r], center - Vector2(r, r), col)
+	(canvas if canvas != null else _air).draw_texture(_discs[r], center - Vector2(r, r), col)
 
 
 static func _ensure_action() -> void:

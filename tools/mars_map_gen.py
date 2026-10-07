@@ -32,7 +32,8 @@ Pipeline
   6. Glass: back shell, interior, front shell with fresnel tint, ribs and shine.
   7. Lines, glows, haze per land, space backdrop, and the game data: depth map,
      walk/height grid, biome grid, plant sheets, glow points and the crash scene
-     (the ground as it was before, the falling satellite, smoke and spark points).
+     (the ground as it was before, the falling satellite, smoke and spark points), and the
+     light mask: how much of each pixel is its own light, so it stays lit at night.
 """
 import json
 import math
@@ -67,6 +68,10 @@ CU = np.array([0.0, math.sin(30 * DEG), math.cos(30 * DEG)])
 SUN = A.nz([-0.62, -0.32, 0.62])  # same quadrant as the sprite light, a little lower for longer shadows
 VIEWPORT = (384, 216)             # game view in px (project.godot); no two domes may share one
 SEED = 11
+# The light mask (red_planet_light.png): for every map pixel, how much of its colour is its own
+# light (lamps, lit windows, glowing plants and pools, light pooling round them, the stars) rather
+# than sunlight. The game keeps those pixels lit at night. Renderers write into it while it is set.
+EMIT = None
 
 # ================================================================== layout (camera X/Y, world units)
 DOME_SCALE = 2.5                  # bases are designed at R0 and scaled as a whole (doors ~1.6x the astronaut)
@@ -139,7 +144,7 @@ PATHS = [  # winding, never straight
 ]
 # no road to the wreck (it only just came down), but keep the way there free of cliffs
 CRASH_LANE = [(-1000, 1620), (-900, 1380), (-800, 1220), (-740, 1130)]
-PATH_HALF = 9.5
+PATH_HALF = 9.5                  # trails: the walkable width kept clear (nothing is drawn on the ground)
 WALK_SLOPE = 0.78                 # steepest ground an astronaut can walk (~38 degrees)
 RAMP_SLOPE = 0.42                 # sand drifts piled against cliffs: gentle enough to climb
 DRIFT_SIDE = 0.5                  # drift flanks: steep sand, still walkable on the diagonal
@@ -388,6 +393,32 @@ def airlock_ends():
                         out.append((u, (e + dirv * t - c) / u['R']))
                         break
     return out
+
+
+def trail_thinning(species, path_d, u, v):
+    """How likely a plant may grow at grid point (u, v), given the distance to the trails. The
+    forest thins out gradually and unevenly toward a trail, so the way through reads as a natural
+    clearing rather than a cut corridor. Trees keep furthest back, and keep out of the strip just
+    in front of a trail (from this camera a tall tree hides the ground behind it); low plants
+    creep closer. The middle stays clear so the trail can be walked."""
+    n = path_d.shape[0]
+    d = float(path_d[int(u), int(v)])
+    wobble = 0.5 + 0.3 * math.sin(u * 0.021 + 1.3) + 0.2 * math.sin(v * 0.017 + 0.4)   # 0..1 along the way
+    clear = PATH_HALF + 1.5 + 6.0 * wobble                     # nothing at all inside this
+    tall = species in ('tree', 'ice')
+    band = 34.0 if tall else 14.0                             # then thinner and thinner over this
+    if d < clear:
+        return 0.0
+    k = min(1.0, (d - clear) / band)
+    keep = k * k * (3 - 2 * k)
+    if tall:                                                  # the ground this tree would hide
+        for ahead in (16.0, 32.0, 48.0):
+            a = ahead / SQ2
+            ua, va = min(n - 1, int(u + a)), min(n - 1, int(v + a))
+            if path_d[ua, va] < clear + 4.0:
+                keep *= 0.18 + 0.5 * (ahead / 48.0) * wobble
+                break
+    return keep
 
 
 def path_lamps(curves=None):
@@ -1011,7 +1042,9 @@ def place_flora(G, U, V, rs):
                 continue
             if G['nZ'][iu, iv] < 0.93 or G['mat'][iu, iv] in (2, 4, 5, 6) or taken[iu, iv]:
                 continue
-            if G['path_d'][iu, iv] < PATH_HALF + 6 or G['lane_d'][iu, iv] < 10 or G['crash_d'][iu, iv] < 40:
+            if G['lane_d'][iu, iv] < 10 or G['crash_d'][iu, iv] < 40:
+                continue
+            if rs.uniform() > trail_thinning(name, G['path_d'], u, v):
                 continue
             X, Y = to_cam(u, v)
             if min(math.hypot(X - d['X'], Y - d['Y']) - d['R'] for d in DOMES.values()) < 40:
@@ -1181,8 +1214,10 @@ def shade_terrain(G, hitY, hitZ, kind, y_off=0, x_off=0, scorch=True):
         if jj.size == 0:
             continue
         jj = jj + r0
-        rgb, drk, top, steep, spire, b, f = _shade_pixels(G, jj + y_off, ii + x_off, hitY[jj, ii], hitZ[jj, ii],
-                                                        kind[jj, ii] == 2, scorch)
+        rgb, drk, top, steep, spire, b, f, lt = _shade_pixels(G, jj + y_off, ii + x_off, hitY[jj, ii], hitZ[jj, ii],
+                                                            kind[jj, ii] == 2, scorch)
+        if EMIT is not None and EMIT.shape == kind.shape:
+            EMIT[jj, ii] = lt
         img[jj, ii] = rgb
         dark[jj, ii] = drk
         level_top[jj, ii] = top
@@ -1230,7 +1265,6 @@ def _shade_pixels(G, jj, ii, Y, Z, wall, scorch=True):
     tex = sample(G['tex'], u, v)
     streak = sample(G['streak'], u, v)
     glow = sample(G['glow'], u, v)
-    path_d = sample(G['path_d'], u, v)
     walk_d = sample(G['walk_d'], u, v)
     albedo = sample(G['albedo'], u, v)
     spike_rel = sample(G['spike_rel'], u, v)
@@ -1262,18 +1296,16 @@ def _shade_pixels(G, jj, ii, Y, Z, wall, scorch=True):
     top = np.zeros((len(jj), 3), np.uint8)
     fx = np.zeros(len(jj), np.uint8)
 
-    # flat materials
-    is_path = flat & (path_d < PATH_HALF + bay * 3.0) & (mat != 5)
-    tracks = is_path & (np.abs(path_d - 4.2) < 0.7)
+    # flat materials (trails are not drawn: they are just where nothing grows)
     floor = flat & (mat == 5)
     sandy = floor & (sample(G['sand_in'], u, v) > 0.45 + bay * 0.3)       # red sand drifted in through the breach
     floor &= ~sandy
     walk_w = 5.5 * DOME_SCALE
     walkway = floor & (walk_d < walk_w)
-    sel_mat = np.where(is_path, 3, np.where(walkway, 7, np.where(floor, 9, np.where(sandy, 0, mat))))
+    sel_mat = np.where(walkway, 7, np.where(floor, 9, np.where(sandy, 0, mat)))
     # 0 ground 1 mesa 2 pit 3 path 4 rock 6 spire 7 walkway 9 floor; -1 cliff -2 spire face -3 tips
     sel_mat = np.where(steep, -1, sel_mat)
-    sel_mat = np.where((mat == 4) & ~is_path, 4, sel_mat)    # boulders keep rock colours even when steep
+    sel_mat = np.where(mat == 4, 4, sel_mat)                  # boulders keep rock colours even when steep
     spire = (mat == 6) & (sel_mat == -1)
     tip_at = np.choose(bio, [BIOMES[0]['tip_at'], BIOMES[1]['tip_at'], BIOMES[2]['tip_at']])
     frost = (mat == 6) & (spike_rel > tip_at + bay * np.where(bio == 2, 0.018, 0.06))
@@ -1292,7 +1324,6 @@ def _shade_pixels(G, jj, ii, Y, Z, wall, scorch=True):
         small = (np.mod(fu, tile / 2) < 0.6) | (np.mod(fv, tile / 2) < 0.6)
         wk = walk_d[floor] < walk_w
         I[floor] = 0.6 + 0.24 * glow[floor] - np.where(wk, 0.13 * small, 0.15 * seam) + 0.025 * tex[floor]
-    I = np.where(tracks, I - 0.1, I)
     # forest pools glow from below: ripple bands, no sun needed
     pool = is_f & (sel_mat == 2)
     fx[pool] = 1
@@ -1386,7 +1417,9 @@ def _shade_pixels(G, jj, ii, Y, Z, wall, scorch=True):
     bq = np.clip(np.floor(np.clip(bg, 0, 1) * 3 + bay * 0.9 + 0.2) / 3.0, 0, 1)
     rgb = np.clip(rgb * (1 - 0.2 * bq[:, None]) + BGLOW * 0.2 * bq[:, None], 0, 255).astype(np.uint8)
     fx[is_i & flat & ((sel_mat == 0) | (sel_mat == 1)) & (shadow < 0.3) & (I > 0.72)] = 2
-    return rgb, drk, top, steep, mat == 6, bio, fx
+    lt = np.maximum(np.round(gq * 230), np.round(bq * 200))
+    lt = np.where((fx == 1) | (fx == 3) | ((sel_mat == -3) & is_f), 255, lt).astype(np.uint8)
+    return rgb, drk, top, steep, mat == 6, bio, fx, lt
 
 
 _BAND = None
@@ -2208,17 +2241,23 @@ def sprite_box(frames_parts, pad=3):
 
 
 def render_sprite(parts, box):
+    global EMIT
     x0, y0, w, h = box
     img = np.zeros((h, w, 3), np.uint8)
     Dc = np.full((h, w), np.inf, np.float32)
     kind = np.zeros((h, w), np.uint8)
     gid = np.zeros((h, w), np.int32)
-    render_groups(parts, img, Dc, kind, gid, 1, x0, y0)
+    outer, EMIT = EMIT, np.zeros((h, w), np.uint8)
+    try:
+        render_groups(parts, img, Dc, kind, gid, 1, x0, y0)
+        emit = EMIT
+    finally:
+        EMIT = outer
     depth_lines(img, img, Dc, kind, gid)
     filled = kind > 0
     pad = np.pad(filled, 1)
     ring = (pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]) & ~filled
-    return dict(rgb=img, D=Dc, gid=gid, filled=filled, ring=ring)
+    return dict(rgb=img, D=Dc, gid=gid, filled=filled, ring=ring, emit=np.where(filled, emit, 0).astype(np.uint8))
 
 
 def sprite_rgba(fr, haze=None, amount=0.0):
@@ -2248,6 +2287,8 @@ def bake_sprite(fr, gx, gy, dY, img, D, kind, gid, gid_base):
     D[g][m] = depth[m]
     kind[g][m] = 3
     gid[g][m] = gid_base + fr['gid'][l][m]
+    if EMIT is not None:
+        EMIT[g][m] = fr['emit'][l][m]
 
 
 def glass_front(gx, gy, h, w):
@@ -2321,14 +2362,15 @@ PLANT_DEPTH_B = 96                 # depth png blue for pixels of a live plant (
 
 
 def depth_row(fr):
-    """A frame's depth (world Y relative to the plant's foot) as grey: v = (d + 64) * 2, 0 = empty.
-    Outline pixels take the depth of the plant pixel next to them."""
+    """A frame's depth (world Y relative to the plant's foot) in red: v = (d + 64) * 2, 0 = empty.
+    Outline pixels take the depth of the plant pixel next to them. Green is 255 where the plant
+    glows on its own (it stays lit at night)."""
     d = fr['D']
     pad = np.pad(d, 1, constant_values=np.inf)
     nb = np.minimum.reduce([pad[:-2, 1:-1], pad[2:, 1:-1], pad[1:-1, :-2], pad[1:-1, 2:]])
     d = np.where(fr['ring'], nb, d)
     v = np.where(np.isfinite(d), np.clip(np.round((d + 64) * 2), 1, 255), 0).astype(np.uint8)
-    return np.dstack([v, v, v, np.full(v.shape, 255, np.uint8)])
+    return np.dstack([v, fr['emit'], v, np.full(v.shape, 255, np.uint8)])
 
 
 def behind_glass(fr, gx, gy, dY, tol=3.0):
@@ -2663,6 +2705,8 @@ def render_props(parts, center, radius, img, D, kind, gid, gid_base, ox=0, oy=0)
     depth = P[:, 1]
     front = depth < D[yy, xx]
     yy, xx = yy[front], xx[front]
+    if EMIT is not None and EMIT.shape == img.shape[:2]:
+        EMIT[yy, xx] = np.where(emis[front], 255, 0)
     img[yy, xx] = col[front]
     D[yy, xx] = depth[front]
     kind[yy, xx] = 3
@@ -3663,7 +3707,7 @@ def depth_lines(img, dark, D, kind, gid, only_kind=None):
     img[obj_line] = OUTLINE
 
 
-def add_glow(img, sx, sy, radius, color, strength):
+def add_glow(img, sx, sy, radius, color, strength, light=None):
     x0, x1 = int(max(0, sx - radius - 1)), int(min(W, sx + radius + 2))
     y0, y1 = int(max(0, sy - radius - 1)), int(min(H, sy + radius + 2))
     if x1 <= x0 or y1 <= y0:
@@ -3676,6 +3720,9 @@ def add_glow(img, sx, sy, radius, color, strength):
     a = np.clip(a, 0, strength)[..., None]
     reg = img[y0:y1, x0:x1].astype(np.float32)
     img[y0:y1, x0:x1] = (reg * (1 - a) + np.asarray(color, np.float32) * a).astype(np.uint8)
+    if light is not None:                                  # the halo is light too
+        lw = np.round(a[..., 0] / max(strength, 1e-6) * 235).astype(np.uint8)
+        light[y0:y1, x0:x1] = np.maximum(light[y0:y1, x0:x1], lw)
 
 
 def _smooth_noise_img(feat, seed, h, w):
@@ -3975,10 +4022,10 @@ def export_minimap(final, filled, fit=(352, 192)):
         return (px - x0) * scale, (py - y0) * scale
 
     path_col = np.array(A.hex2rgb('#f3cf9e'), np.uint8)
-    for pts in PATHS:
+    for pts in PATHS:                                   # the trails, as a dotted route
         cp = catmull(pts, step=2.0)
-        for X, Y in cp:
-            if min(math.hypot(X - d['X'], Y - d['Y']) - d['R'] for d in DOMES.values()) < 0:
+        for k, (X, Y) in enumerate(cp):
+            if (k // 4) % 2 or min(math.hypot(X - d['X'], Y - d['Y']) - d['R'] for d in DOMES.values()) < 0:
                 continue
             mx, my = to_mm(X, Y)
             mm[int(my), int(mx)] = path_col
@@ -4224,10 +4271,12 @@ def collect_glows(G, fxpx, D, baked, sprites):
 
 
 def build():
+    global EMIT
     os.makedirs(OUT, exist_ok=True)
     t_start = time.time()
     G = build_world()
     set_frame(G)
+    EMIT = np.zeros((H, W), np.uint8)
     hitY, hitZ, kind = render_terrain(G)
     img, dark, bio, fxpx = shade_terrain(G, hitY, hitZ, kind)
     del hitZ
@@ -4337,8 +4386,12 @@ def build():
     del bio
     for p, rad, colr, s_ in lights:
         sx, sy = project(*p)
-        add_glow(final, sx, sy, rad, colr, s_)
+        add_glow(final, sx, sy, rad, colr, s_, EMIT)
+    EMIT[~filled] = 255                                   # space looks the same by day and night
+    EMIT[ring] = 0
     Image.fromarray(final).save(os.path.join(OUT, 'red_planet_map.png'))
+    Image.fromarray(EMIT, 'L').save(os.path.join(OUT, 'red_planet_light.png'))
+    print(f'light mask: {np.count_nonzero(EMIT[filled] > 127)} lit pixels on the ground')
     glows = collect_glows(G, fxpx, D, baked, sprites)
     rs_g = np.random.default_rng(SEED + 818)
     for x, y in dome_glints:                             # sunlight flashing off the dome's metal
@@ -4377,6 +4430,7 @@ def build():
     live_glow_flags(flora_out, live, sprites, D)
     flora_depth(live, sprites, D, kind)                  # the player can walk behind the swaying plants
     meta['game'] = export_game_data(G, D, kind, debris, body)
+    meta['game']['light_png'] = 'red_planet_light.png'
     meta['biomes'] = export_biome_grid(G)
     meta['minimap'] = export_minimap(final, filled)
     meta['animated'] = export_animated(D)
