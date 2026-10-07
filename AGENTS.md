@@ -74,14 +74,16 @@ scripts/
   game_state.gd        autoload GameState: the only state carried between scenes
   audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.7)
   world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
+  inventory_ui.gd      six-slot hotbar and paused backpack; draws existing sprites and PixelFont
   map_terrain.gd       MapTerrain: walkability, ground height, biome, world<->pixel projection
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
   multitool.gd         Multitool: equip, job picking (mine/gather/lift/fix) and their effects
   world_prop.gd        WorldProp: a loose thing the tool works on (rock, chunk, scrap, crate)
-  airlock_door.gd      AirlockDoor: "[E] ENTER/EXIT" prompt and the door cutscene, both ways
+  airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
+  repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter
   crash_site.gd        the satellite crash intro and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
@@ -104,6 +106,8 @@ tools/                 the pipeline (Python): generates everything in assets/
   sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
   requirements.txt          what make env installs
   *_viewer.html             browser previews of the sprites and the map
+  wire_repair.html          browser companion to the native circuit panel
+data/repair_circuits.json   authored five-circuit sequences for power and oxygen machines
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
@@ -135,6 +139,11 @@ data images and JSON written by the same generator so they always match the pict
 Scripts must **read positions from this data** (door positions, LED pixels, crack outlines and
 so on). Never hard-code a map pixel position in a script. If you need one, the generator
 exports it.
+
+`base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
+(interaction position in world units), and `progress_px` (bar anchor in map pixels).
+`interior_gen.py` derives these from the actual machine model centres; its
+`--repair-metadata-only` option updates just this data using the existing projection origin.
 
 ### 4.2 Coordinates: one projection everywhere
 - **World**: X right, Y away from the camera, Z up, in *world units*. Gameplay lives here.
@@ -173,20 +182,39 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | run | Shift | right shoulder | player.gd |
 | jump (hold for higher) | Space | A | player.gd |
 | tool_toggle (take out / put away) | T | Y | multitool.gd |
-| tool_use (hold: mine, gather, fix; tap: lift / set down) | E | X | multitool.gd |
-| interact (doors) | E | X | airlock_door.gd |
+| tool_use (hold: mine, gather, fix; tap: lift / set down) | F | X | multitool.gd |
+| interact (doors) | F | X | airlock_door.gd |
+| toggle_inventory | E | Start | inventory_ui.gd |
+| hotbar select | 1-6 / mouse wheel / click | left shoulder cycles | inventory_ui.gd |
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
 
-E is shared: while a door's prompt is showing, the door sets `multitool.suppressed = true`,
-so E opens the door instead of using the tool. Anything else that wants E must use the same
-mechanism. Never bind a second meaning to E without it.
+F / gamepad X is shared: while a door's prompt is showing, the door sets
+`multitool.suppressed = true`, so it opens the door instead of using the tool.
+Inventory pauses the world and independently sets `multitool.inventory_suppressed`;
+after closing, F / X must be released before interactions resume. The inventory consumes
+modal input before map/camera handlers. Do not add another meaning to these buttons
+without the same suppression mechanism.
+Machine repairs use `multitool.repair_suppressed` independently, pause the world and consume
+modal input. F/X must be released after closing. On the board, arrows/WASD/d-pad select
+movable modules; Enter/Space/F/A turns clockwise, Q/left shoulder turns back, Esc/B closes.
+Mouse left/right click turns clockwise/back. Bolted modules and plates are skipped.
 
 ### 4.5 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
   - `tool_out`: the multitool stays out across the airlock.
+  - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
+    quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
+    resources stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
+    `inventory_changed`. A full bag leaves gathered props in the world.
+  - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
+    their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
+    chunks. Generated JSON is unchanged. Saving to disk is not implemented.
+  - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
+    Each stores its current puzzle, countdown, circuit index and completed repair tasks.
+    Closing a panel or changing scenes preserves the attempt; leaving pauses its countdown.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -272,20 +300,35 @@ consts in the named files.
   - T plays an 18-frame equip animation: the device on the backpack unfolds into a red-and-gold
     gauntlet on the right forearm.
   - With the tool out, every animation has a `_tool` version.
-  - The tool **picks its job from the target in reach** (40 units). An icon over the nearest
+  - The tool **picks its job from the target in reach** (40 units). Use F / gamepad X.
+    An icon over the nearest
     target shows which job it will do:
 
     | Job | Colour | Target | How it works |
     |---|---|---|---|
-    | mine | orange `#ff8a3a` | ore rock | hold E for 1.6 s; the rock bursts into chunks |
-    | gather | teal `#4fe0c8` | ore chunk, scrap | hold E for 0.55 s; a spiral pulls it in |
-    | lift | violet `#b583ff` | crate | tap E to float it so it follows you; tap again to set it down |
-    | fix | cyan `#7fd8ff` | dead lamp | hold E for 2.4 s; the lamp flickers back on |
+    | mine | orange `#ff8a3a` | ore rock | hold F for 1.6 s; the rock bursts into chunks |
+    | gather | teal `#4fe0c8` | ore chunk, scrap | hold F for 0.55 s; a spiral pulls it into the backpack |
+    | lift | violet `#b583ff` | crate | tap F to float it so it follows you; tap again to set it down |
+    | fix | cyan `#7fd8ff` | dead lamp | hold F for 2.4 s; the lamp flickers back on |
 
-  - **There are no counters or inventory on screen. That is a decision (§9), not a gap.**
+  - Inventory now shows resource stack counts (§12); there are no health/resource bars.
+- **Inventory** (`inventory_ui.gd`): six-slot bottom hotbar; E / Start toggles the paused
+  24-slot backpack. Click two slots to swap, or arrows/d-pad and Enter/A to pick/place.
+  Esc/B cancels a pending swap first, then closes. 1-6/wheel/left shoulder select hotbar;
+  selecting the multitool equips it, selecting resources/empty slots holsters it.
+  T/Y remains available. Ore/scrap have no consume/crafting action yet. Crates remain
+  world objects handled by lift. Opening/closing without changing selection preserves
+  the existing tool state. Inventory is blocked during intro/door cutscenes or map pause.
+- **Machine repairs** (`scripts/repair/`): F/X near the power or O2 generator opens one
+  rotating-wire circuit. Each machine has five authored layouts; after 30 active seconds
+  without a solution it advances to the next, reshuffles and resets the timer. Bolted wires
+  conduct but stay fixed. A matching supply-to-output route completes wiring once (50%).
+  Local machine bars show overall progress. The future cracks task accounts for the other
+  50% through `GameState.repair_for(id).complete_task("cracks")`; the task and repaired
+  machine art are not implemented yet.
 - **Doors** (`airlock_door.gd`):
-  - Within 30 units, a `[E] ENTER` / `[E] EXIT` prompt shows.
-  - Pressing E starts a cutscene: the camera moves behind the astronaut, the warning lamp
+  - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
+  - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
     blinks, the door unseals and vents gas, the astronaut walks in, the door closes, and
     the screen fades.
 - **Intro** (`crash_site.gd`): the satellite crash-lands near the base, once per run, and any
@@ -456,7 +499,7 @@ field in it exists because something in the game asks for it (§4.7).
 ### 7.5 UI and text
 - All text is `PixelFont` (3×5 glyphs): scale 1 for prompts, scale 2 for titles. Extend its
   glyph table if you need a letter; never use a vector font.
-- Prompts read `[E] LABEL`, in capitals.
+- Prompts read `[F] LABEL` for world interactions, in capitals; E opens the backpack.
 - Room titles fade in at the top of the screen on a dark translucent plate with a coral
   underline (`interior_fx.gd`). Reuse this look.
 - No HUD clutter (see §9).
@@ -511,6 +554,11 @@ godot --headless --path . res://scenes/interior.tscn --quit-after 20000 -- --qui
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
+godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
+godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
+godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
+node tools/test_wire_repair.cjs                                     # browser circuit model checks
+godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 ```
 
 Useful hooks:
@@ -518,7 +566,11 @@ Useful hooks:
 - `--quit=SECONDS`, `--audio-debug` (both scenes)
 - overworld only: `--equip`, `--use`, `--face=DX,DY`, `--door`, `--intro` / `--no-intro`,
   `--zoom=L`, `--open-map`, `--debug`
-- interior only: `--arrive`, `--exit`
+- interior only: `--arrive`, `--exit`, `--repair=power|oxygen`,
+  `--repair-done=power|oxygen` (wiring credit for screenshots), `--repair-bars`
+  (ignore ambient F input during progress-bar captures)
+- repair panel: `--reduced-motion` disables turn and completion animation; receiving
+  power activates immediately. The browser follows `prefers-reduced-motion`.
 
 **Quit with `--quit=SECONDS`, not with `--quit-after`.** `--quit-after` counts *frames*, and a
 headless frame can take under a millisecond, so it is unpredictable in wall-clock time and it
@@ -555,8 +607,9 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - Main base design **v3** is the default. The old designs stay available as versions.
 - The three lands and where they are; winding roads; the comms massif.
 - The base starts dead and broken; it gets repaired through play.
-- **No counters, inventory numbers or HUD bars** for now.
-- The multitool picks its job from the target. One button (E) uses it.
+- **No HUD bars**; inventory stack counts, a six-slot hotbar and local machine repair
+  progress bars are approved (§12).
+- The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
   Each room has two different irregular holes, kept as data so they can be traced later.
@@ -624,30 +677,33 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 ---
 
 ## 11. Current state and open threads
-- **The repair loop is not built yet.** The pieces are in place, waiting for it:
+- **The repair loop is partly implemented.** Wiring is playable; these pieces remain:
   - **Dome cracks to trace and fix:**
     - `red_planet_fx.json → cracks` has, per hole: room, id, shape, outline polygon, crack
       strokes, centre, world position, and patch image and position;
     - the images are in `assets/maps/red_planet/anim/cracks/`.
-  - **The power room circuit board** (shown but not interactive yet):
+  - **The power room cabinet art** remains the original generated asset:
     - `base_interior.json → fx.circuit_board` has `center`, `socket`, the 4 `corners`
       (map px) and `world`;
     - `interior_fx.gd` pulses the empty socket.
-  - **The reactor and the oxygen generator** are broken. How they get repaired is not
-    designed yet (§10.1).
+  - **Reactor/O2 wiring is implemented:** F/X, five circuits each, timed replacement,
+    session state, bolted wires and local progress bars. The native panel uses octagons,
+    detailed PCB housings, a blue-green recess and neon green power (owner-approved).
+    One circuit earns 50% repair; cracks and the fully repaired assets are still pending.
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
+- **Inventory is implemented:** session backpack, resource stacks, quick access and slot
+  swaps. Resources are gathered through the existing tool; crafting/consumption is not
+  implemented. No new generated item art or map data keys.
 - **Sound is built** (§4.7, §7.6): ambience for the three lands and the dead base, positional
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
   the four multitool jobs, the airlock cutscene, the crash, and the UI. What is missing:
   - no volume controls and nothing saved (there are no settings and no save file yet);
-  - the fixed-lamp hum is the only sound that knows the world has changed, because the repair
-    loop it belongs to is not built;
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
-- **Not built yet:** inventory or resources (deliberately hidden, see §9), interiors for the
-  nursery and comms domes, saving and loading, music (and there will not be any, §9).
+- **Not built yet:** interiors for the nursery and comms domes, saving and loading, music
+  (and there will not be any, §9).
 
 ---
 
@@ -671,6 +727,21 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-06 — Broken reactor with thin wires and a circuit-board cabinet; broken oxygen
   generator, O2 bottles and scrap; walkable footprints only at body height (owner).
 - 2026-10-06 — No zooming indoors. Dome cracks keep their original look (owner).
+- 2026-10-07 — Inventory feature request approves a visible six-slot hotbar, 24-slot
+  backpack and resource stack counts. E opens/closes inventory; existing world interactions
+  move to F (gamepad X unchanged). PixelFont/palette/generated sprites are reused; inventory
+  pauses gameplay. Ore/scrap are stored in GameState, persist through scenes, and can be
+  rearranged; no crafting or new resource-use jobs (owner's explicit inventory request).
+- 2026-10-07 — Power/O2 generators get F/X circuit repair and local repair-progress bars.
+  Five circuits per machine; one successful circuit completes wiring, with a new circuit
+  after 30 active seconds if unsolved. Wiring earns 50%; cracks and fixed machine art come
+  later. The panel uses minimal copy, a blue-green circuit-board palette and neon green
+  connected wires. Octagonal detailed housings replace hexagons; fixed wires use bolts
+  instead of padlocks (owner's explicit repair integration and octagon requests).
+- 2026-10-07 — Enlarge the circuit terminals into a charged capacitor bank and receiving
+  relay. A single bright pulse follows the player's actual connected route from source to
+  receiver after solving; the relay closes and status LEDs light on arrival. The effect
+  is skippable and does not delay repair credit (owner's terminal/animation request).
 - 2026-10-07 — The pipeline gets a `Makefile`, a pinned Python env (`make env`, uv + `.venv`,
   `tools/requirements.txt`) and `.claude/` skills for working here (owner, requested).
 - 2026-10-07 — Sound: ambience and interaction sounds, **no music**. Built by

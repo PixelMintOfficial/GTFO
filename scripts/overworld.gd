@@ -17,8 +17,9 @@ extends Node2D
 ##   --use                  keep the multitool's use button held (after --equip)
 ##   --face=DX,DY           turn to face this screen direction before working
 ##   --door                 walk up to the base's airlock and go in (the whole cutscene)
+##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
-##   --quit=SECONDS          run for this long, then shut the sound down and quit cleanly
+##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
 const DEPTH_MAP: Texture2D = preload("res://assets/maps/red_planet/red_planet_depth.png")
@@ -54,6 +55,9 @@ func _ready() -> void:
 	player.step_source = _step_sound
 	multitool.setup(PROPS_JSON, player, terrain, $Actors, DEPTH_MAP)
 	_setup_doors()
+	var inventory_ui := InventoryUI.new()
+	add_child(inventory_ui)
+	inventory_ui.setup(player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -88,7 +92,7 @@ func _step_sound() -> String:
 	return "step_dust"
 
 
-## The base's airlock doors: E to go inside.
+## The base's airlock doors: F to go inside.
 func _setup_doors() -> void:
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
 	if not meta.has("fx"):
@@ -124,8 +128,7 @@ static func _args() -> Dictionary:
 ## counts frames and so depends on how fast the machine runs.
 func _quit_after(seconds: float) -> void:
 	await get_tree().create_timer(seconds).timeout
-	await Audio.quiet()                           # nothing may still be playing at teardown
-	get_tree().quit()
+	await Audio.quit()
 
 
 func _run_test_hooks(args: Dictionary) -> void:
@@ -179,5 +182,4 @@ func _run_test_hooks(args: Dictionary) -> void:
 		img.save_png(path if count == 1 else path.get_basename() + "_%d.png" % i)
 		if i < count - 1:
 			await get_tree().create_timer(gap).timeout
-	await Audio.quiet()                           # nothing may still be playing at teardown
-	get_tree().quit()
+	await Audio.quit()

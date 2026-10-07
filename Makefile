@@ -11,7 +11,7 @@
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
 #   make map            regenerate the overworld (~3 min, several GB of RAM)
 #   make import         re-import assets into Godot (always after a regeneration)
-#   make check          both scenes headless; fails on any error or warning
+#   make check          both scenes + the test suites; fails on any error or warning
 #   make shot           screenshot a scene: make shot ARGS="--spawn=-827,1440"
 #   make sounds         open assets/audio/viewer.html to listen to every sound
 #   make verify         import + check (what "done" needs, minus looking at it)
@@ -26,7 +26,7 @@ SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
 .PHONY: help env sources sfx props interior astronaut astronaut-quick map all import check \
-        check-overworld check-interior shot sounds verify clean-shots
+        check-overworld check-interior check-tests shot sounds verify clean-shots
 
 help:
 	@sed -n '2,/^$$/p' $(MAKEFILE_LIST) | sed 's/^# \{0,1\}//'
@@ -75,7 +75,7 @@ import:
 	$(GODOT) --headless --path . --import
 
 # Headless runs print errors and warnings to stderr; any of either fails the check.
-check: check-overworld check-interior
+check: check-overworld check-interior check-tests
 
 # --quit=S (not --quit-after) lets the scene shut the sound down before it quits: a playback
 # still running at teardown is reported as leaked. --quit-after counts FRAMES, and a headless
@@ -94,6 +94,15 @@ check-interior:
 		2>&1 | tee /tmp/gtfo-interior.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error' /tmp/gtfo-interior.log \
 		|| { echo "interior: errors above" >&2; exit 1; }
+
+# The regression suites: the inventory's real input events, and the circuit repair model
+# over a thousand shuffled boards. They report their own pass/fail and exit nonzero.
+check-tests:
+	@echo "== tests"
+	@$(GODOT) --headless --path . res://tests/inventory_test.tscn 2>&1 | tee /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/repair_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error|[1-9][0-9]* failures' /tmp/gtfo-tests.log \
+		|| { echo "tests: failures above" >&2; exit 1; }
 
 verify: import check
 

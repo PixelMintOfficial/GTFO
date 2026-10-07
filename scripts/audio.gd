@@ -247,6 +247,14 @@ static func _silence(p: Node) -> void:
 	p.free()
 
 
+## Quit the game with the sound stopped first. Anything that ends the process - a scene's
+## --quit hook, a test suite reporting its result - should go through here rather than
+## get_tree().quit(), so no caller has to know that audio needs winding down.
+func quit(code := 0) -> void:
+	await quiet()
+	get_tree().quit(code)
+
+
 ## Closing the window gets the same treatment as far as it can: there is no chance to wait, but
 ## stopping first still hands the mixer the whole of the engine's teardown to let go in.
 func _notification(what: int) -> void:
