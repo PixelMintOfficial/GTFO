@@ -44,6 +44,7 @@ func setup(meta_path: String, player: Player) -> void:
 
 func toggle() -> void:
 	visible = not visible
+	Audio.play("ui_map_open" if visible else "ui_map_close")
 	get_tree().paused = visible
 	_time = 0.0
 	_canvas.queue_redraw()

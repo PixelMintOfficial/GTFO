@@ -38,28 +38,42 @@ describes how the game is built, the rules that keep it consistent, and how we w
 | What | Version used | Notes |
 |---|---|---|
 | Godot | **4.7.2 stable** | GL Compatibility renderer (set in `project.godot`). Use the same minor version. |
-| Python | 3.14 | Only for the art generators in `tools/`. |
-| Python packages | NumPy 2.4, Pillow 12.3, SciPy 1.17 | `pip install numpy pillow scipy` |
+| Python | 3.13+ | Only for the generators in `tools/`. |
+| Python packages | NumPy, Pillow, SciPy | `make env` builds `.venv` from `tools/requirements.txt` with [uv](https://docs.astral.sh/uv/). |
+| ffmpeg | any recent | Only for `sfx_gen.py`: decodes the source recordings. |
+| bsdtar or unzip | any | Only for `sfx_gen.py --fetch`: unpacks the sound packs. |
 | RAM | several GB free | `mars_map_gen.py` renders a 7751×4350 map. Close other heavy apps. |
+
+**`make` is the way in.** `make help` lists every target; the rest of this file names them as
+it goes. Nothing in the pipeline needs to be remembered as a command line.
 
 1. Clone, then open `project.godot` in Godot 4.7.2. The first open imports every texture,
    which takes a while (the map is big). `.godot/` is rebuilt locally and is git-ignored.
 2. Press Play: `scenes/overworld.tscn` is the main scene. On a fresh run the satellite crash
    intro plays first; any button skips it.
-3. You only need Python if you change art, maps or data (§6).
+3. You only need Python if you change art, sound, maps or data (§6): `make env`.
+4. The sound's source recordings are not in the repo (they are large and they are other
+   people's work). `make sources` downloads and checksums them into `assets/audio/sources/`.
+   You only need them to *regenerate* sound; the baked `assets/audio/*.wav` are committed.
 
 ---
 
 ## 3. Project map
 
 ```
+Makefile               the one entry point: generate, import, check, screenshot, listen
 project.godot          viewport 384x216, integer scaling, nearest filtering, pixel snapping
+.claude/
+  settings.json        permissions, and a hook that reminds you to regenerate
+  skills/              how to work here: art-pipeline, sound-pipeline, verify
 scenes/
   overworld.tscn       main scene: the red planet
   interior.tscn        inside the main base (storage / power room / oxygen room)
   player.tscn          the astronaut: Shadow, AnimatedSprite2D (depth-occlusion shader), GameCamera
 scripts/
   game_state.gd        autoload GameState: the only state carried between scenes
+  audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.7)
+  world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
   map_terrain.gd       MapTerrain: walkability, ground height, biome, world<->pixel projection
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
@@ -81,18 +95,23 @@ shaders/
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
   crash_reveal         uncovers the untouched ground behind the crashing satellite
   dust_gusts           dithered wind-gust overlay
-tools/                 the art pipeline (Python): generates everything in assets/
+tools/                 the pipeline (Python): generates everything in assets/
   astronaut_sprite_gen.py   the astronaut and the multitool: SDF model, rig, every animation
   godot_spriteframes.py     astronaut.json -> astronaut_frames.tres (SpriteFrames)
   mars_map_gen.py           the overworld: terrain, biomes, domes, props, plants, all map data
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
+  sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
+  requirements.txt          what make env installs
   *_viewer.html             browser previews of the sprites and the map
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
   maps/red_planet/          generated overworld: map, depth, walk, biome, fx, props, flora, anim, previews
   maps/base_interior/       generated interior: map, depth, walk, json, anim (door), preview
+  audio/                    generated sound: *.wav, audio.json, viewer.html, SOURCES.md,
+                            CREDITS.md (ship this), preview.json
+  audio/sources/            the open-licence recordings, git-ignored (make sources)
 ```
 
 ---
@@ -133,6 +152,7 @@ exports it.
 ### 4.3 Draw order, depth and y-sorting
 - **Overworld nodes, in draw order:** `Map` → `CrashSite` → `BiomeFX` → `DomeFX` → `Actors`
   (y-sorted: Player, props, doors) → `Multitool` → `WindFX` → `MapScreen`.
+  (`Ambience` sits in the tree between `Multitool` and `WindFX` but draws nothing; see §4.7.)
 - **Interior nodes, in draw order:** `Map` → `InteriorFX` → `Actors` → `Multitool`.
 - Anything that moves in front of or behind the pre-rendered scenery must use a depth shader
   with `sprite_depth` = world Y of its feet:
@@ -183,6 +203,51 @@ FX scripts draw procedurally in `_draw()`:
   machines (sparks, for example) is drawn as solid pixels in the normal layer, with only
   the halo additive.
 
+### 4.7 Sound
+There is no music. There is the environment of the red planet and the sounds of working on it.
+
+**Sound is data.** `tools/sfx_gen.py` writes `assets/audio/*.wav` plus `audio.json`, and the
+`Audio` autoload plays what that file says. Which file, which bus, how loud, how far it
+carries, how much its pitch wanders per play, whether it loops, how long it fades: all of it
+is in the JSON. **Nothing about a sound is decided in GDScript.** Retuning the mix is a
+generator change, not a code change.
+
+| File | Contents |
+|---|---|
+| `assets/audio/*.wav` | 16-bit mono PCM at 22050 Hz. Looping ones carry a `smpl` chunk, which is how Godot knows where the loop is |
+| `assets/audio/audio.json` | bus levels, and per sound: its files (variants), bus, `gain_db`, `loop`, `seconds`, `pitch` range, `dist` (how far it is heard, map px), `fade`, and a `note` saying which recording it came from and why |
+| `assets/audio/SOURCES.md`, `CREDITS.md` | every source pack, author, licence, URL. **`CREDITS.md` must ship with the game**: some packs are CC BY |
+| `assets/audio/viewer.html` | listen to every sound, with its waveform, at the game's real levels |
+| `assets/audio/sources/` | the raw recordings. Git-ignored; `make sources` fetches and checksums them |
+
+Three ways to make a noise, all through the autoload:
+
+```gdscript
+Audio.play("rock_burst", screen_px)            # one-shot, positional (map pixels)
+Audio.play("ui_map_open")                      # one-shot, flat
+Audio.loop("beam_mine", "beam:mine", tip_px)   # held until release("beam:mine")
+Audio.bed("amb_ice", weight)                   # ambience, crossfaded 0..1
+```
+
+- Buses (`amb`, `sfx`, `ui`) are created **in code** in `Audio._ensure_buses()`, for the same
+  reason input actions are (§4.4). Don't add them to `project.godot` or a bus layout resource.
+- Positions are **map pixels**; the 2D listener is the active camera. A sound further away
+  than its `dist` is never started, so the comms dome's blinkers cost nothing from the base.
+- **Put the call where the event already is.** Whatever owns the state owns its sound:
+  `interior_fx.gd` plays `spark` where it spawns the sparks, `dome_fx.gd` ticks the beacon in
+  step with the strobe it draws, the rock's crack sounds where its frame changes, footsteps
+  come off the drawn gait. Never add a second timer that re-derives when something happens;
+  it will drift out of step with the picture.
+- Footsteps: contact is frame 0 and the middle frame of the walk/run cycle (the gait plants
+  the left foot at phase 0 and the right at 0.5 — see `foot_cycle` in
+  `astronaut_sprite_gen.py`), so they stay on the feet at any speed. The surface comes from
+  `player.step_source`, which the scene sets: the overworld reads the biome image, the
+  interior is always its tiled floor.
+- Leaving a scene: `Audio.enter_scene()` at the top of the scene's `_ready`, or a beam will
+  follow the astronaut through the airlock. Quitting: see §8.
+
+---
+
 ---
 
 ## 5. Mechanics reference (current behaviour)
@@ -226,7 +291,10 @@ consts in the named files.
 - **Intro** (`crash_site.gd`): the satellite crash-lands near the base, once per run, and any
   button skips it. Afterwards the wreck keeps smouldering.
 - **Map screen**: M toggles it. It pauses the game and shows where you are and what the camera
-  sees.
+  sees. Sound carries on while it is open (the `Audio` autoload always processes).
+- **Sound** (§4.7, §7.6): the three lands each have their own ambience, crossfaded by the land
+  you are standing in; the pools, spires, burning wreck and powered domes can be heard from
+  near them; everything you do makes a noise. No music.
 
 ---
 
@@ -236,7 +304,12 @@ consts in the named files.
 All art is **rendered by code**. Signed-distance-field (SDF) models are ray-marched straight
 at pixel resolution through the game's exact camera, then cel-shaded from hand-picked colour
 ramps, dithered, inner-lined and outlined. This is why everything matches. Do not import
-hand-drawn, AI-generated, downloaded or upscaled art into the game. If something new is needed,
+hand-drawn, AI-generated, downloaded or upscaled art into the game.
+
+This rule is about **art**. Sound is deliberately different: real recordings carry the weight
+of the physical world in a way synthesis does not, so the natural half of the soundtrack is
+open-licence field recordings and only the alien tech is generated. The consistency comes from
+one mastering chain instead (§4.7, §7.6). If something new is needed,
 **model it in the generator** with the existing primitives (`Sphere`, `Ellipsoid`,
 `RoundBox`, `RoundCone`, `Torus`, `Disc`, and the interior's `Cut` / `Either` for carving) and
 the existing renderer (`render_groups` / `render_sprite`).
@@ -249,6 +322,7 @@ the existing renderer (`render_groups` / `render_sprite`).
 | `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 3 minutes, several GB of RAM |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
 | `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | a few seconds |
+| `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
 
 **The generators share code.** `mars_map_gen.py` imports `astronaut_sprite_gen.py` (SDF
 primitives, ray-marcher, base palette), and `props_gen.py` and `interior_gen.py` import both.
@@ -271,6 +345,9 @@ before you run the game.
 The generators write the JSON keys that the scripts read. If you rename, remove or reshape a
 key, update **every** reader in the same change (search `scripts/` for the key). Keys that are
 waiting for a future feature are documented in §11. Don't remove them.
+
+`audio.json` is the same kind of contract: `scripts/audio.gd` is the only reader, and every
+field in it exists because something in the game asks for it (§4.7).
 
 ### 6.4 Recipes
 - **A new prop or machine:**
@@ -384,6 +461,33 @@ waiting for a future feature are documented in §11. Don't remove them.
   underline (`interior_fx.gd`). Reuse this look.
 - No HUD clutter (see §9).
 
+### 7.6 Sound (the ear)
+The same rule as the eye: everything must sound as if one person made it.
+
+- **No music.** Not "no music yet": the planet is quiet, and that quiet is the point. What
+  fills it is wind, machinery, and the noise of your own work.
+- **Two layers, and the line between them is deliberate:**
+  - *recorded* — wind, snow underfoot, fire, water, stone, sheet metal, switches. Real
+    recordings, because nothing synthesised sounds like real snow. Open licences only (§10.2).
+  - *synthesised* — the multitool's beams and lens, the lamps, the crystal spires, the
+    beacons, the UI. Generated in `sfx_gen.py`, because a recording of Earth hardware sounds
+    like Earth hardware, and none of this is from Earth.
+- **One mastering chain.** Every sound, recorded or not, is resampled to mono 22050 Hz,
+  filtered, loudness-matched with `rms_to` and peak-limited by the same code. That is what
+  makes a field recording sit next to a synthesised beam. Do not bypass it.
+- 22050 Hz reaches 11 kHz. That is a choice, like the 384×216 viewport: it is all the wind,
+  grit and metal here need, and it keeps the whole soundtrack a few MB.
+- **Nothing is a note.** Struck things use inharmonic partials; the spires breathe one tone
+  that never resolves anywhere. The moment two sounds imply a key, it is music (see above).
+- **Quiet by default.** Ambience sits around -21 dBFS RMS, one-shots around -18, UI ticks
+  near the threshold of notice. A sound that makes you look at the mixer is too loud.
+- **Earth wildlife is not on this planet.** Several otherwise-perfect "forest" recordings are
+  full of birdsong and crickets; `--probe` measures onset rate in the 2-8 kHz band so you can
+  tell before you listen. The alien forest is a low drone plus synthesised voices instead.
+- Anything that happens on screen and matters should be audible, and anything audible should
+  be happening on screen. Sound is placed where the light is: the pools, spires and embers get
+  their positions by clustering the glow points the map generator already exports.
+
 ---
 
 ## 8. Testing and verification
@@ -393,9 +497,17 @@ errors to the terminal). The scenes take test hooks after `--`; the full lists a
 headers of `overworld.gd` and `interior.gd`:
 
 ```
+make verify                        # import + both scenes headless, fails on any error/warning
+make shot ARGS="--spawn=-827,1440 --seconds=2"
+make sounds                        # listen to every sound at the game's real levels
+```
+
+Or by hand:
+
+```
 godot --headless --path . --import                                   # re-import after regenerating
-godot --headless --path . res://scenes/overworld.tscn --quit-after 300 -- --no-intro   # errors?
-godot --headless --path . res://scenes/interior.tscn --quit-after 300
+godot --headless --path . res://scenes/overworld.tscn --quit-after 20000 -- --no-intro --quit=4
+godot --headless --path . res://scenes/interior.tscn --quit-after 20000 -- --quit=4
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
@@ -403,16 +515,35 @@ godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # throug
 
 Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
+- `--quit=SECONDS`, `--audio-debug` (both scenes)
 - overworld only: `--equip`, `--use`, `--face=DX,DY`, `--door`, `--intro` / `--no-intro`,
   `--zoom=L`, `--open-map`, `--debug`
 - interior only: `--arrive`, `--exit`
 
+**Quit with `--quit=SECONDS`, not with `--quit-after`.** `--quit-after` counts *frames*, and a
+headless frame can take under a millisecond, so it is unpredictable in wall-clock time and it
+ends the process behind the game's back. `--quit` runs for a real number of seconds and then
+awaits `Audio.quiet()` before quitting, because a sound still playing when the engine tears
+down is reported as a leaked playback (the mixer drops a stopped playback the next time it
+mixes, and during shutdown there is no next mix). Keep `--quit-after` as a high backstop in
+case a scene hangs — high enough that it cannot win the race. If you ever see
+`ObjectDB instances were leaked` together with `resources still in use`, that is this.
+
+**Sound has no screenshot.** Prove it twice:
+- `--audio-debug` prints every event as it plays (`[audio] rock_crack at (…) pitch=1.10`),
+  which shows the trigger fired, in the right order, in the right place. This is how an
+  automated run checks sound.
+- `make sounds` opens `assets/audio/viewer.html`: click a waveform to hear it, at the real
+  `gain_db` and bus levels. Looping sounds latch, so you can stack a land's bed with what
+  lives in it. Then say what you heard.
+
 **Definition of done:**
-1. Both scenes run headless with **no errors or warnings**.
+1. Both scenes run headless with **no errors or warnings** (`make check`).
 2. You captured screenshots of what you changed and **looked at them**, at 1:1 and zoomed in.
 3. Walk tests show the astronaut can reach everything they should, and nothing else.
-4. Previews and viewers (`assets/maps/red_planet/preview/`, `tools/*_viewer.html`) still look
-   right if your generator writes them.
+4. Any sound you touched fires in an `--audio-debug` run, and you listened to it in the viewer.
+5. Previews and viewers (`assets/maps/red_planet/preview/`, `assets/audio/viewer.html`,
+   `tools/*_viewer.html`) still look right if your generator writes them.
 
 ---
 
@@ -429,6 +560,10 @@ Useful hooks:
 - **No zooming indoors.**
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
   Each room has two different irregular holes, kept as data so they can be traced later.
+- **No music.** Sound is the environment and the work, nothing else (§7.6).
+- **Sound is data, not code**: every sound is declared in `sfx_gen.py` and read from
+  `audio.json`. The alien tech is synthesised; the natural world is recorded, under an open
+  licence, through one mastering chain (§4.7, §7.6).
 
 ---
 
@@ -456,6 +591,12 @@ Useful hooks:
   `.godot/` or `__pycache__/` (see `.gitignore`).
 - **Keep the folder `assets/` lowercase**, and match the case of every path exactly. Windows
   ignores case; Linux, and therefore other people's machines, does not.
+- **Sound sources are other people's work.** `assets/audio/sources/` is git-ignored: the repo
+  keeps the baked `*.wav`, and `PACKS` in `sfx_gen.py` records every source's author, licence,
+  URL and SHA-256 so `make sources` can fetch and verify them. Only **CC0 or CC BY** may go in.
+  A checksum mismatch stops the build on purpose: a pack whose contents changed is a pack whose
+  licence you have not read. `assets/audio/CREDITS.md` is generated from that table and lists
+  the CC BY packs; **the licence requires the game to ship it**.
 - Move or rename resources in Godot's FileSystem dock so references update, or update every
   `res://` path by hand.
 - Line endings are normalised by git. Don't reformat or convert whole files; keep diffs to
@@ -464,6 +605,11 @@ Useful hooks:
 ### 10.3 For AI agents specifically
 - Follow this file over your own habits. Match the surrounding code: its naming, comment
   density, typing and idioms.
+- `.claude/skills/` holds the procedures for the three things you will actually be doing:
+  `art-pipeline` (anything visual), `sound-pipeline` (anything audible), `verify` (proving it
+  works). Read the matching one before the first change of a task; this file is still the law.
+- `make help` is the list of everything the pipeline can do. Prefer it to hand-written command
+  lines, so a change to how the project builds only has to be made once.
 - Don't guess at APIs or data. Read the code and the JSON. Search for every reader before you
   change a data key or a public function.
 - Make the smallest change that does the job. No drive-by refactors, renames or
@@ -492,8 +638,16 @@ Useful hooks:
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
+- **Sound is built** (§4.7, §7.6): ambience for the three lands and the dead base, positional
+  pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
+  the four multitool jobs, the airlock cutscene, the crash, and the UI. What is missing:
+  - no volume controls and nothing saved (there are no settings and no save file yet);
+  - the fixed-lamp hum is the only sound that knows the world has changed, because the repair
+    loop it belongs to is not built;
+  - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
+    the game is distributed (§10.2).
 - **Not built yet:** inventory or resources (deliberately hidden, see §9), interiors for the
-  nursery and comms domes, saving and loading, sound and music.
+  nursery and comms domes, saving and loading, music (and there will not be any, §9).
 
 ---
 
@@ -517,3 +671,12 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-06 — Broken reactor with thin wires and a circuit-board cabinet; broken oxygen
   generator, O2 bottles and scrap; walkable footprints only at body height (owner).
 - 2026-10-06 — No zooming indoors. Dome cracks keep their original look (owner).
+- 2026-10-07 — The pipeline gets a `Makefile`, a pinned Python env (`make env`, uv + `.venv`,
+  `tools/requirements.txt`) and `.claude/` skills for working here (owner, requested).
+- 2026-10-07 — Sound: ambience and interaction sounds, **no music**. Built by
+  `tools/sfx_gen.py` into `assets/audio/` + `audio.json`, played by the `Audio` autoload.
+  Hybrid by decision: open-licence field recordings (CC0 and CC BY) for the natural world,
+  synthesis for the alien tech, both through one mastering chain. Source packs are fetched and
+  checksummed rather than committed; `CREDITS.md` must ship (owner).
+- 2026-10-07 — Scenes take `--quit=SECONDS`, which stops the sound before quitting, and
+  `--audio-debug`, which prints every sound event. `make check` uses them (owner, requested).

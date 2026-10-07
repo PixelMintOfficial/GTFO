@@ -1,0 +1,707 @@
+{
+ "note": "Written by tools/sfx_gen.py - do not edit by hand. Read by scripts/audio.gd. Sources and licences: SOURCES.md, CREDITS.md.",
+ "format": {
+  "rate": 22050,
+  "bits": 16,
+  "channels": 1
+ },
+ "buses": {
+  "amb": -5.0,
+  "sfx": 0.0,
+  "ui": -3.0
+ },
+ "credits": [
+  "100 CC0 SFX #2 by rubberduck - CC0",
+  "100 CC0 metal and wood SFX by rubberduck - CC0",
+  "30 CC0 SFX loops by rubberduck - CC0",
+  "40 CC0 water / splash / slime SFX by rubberduck - CC0",
+  "42 Snow and Gravel Footsteps by Corsica_S - CC0",
+  "75 CC0 breaking / falling / hit sfx by rubberduck - CC0",
+  "Fire Crackling by AntumDeluge - CC0",
+  "Impact Sounds by Kenney (kenney.nl) - CC0",
+  "Nature Ambient Pack Vol 1 by JC Sounds - CC BY 4.0"
+ ],
+ "sounds": {
+  "amb_red": {
+   "files": [
+    "amb_red.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -9.0,
+   "loop": true,
+   "seconds": 16.0,
+   "fade": 1.6,
+   "note": "JC Desert Wind: centroid 414 Hz, 64% of energy below 300 Hz, 0.0 onsets/s - broad dusty wind with body and no wildlife. Tilted down for thin air.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_forest": {
+   "files": [
+    "amb_forest.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -10.0,
+   "loop": true,
+   "seconds": 12.0,
+   "fade": 1.6,
+   "note": "JC Enchanted Forest: centroid 239 Hz, 0.1 onsets/s - a deep drone with NO bird or insect transients (Forest Day/Pine/Rainforest measured 1-4/s of Earth fauna, wrong planet). Mountain Peak adds air; syn_alien_life adds this world's voices.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_ice": {
+   "files": [
+    "amb_ice.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -10.0,
+   "loop": true,
+   "seconds": 12.0,
+   "fade": 1.6,
+   "note": "JC Winter Wind: centroid 410 Hz, stationarity 0.74 - steady cold wind. Mountain Peak (0.6% below 300 Hz) adds the thin whistle over the peaks; syn_ice_groan puts the frozen lakes under strain.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_suit": {
+   "files": [
+    "amb_suit.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -14.0,
+   "loop": true,
+   "seconds": 6.0,
+   "fade": 1.6,
+   "note": "Synthesised: the helmet fan. Always present, so kept near silent.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_interior": {
+   "files": [
+    "amb_interior.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -8.0,
+   "loop": true,
+   "seconds": 12.0,
+   "fade": 1.6,
+   "note": "JC Fog: centroid 128 Hz, 97% below 300 Hz, flatness 0.000 - a pure low drone. Low-passed hard and given a big room: wind outside the smashed windows, heard from inside a dead building.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_gas_leak": {
+   "files": [
+    "amb_gas_leak.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -16.0,
+   "loop": true,
+   "seconds": 3.0,
+   "dist": 190.0,
+   "fade": 1.6,
+   "note": "rubberduck noise_02: 95.5% above 2 kHz, stationarity 0.87 - a steady hiss. Positioned on the oxygen generator's snapped pipe (fx.vapor).",
+   "group": "Ambience: the air of a place"
+  },
+  "spark": {
+   "files": [
+    "spark_0.wav",
+    "spark_1.wav",
+    "spark_2.wav",
+    "spark_3.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.28,
+   "pitch": [
+    0.9,
+    1.12
+   ],
+   "dist": 230.0,
+   "note": "Synthesised electrical arc. Drawn as solid pixels because additive light vanishes on the white machines; the sound does the same job for the ear.",
+   "group": "Inside the dead base"
+  },
+  "amb_pool": {
+   "files": [
+    "amb_pool.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -13.0,
+   "loop": true,
+   "seconds": 8.0,
+   "dist": 300.0,
+   "fade": 1.6,
+   "note": "rubberduck loop_bubbles_1: 11.3 onsets/s - a proper burble. Underground River (stationarity 0.88, no transients) puts it in a hollow space.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_spire": {
+   "files": [
+    "amb_spire.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -15.0,
+   "loop": true,
+   "seconds": 8.0,
+   "dist": 340.0,
+   "fade": 1.6,
+   "note": "Synthesised: one slow inharmonic tone breathing with the crystal's glow. Alien, and deliberately not a note.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_dome": {
+   "files": [
+    "amb_dome.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -13.0,
+   "loop": true,
+   "seconds": 4.0,
+   "dist": 560.0,
+   "fade": 1.6,
+   "note": "Synthesised drone + rubberduck ambient_01 (centroid 221 Hz, flatness 0.008 - a real tonal machine hum). Only the powered domes (nursery, comms) get this; the base is dead and silent.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_wreck": {
+   "files": [
+    "amb_wreck.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -12.0,
+   "loop": true,
+   "seconds": 10.0,
+   "dist": 420.0,
+   "fade": 1.6,
+   "note": "JC Dying Embers: 5.0 onsets/s, 61% below 300 Hz - crackle with weight, and the right name for a wreck that has been burning a while. fire-1 (centroid 261 Hz) adds the deep pops.",
+   "group": "Ambience: the air of a place"
+  },
+  "amb_lamp": {
+   "files": [
+    "amb_lamp.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -19.0,
+   "loop": true,
+   "seconds": 2.0,
+   "dist": 150.0,
+   "fade": 1.6,
+   "note": "Synthesised: a repaired lamp, heard only from right under it.",
+   "group": "Ambience: the air of a place"
+  },
+  "beacon": {
+   "files": [
+    "beacon.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -15.0,
+   "loop": false,
+   "seconds": 0.22,
+   "dist": 900.0,
+   "note": "Synthesised double blip, fired in step with the drawn strobe.",
+   "group": "Lights and beacons"
+  },
+  "step_dust": {
+   "files": [
+    "step_dust_0.wav",
+    "step_dust_1.wav",
+    "step_dust_2.wav",
+    "step_dust_3.wav",
+    "step_dust_4.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -10.0,
+   "loop": false,
+   "seconds": 0.144,
+   "pitch": [
+    0.92,
+    1.08
+   ],
+   "dist": 260.0,
+   "note": "Kenney footstep_grass: 90.6% below 300 Hz - soft and granular, not leafy once the top is tilted off. Reads as boots in deep red dust.",
+   "group": "Boots on the ground"
+  },
+  "step_moss": {
+   "files": [
+    "step_moss_0.wav",
+    "step_moss_1.wav",
+    "step_moss_2.wav",
+    "step_moss_3.wav",
+    "step_moss_4.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -12.0,
+   "loop": false,
+   "seconds": 0.142,
+   "pitch": [
+    0.9,
+    1.06
+   ],
+   "dist": 240.0,
+   "note": "Kenney footstep_carpet: the most muffled set in the pack. Damp forest moss.",
+   "group": "Boots on the ground"
+  },
+  "step_snow": {
+   "files": [
+    "step_snow_0.wav",
+    "step_snow_1.wav",
+    "step_snow_2.wav",
+    "step_snow_3.wav",
+    "step_snow_4.wav",
+    "step_snow_5.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -10.0,
+   "loop": false,
+   "seconds": 0.693,
+   "pitch": [
+    0.95,
+    1.06
+   ],
+   "dist": 260.0,
+   "note": "Corsica_S: real field recordings of single steps on snow over gravel, ~0.6 s each. The authentic crunch - nothing synthesised comes close.",
+   "group": "Boots on the ground"
+  },
+  "step_metal": {
+   "files": [
+    "step_metal_0.wav",
+    "step_metal_1.wav",
+    "step_metal_2.wav",
+    "step_metal_3.wav",
+    "step_metal_4.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -11.0,
+   "loop": false,
+   "seconds": 0.115,
+   "pitch": [
+    0.94,
+    1.07
+   ],
+   "dist": 300.0,
+   "note": "Kenney footstep_concrete for the hard tile floor, with impactPlate_light underneath for the ring of a metal deck below it.",
+   "group": "Boots on the ground"
+  },
+  "jump": {
+   "files": [
+    "jump.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.497,
+   "pitch": [
+    0.97,
+    1.05
+   ],
+   "dist": 260.0,
+   "note": "Synthesised suit servo and push-off.",
+   "group": "The low-gravity jump"
+  },
+  "land_soft": {
+   "files": [
+    "land_soft_0.wav",
+    "land_soft_1.wav",
+    "land_soft_2.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -11.0,
+   "loop": false,
+   "seconds": 0.569,
+   "pitch": [
+    0.95,
+    1.06
+   ],
+   "dist": 300.0,
+   "note": "Kenney impactSoft_heavy: centroid 61 Hz, 100% below 300 Hz - a pure dull thud. Grit from a footstep on top so it lands in dust.",
+   "group": "The low-gravity jump"
+  },
+  "land_hard": {
+   "files": [
+    "land_hard_0.wav",
+    "land_hard_1.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -8.0,
+   "loop": false,
+   "seconds": 0.541,
+   "pitch": [
+    0.9,
+    1.0
+   ],
+   "dist": 380.0,
+   "note": "The same thud with impactPlate_heavy (95% below 300 Hz) for the drop from height.",
+   "group": "The low-gravity jump"
+  },
+  "slide": {
+   "files": [
+    "slide.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -14.0,
+   "loop": true,
+   "seconds": 1.4,
+   "dist": 280.0,
+   "fade": 0.12,
+   "note": "rubberduck rolling.ogg pitched down: a continuous scrape for skidding down ground too steep to stand on.",
+   "group": "The low-gravity jump"
+  },
+  "tool_unfold": {
+   "files": [
+    "tool_unfold.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 0.95,
+   "dist": 300.0,
+   "note": "Synthesised servo, plate clacks and lock-on, timed to the 18-frame equip animation at 20 fps. Real spring metal on top for bite.",
+   "group": "The multitool"
+  },
+  "tool_fold": {
+   "files": [
+    "tool_fold.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -11.0,
+   "loop": false,
+   "seconds": 0.696,
+   "dist": 280.0,
+   "note": "The reverse, at the 1.3x the animation plays backwards at.",
+   "group": "The multitool"
+  },
+  "tool_lens": {
+   "files": [
+    "tool_lens.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.5,
+   "dist": 240.0,
+   "note": "The lens lighting on equip frame 14.",
+   "group": "The multitool"
+  },
+  "tool_target": {
+   "files": [
+    "tool_target.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -20.0,
+   "loop": false,
+   "seconds": 0.104,
+   "note": "The job icon appearing over a new target. Near-threshold.",
+   "group": "The multitool"
+  },
+  "beam_mine": {
+   "files": [
+    "beam_mine.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -11.0,
+   "loop": true,
+   "seconds": 1.0,
+   "dist": 320.0,
+   "fade": 0.08,
+   "note": "Synthesised, gated at the 7 Hz the beam is drawn pulsing at.",
+   "group": "The multitool"
+  },
+  "beam_gather": {
+   "files": [
+    "beam_gather.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": true,
+   "seconds": 1.0,
+   "dist": 280.0,
+   "fade": 0.06,
+   "note": "Synthesised airy updraught for the spiral stream.",
+   "group": "The multitool"
+  },
+  "beam_fix": {
+   "files": [
+    "beam_fix.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": true,
+   "seconds": 1.25,
+   "dist": 280.0,
+   "fade": 0.1,
+   "note": "Synthesised sweep at the 0.8 Hz the scan lines sweep at.",
+   "group": "The multitool"
+  },
+  "rock_crack": {
+   "files": [
+    "rock_crack_0.wav",
+    "rock_crack_1.wav",
+    "rock_crack_2.wav",
+    "rock_crack_3.wav",
+    "rock_crack_4.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -12.0,
+   "loop": false,
+   "seconds": 0.607,
+   "pitch": [
+    0.92,
+    1.1
+   ],
+   "dist": 340.0,
+   "note": "Kenney impactMining: made for exactly this, 92% below 300 Hz. Fires as the cracks spread, not continuously.",
+   "group": "The multitool"
+  },
+  "rock_burst": {
+   "files": [
+    "rock_burst_0.wav",
+    "rock_burst_1.wav",
+    "rock_burst_2.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -7.0,
+   "loop": false,
+   "seconds": 0.813,
+   "pitch": [
+    0.94,
+    1.05
+   ],
+   "dist": 460.0,
+   "note": "rubberduck rock_breaking (12.7 onsets/s of debris) + impactMining for the low end + a synthesised sub thump, because the camera shakes 2.6 px here.",
+   "group": "The multitool"
+  },
+  "gather_pop": {
+   "files": [
+    "gather_pop.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.4,
+   "pitch": [
+    0.97,
+    1.06
+   ],
+   "dist": 260.0,
+   "note": "Synthesised chime for the thing vanishing into the lens, with real stone grit so it stays a rock and not a UI noise.",
+   "group": "The multitool"
+  },
+  "lift_grab": {
+   "files": [
+    "lift_grab.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -11.0,
+   "loop": false,
+   "seconds": 0.45,
+   "dist": 280.0,
+   "note": "Synthesised: the violet tether taking hold.",
+   "group": "The multitool"
+  },
+  "lift_loop": {
+   "files": [
+    "lift_loop.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -17.0,
+   "loop": true,
+   "seconds": 2.0,
+   "dist": 240.0,
+   "fade": 0.25,
+   "note": "Synthesised thrum while a crate follows you.",
+   "group": "The multitool"
+  },
+  "lift_drop": {
+   "files": [
+    "lift_drop_0.wav",
+    "lift_drop_1.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -10.0,
+   "loop": false,
+   "seconds": 0.611,
+   "pitch": [
+    0.93,
+    1.06
+   ],
+   "dist": 340.0,
+   "note": "A cargo crate settling: real wood fall plus a soft heavy thud for the mass.",
+   "group": "The multitool"
+  },
+  "lamp_on": {
+   "files": [
+    "lamp_on.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -10.0,
+   "loop": false,
+   "seconds": 1.5,
+   "dist": 380.0,
+   "note": "Synthesised: two struggling ticks, then warm light. The first thing in the game you actually fix.",
+   "group": "The multitool"
+  },
+  "door_prompt": {
+   "files": [
+    "door_prompt.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -18.0,
+   "loop": false,
+   "seconds": 0.104,
+   "note": "[E] ENTER appearing.",
+   "group": "The airlock"
+  },
+  "door_unseal": {
+   "files": [
+    "door_unseal.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -7.0,
+   "loop": false,
+   "seconds": 0.663,
+   "dist": 460.0,
+   "note": "rubberduck lock_open (9.5 onsets/s of mechanism) over metal_open and a heavy metal impact: the seal letting go of a door 1.6x the astronaut's height.",
+   "group": "The airlock"
+  },
+  "door_vent": {
+   "files": [
+    "door_vent.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 2.618,
+   "dist": 440.0,
+   "note": "rubberduck air_01: 89.7% above 2 kHz - pressurised air. Shaped to a burst that matches the 28-puff gas cloud the door throws.",
+   "group": "The airlock"
+  },
+  "door_slide": {
+   "files": [
+    "door_slide.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -11.0,
+   "loop": true,
+   "seconds": 0.6,
+   "dist": 420.0,
+   "fade": 0.05,
+   "note": "Real sheet metal moving, with a synthesised servo under it: heavy slab, powered mechanism. Looped while the halves travel.",
+   "group": "The airlock"
+  },
+  "door_close": {
+   "files": [
+    "door_close.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -8.0,
+   "loop": false,
+   "seconds": 0.372,
+   "dist": 460.0,
+   "note": "metal_slam over a heavy plate: the door sealing behind you.",
+   "group": "The airlock"
+  },
+  "door_lamp": {
+   "files": [
+    "door_lamp.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -21.0,
+   "loop": false,
+   "seconds": 0.138,
+   "dist": 240.0,
+   "note": "The amber warning light ticking while the door works.",
+   "group": "The airlock"
+  },
+  "crash_roar": {
+   "files": [
+    "crash_roar.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -6.0,
+   "loop": true,
+   "seconds": 2.0,
+   "dist": 4000.0,
+   "fade": 0.4,
+   "note": "Synthesised re-entry: pressure and tearing in a thin atmosphere.",
+   "group": "The satellite crash"
+  },
+  "crash_impact": {
+   "files": [
+    "crash_impact.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -3.0,
+   "loop": false,
+   "seconds": 3.2,
+   "dist": 4000.0,
+   "note": "rubberduck thunder_01 (5.3 s, 63.6% below 300 Hz) plus a heavy plate and a synthesised falling sub: the touchdown that shakes the camera 5 px.",
+   "group": "The satellite crash"
+  },
+  "crash_skid": {
+   "files": [
+    "crash_skid.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -8.0,
+   "loop": true,
+   "seconds": 1.4,
+   "dist": 3000.0,
+   "fade": 0.25,
+   "note": "The satellite ploughing its trench: rolling pitched right down, with the low end of a thunderstorm under it for mass.",
+   "group": "The satellite crash"
+  },
+  "debris": {
+   "files": [
+    "debris_0.wav",
+    "debris_1.wav",
+    "debris_2.wav",
+    "debris_3.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -12.0,
+   "loop": false,
+   "seconds": 0.77,
+   "pitch": [
+    0.9,
+    1.12
+   ],
+   "dist": 900.0,
+   "note": "Real rock falling: what comes down after the impact.",
+   "group": "The satellite crash"
+  },
+  "ui_map_open": {
+   "files": [
+    "ui_map_open.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.161,
+   "note": "A real switch: the map screen is a physical thing on the suit.",
+   "group": "Interface"
+  },
+  "ui_map_close": {
+   "files": [
+    "ui_map_close.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.156,
+   "note": "The same switch, the other way.",
+   "group": "Interface"
+  },
+  "ui_zoom": {
+   "files": [
+    "ui_zoom.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -22.0,
+   "loop": false,
+   "seconds": 0.1,
+   "note": "A zoom step.",
+   "group": "Interface"
+  },
+  "ui_room": {
+   "files": [
+    "ui_room.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -16.0,
+   "loop": false,
+   "seconds": 0.598,
+   "note": "A room name fading in on the toast plate.",
+   "group": "Interface"
+  }
+ }
+}

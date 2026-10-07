@@ -17,6 +17,8 @@ extends Node2D
 ##   --use                  keep the multitool's use button held (after --equip)
 ##   --face=DX,DY           turn to face this screen direction before working
 ##   --door                 walk up to the base's airlock and go in (the whole cutscene)
+##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
+##   --quit=SECONDS          run for this long, then shut the sound down and quit cleanly
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
 const DEPTH_MAP: Texture2D = preload("res://assets/maps/red_planet/red_planet_depth.png")
@@ -33,18 +35,23 @@ var doors: Array[AirlockDoor] = []
 @onready var dome_fx: DomeFX = $DomeFX
 @onready var biome_fx: BiomeFX = $BiomeFX
 @onready var crash: CrashSite = $CrashSite
+@onready var ambience: WorldAmbience = $Ambience
 
 
 func _ready() -> void:
+	Audio.debug = _args().has("audio-debug")
+	Audio.enter_scene()
 	terrain = MapTerrain.new(MAP_JSON)
 	player.setup(terrain, DEPTH_MAP)
 	player.camera.frames = terrain.frames
 	player.camera.setup(player, $Map, terrain.max_view_px)
-	wind.setup(player.camera, func() -> Vector3: return terrain.biome_at(player.world_pos))
+	wind.setup(player.camera, _biome_here)
 	map_screen.setup(MAP_JSON, player)
 	dome_fx.setup(MAP_JSON)
 	biome_fx.setup(MAP_JSON, player.camera, DEPTH_MAP, terrain.map_size, player)
 	crash.setup(MAP_JSON, player.camera, player, biome_fx)
+	ambience.setup(MAP_JSON, player.camera, player, _biome_here)
+	player.step_source = _step_sound
 	multitool.setup(PROPS_JSON, player, terrain, $Actors, DEPTH_MAP)
 	_setup_doors()
 	if GameState.tool_out:
@@ -63,6 +70,22 @@ func _ready() -> void:
 	else:
 		GameState.intro_done = true
 	_run_test_hooks(args)
+
+
+func _biome_here() -> Vector3:
+	return terrain.biome_at(player.world_pos)
+
+
+## What the boots are landing on, from the land the astronaut is standing in. The biome image
+## is the same one that crossfades the weather and the ambience, so the surface the ear hears
+## is the surface the eye sees.
+func _step_sound() -> String:
+	var w := terrain.biome_at(player.world_pos)
+	if w.z > w.x and w.z > w.y:
+		return "step_snow"
+	if w.y > w.x:
+		return "step_moss"
+	return "step_dust"
 
 
 ## The base's airlock doors: E to go inside.
@@ -96,7 +119,18 @@ static func _args() -> Dictionary:
 	return args
 
 
+## Quit after a fixed number of seconds, stopping the sound first: anything still playing when
+## the engine tears down is reported as a leaked playback. Prefer this to --quit-after, which
+## counts frames and so depends on how fast the machine runs.
+func _quit_after(seconds: float) -> void:
+	await get_tree().create_timer(seconds).timeout
+	await Audio.quiet()                           # nothing may still be playing at teardown
+	get_tree().quit()
+
+
 func _run_test_hooks(args: Dictionary) -> void:
+	if args.has("quit"):
+		_quit_after(float(args["quit"]))
 	if args.has("spawn"):
 		var xy: PackedStringArray = args["spawn"].split(",")
 		player.teleport(Vector2(float(xy[0]), float(xy[1])))
@@ -145,4 +179,5 @@ func _run_test_hooks(args: Dictionary) -> void:
 		img.save_png(path if count == 1 else path.get_basename() + "_%d.png" % i)
 		if i < count - 1:
 			await get_tree().create_timer(gap).timeout
+	await Audio.quiet()                           # nothing may still be playing at teardown
 	get_tree().quit()
