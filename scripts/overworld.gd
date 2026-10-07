@@ -17,6 +17,7 @@ extends Node2D
 ##   --use                  keep the multitool's use button held (after --equip)
 ##   --face=DX,DY           turn to face this screen direction before working
 ##   --door                 walk up to the base's airlock and go in (the whole cutscene)
+##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
 const DEPTH_MAP: Texture2D = preload("res://assets/maps/red_planet/red_planet_depth.png")
@@ -47,6 +48,9 @@ func _ready() -> void:
 	crash.setup(MAP_JSON, player.camera, player, biome_fx)
 	multitool.setup(PROPS_JSON, player, terrain, $Actors, DEPTH_MAP)
 	_setup_doors()
+	var inventory_ui := InventoryUI.new()
+	add_child(inventory_ui)
+	inventory_ui.setup(player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -65,7 +69,7 @@ func _ready() -> void:
 	_run_test_hooks(args)
 
 
-## The base's airlock doors: E to go inside.
+## The base's airlock doors: F to go inside.
 func _setup_doors() -> void:
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
 	if not meta.has("fx"):

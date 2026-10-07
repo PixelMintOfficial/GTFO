@@ -1,15 +1,19 @@
 extends Node2D
 ## Inside the main base: storage (the airlock comes in here), the power room to the right and
-## the oxygen room to the left. The power is out. E at the airlock door goes back outside.
+## the oxygen room to the left. The power is out. F at the airlock door goes back outside.
 ##
 ## Test hooks (after "--"): --spawn=X,Y  --walk=DX,DY[,run]  --capture=PATH
 ## --seconds=S  --burst=N  --gap=S  --arrive (play coming in through the door)  --exit (use the door)
+## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
+## --repair=power|oxygen opens that machine's circuit; --repair-done marks wiring for captures.
+## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
 
 const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
 const DEPTH_MAP: Texture2D = preload("res://assets/maps/base_interior/base_interior_depth.png")
 
 var terrain: MapTerrain
 var door: AirlockDoor
+var repairs: MachineRepairs
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -28,6 +32,12 @@ func _ready() -> void:
 	$Actors.add_child(door)
 	door.setup(meta["door"], MAP_JSON.get_base_dir(), player, player.camera, terrain, multitool, "EXIT")
 	door.entered.connect(_leave)
+	repairs = MachineRepairs.new()
+	add_child(repairs)
+	repairs.setup(meta, player, multitool)
+	var inventory_ui := InventoryUI.new()
+	add_child(inventory_ui)
+	inventory_ui.setup(player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -52,6 +62,12 @@ static func _args() -> Dictionary:
 
 
 func _run_test_hooks(args: Dictionary) -> void:
+	if args.has("repair-bars"):
+		repairs.set_process_unhandled_input(false)
+	if args.has("repair-done"):
+		GameState.repair_for(args["repair-done"]).complete_task("wiring")
+	if args.has("repair"):
+		get_tree().create_timer(0.25).timeout.connect(func() -> void: repairs.open_machine(args["repair"]))
 	if args.has("spawn"):
 		var xy: PackedStringArray = args["spawn"].split(",")
 		player.teleport(Vector2(float(xy[0]), float(xy[1])))

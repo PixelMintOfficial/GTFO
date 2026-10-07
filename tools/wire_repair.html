@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Circuit repair</title>
+<style>
+:root {
+  color-scheme:dark;
+  --deep:oklch(22% .034 228);
+  --panel:oklch(27% .036 222);
+  --module:oklch(31% .041 218);
+  --edge:oklch(48% .047 219);
+  --trace:oklch(39% .039 220);
+  --wire:oklch(65% .05 218);
+  --live:oklch(89.66% .253 137.8);
+  --ink:oklch(94% .026 183);
+  --muted:oklch(80% .038 213);
+  --amber:oklch(82% .14 80)
+}
+* {
+  box-sizing:border-box
+}
+body {
+  margin:0;
+  min-height:100dvh;
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  place-items:center;
+  color:var(--ink);
+  background:oklch(15% .025 236);
+  font:15px/1.5 'Segoe UI',sans-serif;
+  padding:24px
+}
+.world {
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  background:url('../assets/maps/base_interior/preview_half.png') center/cover;
+  image-rendering:pixelated
+}
+.world:after {
+  content:'';
+  position:absolute;
+  inset:0;
+  background:oklch(13% .03 234 / .86)
+}
+button {
+  font:inherit;
+  cursor:pointer
+}
+button:disabled {
+  cursor:default
+}
+button:focus-visible {
+  outline:2px solid var(--ink);
+  outline-offset:2px
+}
+.cabinet {
+  position:relative;
+  width:min(100%,850px);
+  min-width:0;
+  justify-self:center;
+  padding:30px 30px 20px;
+  background:var(--panel);
+  border:2px solid var(--edge)
+}
+.header {
+  display:flex;
+  gap:20px;
+  align-items:flex-start;
+  justify-content:space-between
+}
+.header>div {
+  flex:1;
+  min-width:0
+}
+h1 {
+  font-size:26px;
+  line-height:1.1;
+  margin:0 0 9px;
+  font-weight:600;
+  letter-spacing:.015em
+}
+p {
+  margin:0;
+  color:var(--muted);
+  font-size:14px
+}
+.timer {
+  flex:none;
+  color:var(--ink);
+  font:18px/1 Consolas,monospace;
+  margin-top:5px;
+  font-variant-numeric:tabular-nums
+}
+.timer.urgent {
+  color:var(--amber)
+}
+.close {
+  width:30px;
+  height:30px;
+  padding:0;
+  border:0;
+  color:var(--muted);
+  background:transparent;
+  font-size:25px;
+  line-height:1;
+  margin:-3px -6px 0 0
+}
+.close:hover {
+  color:var(--ink);
+  background:var(--trace)
+}
+.timer-track {
+  height:2px;
+  margin:22px 0 0;
+  background:var(--trace)
+}
+.timer-fill {
+  height:100%;
+  background:var(--edge);
+  transform-origin:left
+}
+.board-well {
+  margin-top:12px;
+  background:var(--deep);
+  padding:22px 6px;
+  position:relative;
+  min-width:0;
+  border:1px solid var(--trace)
+}
+.pcb-detail {
+  position:absolute;
+  inset:12px;
+  width:calc(100% - 24px);
+  height:calc(100% - 24px);
+  pointer-events:none;
+  fill:none;
+  stroke:var(--trace);
+  stroke-width:1.4
+}
+.pcb-chip {
+  fill:var(--module);
+  stroke:var(--edge)
+}
+.pcb-detail .via {
+  fill:var(--deep);
+  stroke:var(--edge)
+}
+.board-scroller {
+  overflow-x:auto;
+  width:100%;
+  min-width:0;
+  padding:16px 3px;
+  position:relative
+}
+.board {
+  --cell:clamp(44px,6vw,72px);
+  position:relative;
+  width:max-content;
+  display:grid;
+  grid-template-columns:90px auto 90px;
+  gap:2px;
+  margin:auto
+}
+.grid {
+  display:grid;
+  grid-template-columns:repeat(var(--cols),var(--cell))
+}
+.tile {
+  position:relative;
+  display:block;
+  width:var(--cell);
+  height:var(--cell);
+  background:transparent;
+  color:var(--wire);
+  padding:0;
+  border:0
+}
+.tile svg {
+  display:block;
+  width:100%;
+  height:100%;
+  overflow:visible
+}
+.housing {
+  fill:var(--module);
+  stroke:var(--trace);
+  stroke-width:1.7
+}
+.inset {
+  fill:var(--panel);
+  stroke:var(--trace);
+  stroke-width:1
+}
+.bevel {
+  fill:none;
+  stroke:var(--wire);
+  stroke-width:1.2
+}
+.tile.powered {
+  color:var(--live)
+}
+.tile.powered .inset {
+  fill:oklch(28% .045 165)
+}
+.tile.blank .inset {
+  fill:var(--deep)
+}
+.tile.locked .housing {
+  stroke:var(--wire)
+}
+button.tile:not(:disabled):hover .housing,button.tile:focus-visible .housing {
+  stroke:var(--ink);
+  stroke-width:2.5
+}
+.etch {
+  fill:none;
+  stroke:var(--trace);
+  stroke-width:1.3
+}
+.via {
+  fill:var(--edge)
+}
+.via-ring,.hub {
+  fill:var(--panel);
+  stroke:var(--edge);
+  stroke-width:1
+}
+.hub {
+  fill:var(--deep);
+  stroke:var(--trace)
+}
+.component {
+  fill:var(--edge)
+}
+.mount-tab {
+  fill:var(--module);
+  stroke:var(--edge);
+  stroke-width:.8
+}
+.bolt-ring {
+  fill:var(--deep);
+  stroke:var(--wire);
+  stroke-width:1
+}
+.bolt {
+  fill:var(--wire);
+  stroke:var(--deep);
+  stroke-width:1
+}
+.bolt-slot {
+  stroke:var(--deep);
+  stroke-width:1.8
+}
+.rotor {
+  transform-origin:50% 50%;
+  transition:transform 150ms cubic-bezier(.2,.8,.2,1)
+}
+.wire-under {
+  stroke:var(--deep);
+  stroke-width:11;
+  fill:none;
+  stroke-linejoin:round
+}
+.powered .wire-under {
+  stroke:currentColor;
+  opacity:.15
+}
+.wire {
+  stroke:currentColor;
+  stroke-width:3.4;
+  fill:none;
+  stroke-linejoin:round
+}
+.contact {
+  fill:currentColor
+}
+.contact-ring {
+  fill:var(--deep);
+  stroke:currentColor;
+  stroke-width:1.5
+}
+.rail {
+  position:relative
+}
+.terminal {
+  position:absolute;
+  width:80px;
+  height:68px;
+  color:var(--amber);
+  top:calc((var(--row) + .5) * 100% / var(--rows));
+  transform:translateY(-50%);
+  display:block
+}
+.terminal:after {
+  content:'';
+  position:absolute;
+  top:33px;
+  width:12px;
+  height:2px;
+  background:currentColor
+}
+.supply {
+  left:0;
+  color:var(--live)
+}
+.supply:after {
+  left:100%
+}
+.output {
+  right:0
+}
+.output:after {
+  right:100%
+}
+.output.live {
+  color:var(--live)
+}
+.terminal svg {
+  display:block;
+  width:100%;
+  height:100%;
+  overflow:visible
+}
+.terminal-shell {
+  fill:var(--module);
+  stroke:var(--wire);
+  stroke-width:1.5
+}
+.terminal-face {
+  fill:var(--panel);
+  stroke:var(--trace);
+  stroke-width:1
+}
+.terminal-bevel {
+  fill:none;
+  stroke:var(--ink);
+  stroke-width:1
+}
+.terminal-bolt {
+  fill:var(--wire);
+  stroke:var(--deep);
+  stroke-width:.8
+}
+.capacitor {
+  fill:var(--wire);
+  stroke:var(--deep);
+  stroke-width:1.2
+}
+.capacitor-charge,.source-led {
+  fill:var(--live)
+}
+.supply.emitting .capacitor-charge {
+  opacity:var(--charge,1)
+}
+.terminal-bus,.relay-contact,.power-mark {
+  fill:none;
+  stroke:currentColor;
+  stroke-width:2;
+  stroke-linejoin:round
+}
+.relay-core {
+  fill:var(--deep);
+  stroke:currentColor;
+  stroke-width:1.6
+}
+.receiver-led {
+  fill:var(--trace)
+}
+.output.live .receiver-led {
+  fill:var(--live)
+}
+.relay-closed,.output.live .relay-open {
+  display:none
+}
+.output.live .relay-closed {
+  display:block
+}
+.arrival-rim {
+  fill:none;
+  stroke:var(--live);
+  stroke-width:2;
+  opacity:0;
+  transform-origin:40px 34px
+}
+.power-flow {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  overflow:visible;
+  pointer-events:none
+}
+.pulse-halo,.pulse-trail {
+  fill:none;
+  stroke:var(--live);
+  stroke-linejoin:round;
+  stroke-linecap:round
+}
+.pulse-halo {
+  stroke-width:12;
+  opacity:.18
+}
+.pulse-trail {
+  stroke-width:4
+}
+.pulse-head {
+  fill:oklch(98% .065 137.8);
+  stroke:var(--live);
+  stroke-width:2
+}
+.status {
+  min-height:35px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding-top:15px
+}
+.status span {
+  color:var(--amber);
+  font-size:13px
+}
+.status.solved span {
+  color:var(--live)
+}
+.return {
+  border:1px solid var(--edge);
+  padding:6px 13px;
+  color:var(--ink);
+  background:var(--trace)
+}
+.return:hover {
+  background:var(--edge)
+}
+[hidden] {
+  display:none!important
+}
+.mount {
+  position:absolute;
+  width:7px;
+  height:7px;
+  background:var(--wire);
+  border:1px solid var(--deep);
+  border-radius:50%
+}
+.mount:after {
+  content:'';
+  position:absolute;
+  left:1px;
+  right:1px;
+  top:2px;
+  height:1px;
+  background:var(--deep)
+}
+.tl {
+  top:9px;
+  left:9px
+}
+.tr {
+  top:9px;
+  right:9px
+}
+.bl {
+  bottom:9px;
+  left:9px
+}
+.br {
+  bottom:9px;
+  right:9px
+}
+.closed {
+  text-align:center;
+  padding:50px
+}
+.closed button {
+  margin-top:22px
+}
+@media(max-width:600px) {
+  body {
+    padding:12px 6px
+  }
+  .cabinet {
+    padding:24px 12px 14px
+  }
+  h1 {
+    font-size:22px
+  }
+  p {
+    font-size:12px
+  }
+  .header {
+    gap:12px
+  }
+  .timer {
+    font-size:15px
+  }
+  .board-well {
+    padding-block:15px
+  }
+  .board {
+    --cell:44px
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  .rotor {
+    transition:none
+  }
+  .power-flow,.arrival-rim {
+    display:none
+  }
+}
+</style>
+</head>
+<body>
+<div class="world" aria-hidden="true">
+</div>
+<main class="cabinet" id="cabinet" aria-labelledby="title">
+<i class="mount tl" aria-hidden="true">
+</i>
+<i class="mount tr" aria-hidden="true">
+</i>
+<i class="mount bl" aria-hidden="true">
+</i>
+<i class="mount br" aria-hidden="true">
+</i>
+<div class="header">
+<div>
+<h1 id="title">Circuit repair</h1>
+<p>Rotate wires to connect both terminals.</p>
+</div>
+<time class="timer" id="timer" aria-label="Seconds until circuit changes">30 s</time>
+<button class="close" id="close" aria-label="Close circuit repair">×</button>
+</div>
+<div class="timer-track" aria-hidden="true">
+<div class="timer-fill" id="timer-fill">
+</div>
+</div>
+<div class="board-well">
+<svg class="pcb-detail" viewBox="0 0 800 560" preserveAspectRatio="none" aria-hidden="true">
+  <defs><g id="board-bus">
+    <path d="M24 12v80l16 16v120 M33 12v70l16 16v75 M42 12v60l16 16v96 M24 548v-80l16-16V332 M33 548v-70l16-16v-75 M42 548v-60l16-16v-96"/>
+    <circle class="via" cx="24" cy="12" r="3"/><circle class="via" cx="33" cy="12" r="3"/><circle class="via" cx="42" cy="12" r="3"/>
+    <circle class="via" cx="24" cy="548" r="3"/><circle class="via" cx="33" cy="548" r="3"/><circle class="via" cx="42" cy="548" r="3"/>
+    <rect class="pcb-chip" x="19" y="237" width="25" height="86"/>
+    <path d="M13 245h6m-6 12h6m-6 12h6m-6 12h6m-6 12h6m-6 12h6m25-60h8m-8 12h8m-8 12h8m-8 12h8m-8 12h8m-8 12h8 M28 253h7v53h-7z"/>
+    <path d="M12 152v26l8 8 M12 374v26l8 8"/><rect class="pcb-chip" x="8" y="139" width="8" height="13"/><rect class="pcb-chip" x="8" y="361" width="8" height="13"/>
+  </g></defs>
+  <use href="#board-bus"/><use href="#board-bus" transform="translate(800 0) scale(-1 1)"/>
+</svg>
+<div class="board-scroller" id="scroller">
+<div class="board" id="board">
+<div class="rail">
+<div class="terminal supply" id="supply" role="img" aria-label="Supply terminal, powered">
+<svg viewBox="0 0 80 68" aria-hidden="true">
+  <polygon class="terminal-shell" points="8,2 72,2 78,8 78,60 72,66 8,66 2,60 2,8"/>
+  <polygon class="terminal-face" points="10,6 70,6 74,10 74,58 70,62 10,62 6,58 6,10"/>
+  <path class="terminal-bevel" d="M8 2h64l6 6"/>
+  <g class="terminal-bolt"><circle cx="9" cy="10" r="2.5"/><circle cx="71" cy="10" r="2.5"/><circle cx="9" cy="58" r="2.5"/><circle cx="71" cy="58" r="2.5"/></g>
+  <path class="bolt-slot" d="M7 10h4m58 0h4M7 58h4m58 0h4"/>
+  <path class="etch" d="M11 23v23 M13 23v23 M17 52h8m22 0h8"/>
+  <g class="capacitor"><rect x="18" y="23" width="10" height="24" rx="3"/><rect x="32" y="23" width="10" height="24" rx="3"/><rect x="46" y="23" width="10" height="24" rx="3"/></g>
+  <path class="terminal-bevel" d="M21 26h4m10 0h4m10 0h4"/>
+  <g class="capacitor-charge"><rect x="21" y="35" width="4" height="9"/><rect x="35" y="35" width="4" height="9"/><rect x="49" y="35" width="4" height="9"/></g>
+  <g class="source-led"><rect x="20" y="13" width="7" height="3"/><rect x="34" y="13" width="7" height="3"/><rect x="48" y="13" width="7" height="3"/></g>
+  <path class="terminal-bus" d="M61 27v7h19"/>
+  <path class="power-mark" d="M40 52l-5 5h6l-4 5"/>
+</svg>
+</div>
+</div>
+<div class="grid" id="grid" role="group" aria-label="Wire modules">
+</div>
+<div class="rail">
+<div class="terminal output" id="output" role="img" aria-label="Receiving terminal, unpowered">
+<svg viewBox="0 0 80 68" aria-hidden="true">
+  <polygon class="terminal-shell" points="8,2 72,2 78,8 78,60 72,66 8,66 2,60 2,8"/>
+  <polygon class="terminal-face" points="10,6 70,6 74,10 74,58 70,62 10,62 6,58 6,10"/>
+  <path class="terminal-bevel" d="M8 2h64l6 6"/>
+  <g class="terminal-bolt"><circle cx="9" cy="10" r="2.5"/><circle cx="71" cy="10" r="2.5"/><circle cx="9" cy="58" r="2.5"/><circle cx="71" cy="58" r="2.5"/></g>
+  <path class="bolt-slot" d="M7 10h4m58 0h4M7 58h4m58 0h4"/>
+  <path class="terminal-bus" d="M0 34h28"/>
+  <rect class="relay-core" x="28" y="21" width="25" height="26" rx="2"/>
+  <path class="relay-contact relay-open" d="M33 34h3l11-7"/><path class="relay-contact relay-closed" d="M33 34h14"/>
+  <path class="etch" d="M58 24h10m-10 7h10m-10 7h10m-10 7h10 M26 13h28"/>
+  <g class="receiver-led"><rect x="23" y="54" width="7" height="4"/><rect x="36" y="54" width="7" height="4"/><rect x="49" y="54" width="7" height="4"/></g>
+  <polygon class="arrival-rim" points="8,2 72,2 78,8 78,60 72,66 8,66 2,60 2,8"/>
+</svg>
+</div>
+</div>
+<svg class="power-flow" id="power-flow" aria-hidden="true" hidden>
+  <path class="pulse-halo"/><path class="pulse-trail"/><circle class="pulse-head" r="3"/>
+</svg>
+</div>
+</div>
+</div>
+<div class="status" id="status" role="status" aria-live="polite">
+<span id="notice">
+</span>
+<button class="return" id="return" hidden>Return</button>
+</div>
+</main>
+<div class="closed" id="closed" hidden>
+<p id="closed-copy">Circuit repair paused.</p>
+<button class="return" id="resume">Resume</button>
+</div>
+<script type="module" src="wire_repair_preview.js">
+</script>
+</body>
+</html>

@@ -2,15 +2,18 @@ class_name Multitool
 extends Node2D
 ## The astronaut's multitool: a folded device on the backpack that, taken out, bursts open into
 ## armour plates that fly onto the right forearm and lock into a gauntlet (red and gold, with a
-## glowing emitter on the back of the hand). T (gamepad Y) takes it out or puts it away. With it out, E
+## glowing emitter on the back of the hand). T (gamepad Y) takes it out or puts it away. With it out, F
 ## (gamepad X) works on whatever is in reach, and the tool picks the job from the target:
 ##   mine    orange  ore rocks: a pulsing cutting beam, sparks and chips flying, cracks
 ##                   spreading through the rock until it bursts into ore chunks
 ##   gather  teal    ore chunks and scrap: a spiral stream pulls the thing into the lens
 ##   lift    violet  crates: a wavy tether floats it up and it follows you until E sets it down
 ##   fix     cyan    dead lamps: scan lines sweep it, sparks gather, and it flickers back on
-## Hold E to mine, gather and fix; tap E to pick a crate up and again to set it down.
+## Hold F to mine, gather and fix; tap F to pick a crate up and again to set it down.
 ## A small icon over the nearest thing in reach shows which job the tool will do.
+## Gather commits to GameState before the zip animation. A full bag leaves the prop intact.
+
+signal inventory_full
 
 const COLORS := {"mine": Color("#ff8a3a"), "gather": Color("#4fe0c8"), "lift": Color("#b583ff"), "fix": Color("#7fd8ff")}
 const CORES := {"mine": Color("#fff0c4"), "gather": Color("#e6fff9"), "lift": Color("#f3eaff"), "fix": Color("#f4fdff")}
@@ -37,6 +40,10 @@ const ICONS := {
 var forced_use := false
 ## Something else (an airlock door prompt) owns the use button right now.
 var suppressed := false
+## Modal inventory owns input independently of the door's proximity suppression.
+var inventory_suppressed := false
+## Machine proximity and the repair modal own F independently of door/inventory input.
+var repair_suppressed := false
 
 var _player: Player
 var _terrain: MapTerrain
@@ -103,9 +110,19 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 		var s: Dictionary = data["sprites"][name]
 		_sheets[name] = {"tex": load(dir.path_join(s["file"])), "frames": int(s["frames"]),
 				"anchor": Vector2(s["anchor"][0], s["anchor"][1])}
-	for o in data["objects"]:
-		_spawn_prop(o["kind"], Vector2(o["world"][0], o["world"][1]), int(o["frame"]), o["job"],
+	for i in data["objects"].size():
+		var o: Dictionary = data["objects"][i]
+		var id := props_json + ":" + str(i)
+		if GameState.removed_props.has(id):
+			continue
+		var prop := _spawn_prop(o["kind"], Vector2(o["world"][0], o["world"][1]), int(o["frame"]), o["job"],
 				float(o["radius"]), bool(o["solid"]))
+		prop.set_meta("inventory_id", id)
+	for id in GameState.spawned_props:
+		if not GameState.removed_props.has(id):
+			var o: Dictionary = GameState.spawned_props[id]
+			var prop := _spawn_prop("ore_chunk", o["world"], o["frame"], "gather", 2.5, false)
+			prop.set_meta("inventory_id", id)
 	for l in data["lamps"]:
 		var w := Vector2(l["world"][0], l["world"][1])
 		_lamps.append({"world": w, "head": Vector2(l["head_px"][0], l["head_px"][1]),
@@ -148,8 +165,8 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not suppressed
-	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet:
+	var can := ready and _player.controls_enabled and not suppressed and not inventory_suppressed and not repair_suppressed
+	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()
 		_stop_work()
@@ -280,12 +297,20 @@ func _work(delta: float) -> void:
 				_burst_rock(rock)
 		"gather":
 			var g: WorldProp = _target
+			if not GameState.can_store(g.kind):
+				inventory_full.emit()
+				_stop_work()
+				return
 			g.progress = minf(1.0, g.progress + delta / TIMES["gather"])
 			g.set_lift(g.progress * 7.0 + sin(_t * 22.0) * 0.6 * g.progress)
 			g.scale = Vector2.ONE * (1.0 - 0.3 * g.progress)
 			for i in 2:
 				_stream.append([0.0, randf() * TAU, randf_range(2.4, 3.4), g.center_px() + Vector2(randf_range(-3, 3), randf_range(-2, 2))])
 			if g.progress >= 1.0:
+				if not GameState.store_item(g.kind):
+					_stop_work()
+					return
+				GameState.removed_props[g.get_meta("inventory_id")] = true
 				_zips.append([g, g.position, 0.0])
 				g.shadow.visible = false
 				_stop_work()
@@ -312,6 +337,14 @@ func _stop_work() -> void:
 	_player.work_target = null
 
 
+## UI cancels an active job; selecting away from the tool also sets down a lifted crate.
+func cancel_work() -> void:
+	_stop_work()
+	_target = null
+	if _lifted != null and not get_tree().paused:
+		_drop()
+
+
 func _burst_rock(rock: WorldProp) -> void:
 	var c := rock.center_px()
 	_player.camera.shake(2.6, 0.4)
@@ -334,7 +367,11 @@ func _burst_rock(rock: WorldProp) -> void:
 		if _terrain.surface(to) != MapTerrain.Surface.WALK:
 			to = rock.world + Vector2(cos(a3), sin(a3)) * (rock.radius * 0.5)
 		var chunk := _spawn_prop("ore_chunk", rock.world, i, "gather", 2.5, false)
+		var id: String = rock.get_meta("inventory_id", "rock") + "/chunk/" + str(i)
+		chunk.set_meta("inventory_id", id)
+		GameState.spawned_props[id] = {"world": to, "frame": i}
 		_hops.append([chunk, rock.world, to, 0.0, 0.5 + i * 0.08])
+	GameState.removed_props[rock.get_meta("inventory_id")] = true
 	_props.erase(rock)
 	rock.remove()
 	_stop_work()
@@ -744,7 +781,7 @@ func _halo(layer: CanvasItem, center: Vector2, r: int, col: Color) -> void:
 
 
 static func _ensure_actions() -> void:
-	var setup := {"tool_toggle": [KEY_T, JOY_BUTTON_Y], "tool_use": [KEY_E, JOY_BUTTON_X]}
+	var setup := {"tool_toggle": [KEY_T, JOY_BUTTON_Y], "tool_use": [KEY_F, JOY_BUTTON_X]}
 	for action in setup:
 		if InputMap.has_action(action):
 			continue
