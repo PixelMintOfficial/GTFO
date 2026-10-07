@@ -60,12 +60,13 @@ scenes/
   player.tscn          the astronaut: Shadow, AnimatedSprite2D (depth-occlusion shader), GameCamera
 scripts/
   game_state.gd        autoload GameState: the only state carried between scenes
+  inventory_ui.gd      six-slot hotbar and paused backpack; draws existing sprites and PixelFont
   map_terrain.gd       MapTerrain: walkability, ground height, biome, world<->pixel projection
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
   multitool.gd         Multitool: equip, job picking (mine/gather/lift/fix) and their effects
   world_prop.gd        WorldProp: a loose thing the tool works on (rock, chunk, scrap, crate)
-  airlock_door.gd      AirlockDoor: "[E] ENTER/EXIT" prompt and the door cutscene, both ways
+  airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
   crash_site.gd        the satellite crash intro and the smouldering wreck
@@ -153,20 +154,32 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | run | Shift | right shoulder | player.gd |
 | jump (hold for higher) | Space | A | player.gd |
 | tool_toggle (take out / put away) | T | Y | multitool.gd |
-| tool_use (hold: mine, gather, fix; tap: lift / set down) | E | X | multitool.gd |
-| interact (doors) | E | X | airlock_door.gd |
+| tool_use (hold: mine, gather, fix; tap: lift / set down) | F | X | multitool.gd |
+| interact (doors) | F | X | airlock_door.gd |
+| toggle_inventory | E | Start | inventory_ui.gd |
+| hotbar select | 1-6 / mouse wheel / click | left shoulder cycles | inventory_ui.gd |
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
 
-E is shared: while a door's prompt is showing, the door sets `multitool.suppressed = true`,
-so E opens the door instead of using the tool. Anything else that wants E must use the same
-mechanism. Never bind a second meaning to E without it.
+F / gamepad X is shared: while a door's prompt is showing, the door sets
+`multitool.suppressed = true`, so it opens the door instead of using the tool.
+Inventory pauses the world and independently sets `multitool.inventory_suppressed`;
+after closing, F / X must be released before interactions resume. The inventory consumes
+modal input before map/camera handlers. Do not add another meaning to these buttons
+without the same suppression mechanism.
 
 ### 4.5 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
   - `tool_out`: the multitool stays out across the airlock.
+  - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
+    quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
+    resources stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
+    `inventory_changed`. A full bag leaves gathered props in the world.
+  - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
+    their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
+    chunks. Generated JSON is unchanged. Saving to disk is not implemented.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -207,20 +220,28 @@ consts in the named files.
   - T plays an 18-frame equip animation: the device on the backpack unfolds into a red-and-gold
     gauntlet on the right forearm.
   - With the tool out, every animation has a `_tool` version.
-  - The tool **picks its job from the target in reach** (40 units). An icon over the nearest
+  - The tool **picks its job from the target in reach** (40 units). Use F / gamepad X.
+    An icon over the nearest
     target shows which job it will do:
 
     | Job | Colour | Target | How it works |
     |---|---|---|---|
-    | mine | orange `#ff8a3a` | ore rock | hold E for 1.6 s; the rock bursts into chunks |
-    | gather | teal `#4fe0c8` | ore chunk, scrap | hold E for 0.55 s; a spiral pulls it in |
-    | lift | violet `#b583ff` | crate | tap E to float it so it follows you; tap again to set it down |
-    | fix | cyan `#7fd8ff` | dead lamp | hold E for 2.4 s; the lamp flickers back on |
+    | mine | orange `#ff8a3a` | ore rock | hold F for 1.6 s; the rock bursts into chunks |
+    | gather | teal `#4fe0c8` | ore chunk, scrap | hold F for 0.55 s; a spiral pulls it into the backpack |
+    | lift | violet `#b583ff` | crate | tap F to float it so it follows you; tap again to set it down |
+    | fix | cyan `#7fd8ff` | dead lamp | hold F for 2.4 s; the lamp flickers back on |
 
-  - **There are no counters or inventory on screen. That is a decision (§9), not a gap.**
+  - Inventory now shows resource stack counts (§12); there are no health/resource bars.
+- **Inventory** (`inventory_ui.gd`): six-slot bottom hotbar; E / Start toggles the paused
+  24-slot backpack. Click two slots to swap, or arrows/d-pad and Enter/A to pick/place.
+  Esc/B cancels a pending swap first, then closes. 1-6/wheel/left shoulder select hotbar;
+  selecting the multitool equips it, selecting resources/empty slots holsters it.
+  T/Y remains available. Ore/scrap have no consume/crafting action yet. Crates remain
+  world objects handled by lift. Opening/closing without changing selection preserves
+  the existing tool state. Inventory is blocked during intro/door cutscenes or map pause.
 - **Doors** (`airlock_door.gd`):
-  - Within 30 units, a `[E] ENTER` / `[E] EXIT` prompt shows.
-  - Pressing E starts a cutscene: the camera moves behind the astronaut, the warning lamp
+  - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
+  - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
     blinks, the door unseals and vents gas, the astronaut walks in, the door closes, and
     the screen fades.
 - **Intro** (`crash_site.gd`): the satellite crash-lands near the base, once per run, and any
@@ -379,7 +400,7 @@ waiting for a future feature are documented in §11. Don't remove them.
 ### 7.5 UI and text
 - All text is `PixelFont` (3×5 glyphs): scale 1 for prompts, scale 2 for titles. Extend its
   glyph table if you need a letter; never use a vector font.
-- Prompts read `[E] LABEL`, in capitals.
+- Prompts read `[F] LABEL` for world interactions, in capitals; E opens the backpack.
 - Room titles fade in at the top of the screen on a dark translucent plate with a coral
   underline (`interior_fx.gd`). Reuse this look.
 - No HUD clutter (see §9).
@@ -399,6 +420,8 @@ godot --headless --path . res://scenes/interior.tscn --quit-after 300
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
+godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
+godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 ```
 
 Useful hooks:
@@ -424,8 +447,8 @@ Useful hooks:
 - Main base design **v3** is the default. The old designs stay available as versions.
 - The three lands and where they are; winding roads; the comms massif.
 - The base starts dead and broken; it gets repaired through play.
-- **No counters, inventory numbers or HUD bars** for now.
-- The multitool picks its job from the target. One button (E) uses it.
+- **No HUD bars**; inventory stack counts and a six-slot hotbar are approved (§12).
+- The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
   Each room has two different irregular holes, kept as data so they can be traced later.
@@ -492,8 +515,11 @@ Useful hooks:
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
-- **Not built yet:** inventory or resources (deliberately hidden, see §9), interiors for the
-  nursery and comms domes, saving and loading, sound and music.
+- **Inventory is implemented:** session backpack, resource stacks, quick access and slot
+  swaps. Resources are gathered through the existing tool; crafting/consumption is not
+  implemented. No new generated item art or map data keys.
+- **Not built yet:** interiors for the nursery and comms domes, saving and loading, sound
+  and music.
 
 ---
 
@@ -517,3 +543,8 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-06 — Broken reactor with thin wires and a circuit-board cabinet; broken oxygen
   generator, O2 bottles and scrap; walkable footprints only at body height (owner).
 - 2026-10-06 — No zooming indoors. Dome cracks keep their original look (owner).
+- 2026-10-07 — Inventory feature request approves a visible six-slot hotbar, 24-slot
+  backpack and resource stack counts. E opens/closes inventory; existing world interactions
+  move to F (gamepad X unchanged). PixelFont/palette/generated sprites are reused; inventory
+  pauses gameplay. Ore/scrap are stored in GameState, persist through scenes, and can be
+  rearranged; no crafting or new resource-use jobs (owner's explicit inventory request).

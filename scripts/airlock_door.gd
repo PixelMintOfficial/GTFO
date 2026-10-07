@@ -2,7 +2,7 @@ class_name AirlockDoor
 extends Node2D
 ## An airlock door the astronaut can go through.
 ##
-## Walk up to it and an "E" prompt appears over it. Press E and a little cutscene plays: the
+## Walk up to it and an "F" prompt appears over it. Press F and a little cutscene plays: the
 ## camera moves in behind the astronaut, they step up to the door, its warning light blinks,
 ## the door unseals and its halves slide away into their pockets with a blast of venting gas,
 ## they walk in, it closes behind them, and the screen fades out (then `entered` is emitted).
@@ -122,7 +122,7 @@ func _process(delta: float) -> void:
 			_prompt = _in_reach()
 			if multitool != null:
 				multitool.suppressed = _prompt
-			if _prompt and Input.is_action_just_pressed("interact"):
+			if _prompt and not multitool.inventory_suppressed and Input.is_action_just_pressed("interact"):
 				_start()
 		State.APPROACH:
 			if player.puppet_walk(stand_point(), 1.0, delta):
@@ -293,7 +293,7 @@ func _draw_air() -> void:
 		_draw_prompt()
 
 
-## "[E] OPEN" floating over the door.
+## "[F] OPEN" floating over the door.
 func _draw_prompt() -> void:
 	var w := PixelFont.width(label) + 13
 	var top := (lamp + Vector2(0, -16 + round(sin(_t * 4.0)))).round()
@@ -303,7 +303,7 @@ func _draw_prompt() -> void:
 	var key := Rect2(box.position + Vector2(2, 1), Vector2(8, 9))
 	_air.draw_rect(key, KEY)
 	_air.draw_rect(Rect2(key.position + Vector2(0, 8), Vector2(8, 1)), Color("#8f8ba8"))
-	PixelFont.draw(_air, key.position + Vector2(3, 2), "E", Color("#241f36"))
+	PixelFont.draw(_air, key.position + Vector2(3, 2), "F", Color("#241f36"))
 	PixelFont.draw(_air, box.position + Vector2(12, 3), label, Color("#ffd27a"))
 	_air.draw_rect(Rect2(top + Vector2(-1, 12), Vector2(3, 1)), Color("#ffd27a", 0.8))
 	_air.draw_rect(Rect2(top + Vector2(0, 13), Vector2(1, 1)), Color("#ffd27a", 0.8))
@@ -327,7 +327,7 @@ static func _ensure_action() -> void:
 		return
 	InputMap.add_action("interact")
 	var key := InputEventKey.new()
-	key.physical_keycode = KEY_E
+	key.physical_keycode = KEY_F
 	InputMap.action_add_event("interact", key)
 	var pad := InputEventJoypadButton.new()
 	pad.button_index = JOY_BUTTON_X
