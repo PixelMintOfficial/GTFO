@@ -10,6 +10,10 @@ open ground near the spawn, and lists the dead path lamps by the base that can b
 
     python tools/props_gen.py          (run after mars_map_gen.py: it reads the map's data)
 
+Each prop is drawn for every view of the map (the camera turns round the world in quarter turns):
+props/<name>.png for view 0, props/<name>_r1.png ... for the others, listed in sprites_views. The
+dead lamps' heads are given in every view's pixels (head_px_views).
+
 Writes assets/maps/red_planet/props/*.png and red_planet_props.json.
 """
 import json
@@ -125,11 +129,13 @@ def decal_crate(part, P):
 
 
 # ------------------------------------------------------------------ rendering
-def sheet(name, frames_parts):
-    """All frames of one prop in a strip; the anchor is where its foot point sits."""
+def sheet(name, frames_parts, k=0):
+    """All frames of one prop in a strip, as view k sees it (turned about its foot); the anchor is
+    where its foot point sits."""
+    frames_parts = [M.turned(fp, about=np.zeros(3), k=k) for fp in frames_parts]
     box = M.sprite_box(frames_parts, pad=3)
     strip = np.concatenate([M.sprite_rgba(M.render_sprite(fp, box)) for fp in frames_parts], axis=1)
-    fn = f'props/{name}.png'
+    fn = f'props/{name}{M.view_sfx(k)}.png'
     Image.fromarray(strip).save(os.path.join(OUT, fn))
     return dict(file=fn, frames=len(frames_parts), frame_size=[box[2], box[3]],
                 anchor=[round(M.AX - box[0], 1), round(M.AY - box[1], 1)])
@@ -169,13 +175,19 @@ def main():
     os.makedirs(PROPS, exist_ok=True)
     ground = Ground(meta)
 
-    sprites = {
-        'ore_rock': sheet('ore_rock', [ore_rock(s) for s in range(4)]),
-        'ore_chunk': sheet('ore_chunk', [ore_chunk(s) for s in (5, 6, 7)]),
-        'scrap': sheet('scrap', [scrap(k) for k in range(3)]),
-        'crate': sheet('crate', [crate(1.0)]),
-        'crate_small': sheet('crate_small', [crate(0.75)]),
+    models = {
+        'ore_rock': [ore_rock(s) for s in range(4)],
+        'ore_chunk': [ore_chunk(s) for s in (5, 6, 7)],
+        'scrap': [scrap(k) for k in range(3)],
+        'crate': [crate(1.0)],
+        'crate_small': [crate(0.75)],
     }
+    views = [json.load(open(os.path.join(OUT, f))) for f in meta.get('views', ['red_planet_map.json'])]
+    sprites_views = []
+    for k, vm in enumerate(views):
+        M.AX, M.AY = vm['origin_px']
+        sprites_views.append({name: sheet(name, fps, k) for name, fps in models.items()})
+    sprites = sprites_views[0]
     jobs = dict(ore_rock='mine', ore_chunk='gather', scrap='gather', crate='lift', crate_small='lift')
     radius = dict(ore_rock=8.0, ore_chunk=2.5, scrap=4.0, crate=7.0, crate_small=5.5)
     solid = dict(ore_rock=True, ore_chunk=False, scrap=False, crate=True, crate_small=True)
@@ -203,12 +215,18 @@ def main():
         X, Y = lamps[i]
         z = ground.z(X, Y)
         head = M.scale_pt(M.cam(X, Y, z) + np.array([0, 0, 14.4]), M.cam(X, Y, z), M.LAMP_SCALE)
-        hx, hy = M.project(*head)
-        lamp_out.append(dict(world=[round(X, 2), round(Y, 2)], head_px=[round(float(hx), 1), round(float(hy), 1)],
+        heads = []
+        for k, vm in enumerate(views):                   # where the head is in each view's picture
+            M.AX, M.AY = vm['origin_px']
+            hx, hy = M.project(*M.to_view(head, k))
+            heads.append([round(float(hx), 1), round(float(hy), 1)])
+        lamp_out.append(dict(world=[round(X, 2), round(Y, 2)], head_px=heads[0], head_px_views=heads,
                              height=round(14.4 * M.LAMP_SCALE, 1)))
-    out = dict(sprites=sprites, objects=objects, lamps=lamp_out,
-               note='Props the multitool works on. world = [X, Y] ground position; anchor = the foot point in each '
-                    'frame (frames side by side). job: mine / gather / lift. lamps: dead path lamps to fix.')
+    M.AX, M.AY = meta['origin_px']
+    out = dict(sprites=sprites, sprites_views=sprites_views, objects=objects, lamps=lamp_out,
+               note='Props the multitool works on. world = [X, Y] ground position (view 0 frame); anchor = the foot '
+                    'point in each frame (frames side by side). job: mine / gather / lift. lamps: dead path lamps '
+                    'to fix. sprites_views / head_px_views: the same for each view of the map.')
     with open(os.path.join(OUT, 'red_planet_props.json'), 'w') as fh:
         json.dump(out, fh, indent=1)
     print(f'{len(objects)} test props, {len(lamp_out)} dead lamps -> {OUT}')

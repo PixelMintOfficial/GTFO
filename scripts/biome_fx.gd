@@ -39,21 +39,49 @@ func setup(meta_path: String, camera: Camera2D, depth_map: Texture2D, map_size: 
 		player: Player = null) -> void:
 	_camera = camera
 	_player = player
+	_plant_layer = Node2D.new()
+	var fmat := ShaderMaterial.new()
+	fmat.shader = FLORA_SHADER
+	_plant_layer.material = fmat
+	_plant_layer.draw.connect(_draw_plants)
+	add_child(_plant_layer)
+	_glow_layer = Node2D.new()
+	var mat := CanvasItemMaterial.new()
+	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_glow_layer.material = mat
+	_glow_layer.draw.connect(_draw_glows)
+	add_child(_glow_layer)
+	load_view(meta_path, depth_map, map_size)
+
+
+## The camera turned: this view's plant sprites, where they stand, and its lights.
+func load_view(meta_path: String, depth_map: Texture2D, map_size: Vector2) -> void:
+	_sheets.clear()
+	_plants.clear()
+	_points.clear()
+	_visible.clear()
+	_colors.clear()
+	var fmat := _plant_layer.material as ShaderMaterial
+	fmat.set_shader_parameter("depth_map", depth_map)
+	fmat.set_shader_parameter("map_size", map_size)
 	var dir := meta_path.get_base_dir()
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	fmat.set_shader_parameter("depth_scale", float(meta["game"]["depth_scale"]))
 	if not meta.has("fx"):
 		return
 	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join(meta["fx"])))
 	for s in fx["flora"]["sheets"]:
+		var size := Vector2(s["frame_size"][0], s["frame_size"][1])
+		var anchor: Array = s.get("anchor", [size.x * 0.5, size.y])
 		_sheets.append({"tex": load(dir.path_join(s["file"])), "frames": int(s["frames"]), "fps": float(s["fps"]),
-				"size": Vector2(s["frame_size"][0], s["frame_size"][1]), "glows": s["glows"]})
+				"size": size, "glows": s["glows"], "anchor": Vector2(anchor[0], anchor[1])})
 	var order := 0
 	for inst in fx["flora"]["instances"]:
 		var pos := Vector2(inst[1], inst[2])
 		var key := _cell_of(pos)
 		if not _plants.has(key):
 			_plants[key] = []
-		var depth := int(inst[4])          # the plant's world Y * 16, handed to the shader as a colour
+		var depth := int(inst[4])          # the plant's depth (view Y) * 16, handed to the shader as a colour
 		var tag := Color8(depth >> 8, depth & 255, 255, 255)
 		_plants[key].append([order, int(inst[0]), pos, float(inst[3]), tag, int(inst[5]) == 1])
 		order += 1
@@ -66,21 +94,19 @@ func setup(meta_path: String, camera: Camera2D, depth_map: Texture2D, map_size: 
 		if not _points.has(key):
 			_points[key] = PackedInt32Array()
 		_points[key].append_array(PackedInt32Array(g))
-	_plant_layer = Node2D.new()
-	var fmat := ShaderMaterial.new()
-	fmat.shader = FLORA_SHADER
-	fmat.set_shader_parameter("depth_map", depth_map)
-	fmat.set_shader_parameter("map_size", map_size)
-	fmat.set_shader_parameter("depth_scale", 25.0)
-	_plant_layer.material = fmat
-	_plant_layer.draw.connect(_draw_plants)
-	add_child(_plant_layer)
-	_glow_layer = Node2D.new()
-	var mat := CanvasItemMaterial.new()
-	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
-	_glow_layer.material = mat
-	_glow_layer.draw.connect(_draw_glows)
-	add_child(_glow_layer)
+
+
+## The plants in the camera's view, for the camera's turn: [texture, frame rect, top-left (map px),
+## anchor in the frame (where the plant stands), depth (view Y)].
+func visible_plants() -> Array:
+	var out := []
+	for p in _in_view(_view_rect()):
+		var sh: Dictionary = _sheets[p[1]]
+		var size: Vector2 = sh["size"]
+		var tag: Color = p[4]
+		var depth := (roundf(tag.r8) * 256.0 + roundf(tag.g8)) / 16.0
+		out.append([sh["tex"], Rect2(Vector2(_frame(sh, p) * size.x, 0.0), size), p[2], sh["anchor"], depth])
+	return out
 
 
 func _process(delta: float) -> void:
@@ -89,24 +115,29 @@ func _process(delta: float) -> void:
 		if _player != null:
 			var mat := _plant_layer.material as ShaderMaterial
 			mat.set_shader_parameter("player_px", _player.global_position + _player.sprite.position)
-			mat.set_shader_parameter("player_depth", _player.world_pos.y)
+			mat.set_shader_parameter("player_depth", _player.terrain.view_depth(_player.world_pos))
 		_plant_layer.queue_redraw()
 		_glow_layer.queue_redraw()
 
 
 # ---------------------------------------------------------------- plants
 func _draw_plants() -> void:
-	var view := _view_rect()
-	_visible.clear()
-	for key in _cells(view.grow_individual(MARGIN, MARGIN, 0.0, 0.0)):
-		for p in _plants.get(key, []):
-			if Rect2(p[2], _sheets[p[1]]["size"]).intersects(view):
-				_visible.append(p)
-	_visible.sort_custom(func(a, b): return a[0] < b[0])   # far plants first
+	_visible = _in_view(_view_rect())
 	for p in _visible:
 		var sh: Dictionary = _sheets[p[1]]
 		var size: Vector2 = sh["size"]
 		_plant_layer.draw_texture_rect_region(sh["tex"], Rect2(p[2], size), Rect2(Vector2(_frame(sh, p) * size.x, 0.0), size), p[4])
+
+
+## The plants whose frames touch this rect (map px), far ones first.
+func _in_view(view: Rect2) -> Array:
+	var out := []
+	for key in _cells(view.grow_individual(MARGIN, MARGIN, 0.0, 0.0)):
+		for p in _plants.get(key, []):
+			if Rect2(p[2], _sheets[p[1]]["size"]).intersects(view):
+				out.append(p)
+	out.sort_custom(func(a, b): return a[0] < b[0])
+	return out
 
 
 func _frame(sh: Dictionary, p: Array) -> int:

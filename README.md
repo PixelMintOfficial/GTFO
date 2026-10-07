@@ -21,6 +21,8 @@ Inventory feature controls:
   Hold F to mine, gather or repair; tap to lift/set down crates. E is reserved for inventory.
 - Movement (**WASD/arrows**), run (**Shift**), jump (**Space**), map (**M**), and overworld
   zoom (**I/O**) are unchanged. They are blocked while the backpack is open.
+- **G / H** (gamepad d-pad left / right) turn the camera a quarter turn round the world,
+  indoors and out.
 
 The backpack starts with the multitool. Gather nearby ore chunks and scrap to fill it.
 Resources stack to 99; a full backpack leaves the item on the ground. Crates remain world
@@ -45,6 +47,7 @@ Run the regression suite:
 ```powershell
 godot --headless --path . res://tests/inventory_test.tscn
 godot --headless --path . res://tests/repair_test.tscn
+godot --headless --path . res://tests/view_turn_test.tscn
 godot --headless --path . res://scenes/overworld.tscn --quit-after 20000 -- --no-intro --quit=4
 godot --headless --path . res://scenes/interior.tscn --quit-after 20000 -- --quit=4
 ```

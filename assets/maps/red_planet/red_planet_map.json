@@ -60,6 +60,13 @@
     }
   },
   "lamps": 33,
+  "view": 0,
+  "views": [
+    "red_planet_map.json",
+    "red_planet_map_r1.json",
+    "red_planet_map_r2.json",
+    "red_planet_map_r3.json"
+  ],
   "visibility_checks": [
     {
       "pair": [
@@ -92,7 +99,7 @@
   "game": {
     "depth_png": "red_planet_depth.png",
     "walk_png": "red_planet_walk.png",
-    "depth_scale": 25.0,
+    "depth_scale": 20.0,
     "height_offset": 100.0,
     "height_scale": 150.0,
     "world_units_per_px": 0.43301270189221935,
@@ -105,7 +112,13 @@
       1439.71
     ],
     "notes": "World X/Y: X right, Y away from the camera. Screen = (origin_x + X / world_units_per_px, origin_y - (depth_to_px * Y + z) * px_per_unit). Walk grid pixel (u, v) with u = (X + Y) / sqrt2, v = (Y - X) / sqrt2. Channels: R,G = 16-bit value (hi, lo); depth B = 255 for glass; walk B = 255 walkable, 128 too steep to walk (can be jumped over, onto or down), 0 solid. character_scale converts sprite units (1 sprite px of height) to world units.",
-    "light_png": "red_planet_light.png"
+    "light_png": "red_planet_light.png",
+    "heading": 0,
+    "view_center": [
+      0.0,
+      1626.3455967290593
+    ],
+    "view_notes": "The game keeps the world in view 0's frame. View k shows it turned: view point = R_k (P - view_center) + view_center, R_k a quarter turn clockwise k times ((x, y) -> (y, -x) per turn); the screen formula above applies to the view point."
   },
   "biomes": {
     "png": "red_planet_biome.png",
@@ -143,6 +156,15 @@
         "frame_size": [
           116,
           116
+        ],
+        "anchor": [
+          57.9,
+          58.2
+        ],
+        "world": [
+          250.0,
+          2500.0,
+          210.0
         ]
       },
       {
@@ -157,6 +179,15 @@
         "frame_size": [
           249,
           249
+        ],
+        "anchor": [
+          124.6,
+          125.0
+        ],
+        "world": [
+          1180.0,
+          1590.0,
+          410.5
         ]
       }
     ],

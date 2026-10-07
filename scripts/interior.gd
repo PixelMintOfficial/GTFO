@@ -9,13 +9,15 @@ extends Node2D
 ## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
 ## --audio-debug (print every sound as it plays)
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
+## --turn=N (start with the camera turned N quarter turns round; G / H turn it)
+## --turn-left / --turn-right (turn the camera once after a second, see ViewTurn)
 
 const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
-const DEPTH_MAP: Texture2D = preload("res://assets/maps/base_interior/base_interior_depth.png")
 
 var terrain: MapTerrain
 var door: AirlockDoor
 var repairs: MachineRepairs
+var view_turn: ViewTurn
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -27,25 +29,28 @@ func _ready() -> void:
 	Audio.debug = _args().has("audio-debug")
 	Audio.enter_scene()
 	Audio.bed("amb_interior", 1.0)             # wind through the smashed windows, from inside
-	terrain = MapTerrain.new(MAP_JSON)
-	player.setup(terrain, DEPTH_MAP)
+	if _args().has("turn"):
+		GameState.heading = posmod(int(_args()["turn"]), 4)
+	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
+	$Map.texture = terrain.map_texture
+	player.setup(terrain, terrain.depth_map)
 	player.camera.zoom_locked = true                     # no zooming out indoors
 	player.camera.setup(player, $Map, terrain.max_view_px)
-	multitool.setup("", player, terrain, $Actors, DEPTH_MAP)
-	fx.setup(MAP_JSON, player)
+	multitool.setup("", player, terrain, $Actors, terrain.depth_map)
+	fx.setup(terrain.view_json, player)
 	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
-	door = AirlockDoor.new()
-	$Actors.add_child(door)
-	door.setup(meta["door"], MAP_JSON.get_base_dir(), player, player.camera, terrain, multitool, "EXIT")
-	door.entered.connect(_leave)
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	_setup_door(meta)
 	repairs = MachineRepairs.new()
 	add_child(repairs)
 	repairs.setup(meta, player, multitool)
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
 	inventory_ui.setup(player, multitool)
+	view_turn = ViewTurn.new()
+	add_child(view_turn)
+	view_turn.setup(terrain, player, _apply_view)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -53,6 +58,28 @@ func _ready() -> void:
 		door.arrive()
 	GameState.arrive = ""
 	_run_test_hooks(args)
+
+
+func _setup_door(meta: Dictionary) -> void:
+	door = AirlockDoor.new()
+	$Actors.add_child(door)
+	door.setup(meta["door"], terrain.view_json.get_base_dir(), player, player.camera, terrain, multitool, "EXIT")
+	door.entered.connect(_leave)
+
+
+## The camera turned round the base: switch everything to that view.
+func _apply_view(k: int, world_facing: Vector2) -> void:
+	terrain.load_view(k)
+	$Map.texture = terrain.map_texture
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	player.refresh_view(world_facing)
+	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
+	day_night.set_masks(terrain.light_mask, terrain.sun_mask)
+	fx.load_view(terrain.view_json)
+	multitool.set_view(terrain.depth_map)
+	repairs.set_view(meta)
+	door.queue_free()
+	_setup_door(meta)
 
 
 func _leave() -> void:

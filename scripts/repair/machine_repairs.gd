@@ -22,12 +22,22 @@ func setup(meta: Dictionary, player: Player, tool: Multitool) -> void:
 	_tool = tool
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	z_index = 50
+	set_meta("dn_unlit", true)                           # labels and bars: UI, not lit by the time of day
 	for info in meta.get("repair_machines", []):
 		machines.append(info)
 		GameState.repair_for(info["id"])
 	panel = CircuitRepairUI.new()
 	add_child(panel)
 	panel.closed.connect(_closed)
+
+
+## The camera turned: the bars move to where this view draws each machine.
+func set_view(meta: Dictionary) -> void:
+	for info in meta.get("repair_machines", []):
+		for m in machines:
+			if m["id"] == info["id"]:
+				m["progress_px"] = info["progress_px"]
+	queue_redraw()
 
 
 func _process(_delta: float) -> void:

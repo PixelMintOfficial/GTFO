@@ -47,6 +47,12 @@ func setup(meta_path: String, camera: Camera2D, player: Player, biome_source: Ca
 	_camera = camera
 	_player = player
 	_biome_source = biome_source
+	load_view(meta_path)
+
+
+## The camera turned: the emitters, where this view puts them (Audio moves the playing ones).
+func load_view(meta_path: String) -> void:
+	_emitters.clear()
 	var dir := meta_path.get_base_dir()
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
 	if meta.has("fx"):

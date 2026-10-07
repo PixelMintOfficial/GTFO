@@ -71,6 +71,32 @@ func setup(meta_path: String, camera: GameCamera, player: Player, biome: BiomeFX
 	_camera = camera
 	_player = player
 	_biome = biome
+	_before = Sprite2D.new()
+	_before.centered = false
+	_reveal = ShaderMaterial.new()
+	_reveal.shader = REVEAL
+	_before.material = _reveal
+	_before.visible = false
+	add_child(_before)
+	_air = Node2D.new()
+	_air.z_index = 40
+	_air.draw.connect(_draw_air)
+	add_child(_air)
+	_lit = Node2D.new()
+	_lit.z_index = 41
+	_lit.set_meta("dn_unlit", true)
+	_lit.draw.connect(_draw_lit)
+	add_child(_lit)
+	_sat = Sprite2D.new()
+	_sat.centered = false
+	_sat.visible = false
+	_air.add_child(_sat)
+	load_view(meta_path)
+
+
+## The camera turned: where the wreck, its smoke, fire and beacon are in this view (smoke and
+## sparks already in the air are let go).
+func load_view(meta_path: String) -> void:
 	var dir := meta_path.get_base_dir()
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
 	if not meta.has("fx"):
@@ -82,6 +108,10 @@ func setup(meta_path: String, camera: GameCamera, player: Player, biome: BiomeFX
 	_touch = _v(c["touchdown"])
 	_rest = _v(c["rest"])
 	_bend = _sky.lerp(_touch, 0.55) + Vector2(-26, -18)
+	_smoke_at.clear()
+	_spawn_acc.clear()
+	_sparks_at.clear()
+	_fire_at.clear()
 	for p in c["smoke"]:
 		_smoke_at.append(_v(p))
 		_spawn_acc.append(0.0)
@@ -90,33 +120,14 @@ func setup(meta_path: String, camera: GameCamera, player: Player, biome: BiomeFX
 	for p in c["fire"]:
 		_fire_at.append(_v(p))
 	_beacon = _v(c["beacon"])
-
-	_before = Sprite2D.new()
+	_puffs.clear()
+	_sparks.clear()
+	_chunks.clear()
 	_before.texture = load(dir.path_join(c["before"]["file"]))
-	_before.centered = false
 	_before.position = _v(c["before"]["position"])
-	_reveal = ShaderMaterial.new()
-	_reveal.shader = REVEAL
-	_before.material = _reveal
-	_before.visible = false
-	add_child(_before)
-
-	_air = Node2D.new()
-	_air.z_index = 40
-	_air.draw.connect(_draw_air)
-	add_child(_air)
-	_lit = Node2D.new()
-	_lit.z_index = 41
-	_lit.set_meta("dn_unlit", true)
-	_lit.draw.connect(_draw_lit)
-	add_child(_lit)
-	_sat = Sprite2D.new()
 	_sat.texture = load(dir.path_join(c["satellite"]["file"]))
 	_sat.hframes = int(c["satellite"]["frames"])
-	_sat.centered = false
 	_sat.offset = -_v(c["satellite"]["origin"]).round()
-	_sat.visible = false
-	_air.add_child(_sat)
 
 
 ## The crash, from the top. The astronaut waits; the camera watches the site.

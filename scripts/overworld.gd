@@ -20,14 +20,16 @@ extends Node2D
 ##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
 ##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
+##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
+##   --turn-left / --turn-right   turn the camera once after a second (see ViewTurn)
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
-const DEPTH_MAP: Texture2D = preload("res://assets/maps/red_planet/red_planet_depth.png")
 const PROPS_JSON := "res://assets/maps/red_planet/red_planet_props.json"
 const INTERIOR := "res://scenes/interior.tscn"
 
 var terrain: MapTerrain
 var doors: Array[AirlockDoor] = []
+var view_turn: ViewTurn
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -43,20 +45,27 @@ var doors: Array[AirlockDoor] = []
 func _ready() -> void:
 	Audio.debug = _args().has("audio-debug")
 	Audio.enter_scene()
-	terrain = MapTerrain.new(MAP_JSON)
-	player.setup(terrain, DEPTH_MAP)
+	if _args().has("turn"):
+		GameState.heading = posmod(int(_args()["turn"]), 4)
+	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
+	$Map.texture = terrain.map_texture
+	var view := terrain.view_json
+	player.setup(terrain, terrain.depth_map)
 	player.camera.frames = terrain.frames
 	player.camera.setup(player, $Map, terrain.max_view_px)
 	wind.setup(player.camera, _biome_here)
-	map_screen.setup(MAP_JSON, player)
-	dome_fx.setup(MAP_JSON)
-	biome_fx.setup(MAP_JSON, player.camera, DEPTH_MAP, terrain.map_size, player)
-	crash.setup(MAP_JSON, player.camera, player, biome_fx)
-	ambience.setup(MAP_JSON, player.camera, player, _biome_here)
+	map_screen.setup(view, player)
+	dome_fx.setup(view)
+	biome_fx.setup(view, player.camera, terrain.depth_map, terrain.map_size, player)
+	crash.setup(view, player.camera, player, biome_fx)
+	ambience.setup(view, player.camera, player, _biome_here)
 	player.step_source = _step_sound
-	multitool.setup(PROPS_JSON, player, terrain, $Actors, DEPTH_MAP)
+	multitool.setup(PROPS_JSON, player, terrain, $Actors, terrain.depth_map)
 	day_night.setup(player, $Map, terrain.light_mask)
 	_setup_doors()
+	view_turn = ViewTurn.new()
+	add_child(view_turn)
+	view_turn.setup(terrain, player, _apply_view, _turn_boards)
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
 	inventory_ui.setup(player, multitool)
@@ -98,17 +107,51 @@ func _step_sound() -> String:
 	return "step_dust"
 
 
+## The camera turned round the world: switch the whole scene to that view. The world itself
+## (positions, props, the clock, sounds) carries on; only how it is drawn changes.
+func _apply_view(k: int, world_facing: Vector2) -> void:
+	terrain.load_view(k)
+	$Map.texture = terrain.map_texture
+	var view := terrain.view_json
+	player.refresh_view(world_facing)
+	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
+	day_night.set_masks(terrain.light_mask)
+	map_screen.load_view(view)
+	dome_fx.load_view(view)
+	biome_fx.load_view(view, terrain.depth_map, terrain.map_size)
+	crash.load_view(view)
+	ambience.load_view(view)
+	multitool.set_view(terrain.depth_map)
+	for d in doors:
+		d.queue_free()
+	doors.clear()
+	_setup_doors()
+
+
+## What stands in the world, for the camera's swing: the plants in view, the loose props and
+## the domes' moving parts.
+func _turn_boards() -> Array:
+	var out := []
+	for p in biome_fx.visible_plants():
+		out.append(ViewTurn.plant_board(terrain, p))
+	for n in $Actors.get_children():
+		if n is WorldProp and not (n as WorldProp).gone:
+			out.append(ViewTurn.prop_board(terrain, n))
+	out.append_array(dome_fx.boards())
+	return out
+
+
 ## The base's airlock doors: F to go inside.
 func _setup_doors() -> void:
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
 	if not meta.has("fx"):
 		return
-	var fx_path := MAP_JSON.get_base_dir().path_join(meta["fx"])
+	var fx_path := terrain.view_json.get_base_dir().path_join(meta["fx"])
 	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fx_path))
 	for info in fx.get("doors", []):
 		var d := AirlockDoor.new()
 		$Actors.add_child(d)
-		d.setup(info, MAP_JSON.get_base_dir(), player, player.camera, terrain, multitool, "ENTER")
+		d.setup(info, terrain.view_json.get_base_dir(), player, player.camera, terrain, multitool, "ENTER")
 		d.set_meta("id", int(info["id"]))
 		d.entered.connect(_go_inside.bind(int(info["id"])))
 		doors.append(d)
@@ -172,7 +215,7 @@ func _run_test_hooks(args: Dictionary) -> void:
 	await get_tree().create_timer(float(args.get("seconds", "1.5"))).timeout
 	if args.has("debug"):
 		var p := player.world_pos
-		var depth_img := DEPTH_MAP.get_image()
+		var depth_img := terrain.depth_map.get_image()
 		var sp := Vector2i(player.position)
 		var c := depth_img.get_pixelv(sp)
 		var map_depth := (roundf(c.r * 255.0) * 256.0 + roundf(c.g * 255.0)) / terrain.depth_scale
