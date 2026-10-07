@@ -26,6 +26,14 @@ var selected_slot := 0
 ## Session world ledger prevents collected props from reappearing through an airlock.
 var removed_props := {}
 var spawned_props := {}
+## Machine repairs share the same session lifetime as the backpack.
+var machine_repairs: Dictionary = {}
+
+
+func repair_for(machine_id: String) -> MachineRepair:
+	if not machine_repairs.has(machine_id):
+		machine_repairs[machine_id] = MachineRepair.new(machine_id, randi())
+	return machine_repairs[machine_id]
 
 
 func _ready() -> void:

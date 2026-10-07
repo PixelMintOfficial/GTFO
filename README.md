@@ -42,6 +42,7 @@ Run the regression suite:
 
 ```powershell
 godot --headless --path . res://tests/inventory_test.tscn
+godot --headless --path . res://tests/repair_test.tscn
 godot --headless --path . res://scenes/overworld.tscn --quit-after 300 -- --no-intro
 godot --headless --path . res://scenes/interior.tscn --quit-after 300
 ```
@@ -49,3 +50,30 @@ godot --headless --path . res://scenes/interior.tscn --quit-after 300
 The inventory suite sends real keyboard and mouse events and checks stacking, slot swaps,
 rapid selection during equip, modal input, repeated E toggles, full bags, all four tool jobs,
 the airlock transition and inventory/world-item persistence. It exits nonzero on failure.
+
+Machine repair is available inside the base. Approach the power or O2 generator and press
+**F / gamepad X**. Rotate the preplaced wires to connect the terminals; bolted modules
+stay fixed. Each machine has five circuit layouts and switches to the next after 30 seconds
+of active solving. Closing the panel pauses the timer and preserves the attempt.
+Solving sends one bright power pulse along the connected route from the capacitor bank to
+the receiving relay; its status lights turn green on arrival. `--reduced-motion` gives
+instant receiver activation. The browser follows the OS reduced-motion preference.
+
+- **Left/right click** rotates clockwise/counterclockwise.
+- **Arrows / WASD / d-pad** moves selection. **Enter / Space / F / A** rotates;
+  **Q / left shoulder** rotates back. **Esc / B** returns to the game.
+- One solved circuit completes wiring and fills **50%** of the machine's repair bar.
+  Crack repair will supply the other half later. Repaired machine art is also pending.
+  Progress persists between scenes for the current run; disk saving is not implemented.
+
+The circuit system separates the puzzle model, machine state, panel rendering and world
+interaction in `scripts/repair/`. Native and browser versions share the ten authored boards
+in `data/repair_circuits.json`. The repair suite checks 1,000 shuffled native boards plus
+actual keyboard, pointer and gamepad input, reachable machine fronts, timers and persistence.
+
+To open a native panel directly, run
+`godot --path . res://scenes/interior.tscn -- --repair=power` (or `oxygen`). For the browser
+companion, run `node tools/serve_wire_repair.cjs` and open
+[the local preview](http://127.0.0.1:8765/tools/wire_repair.html).
+`?machine=oxygen` previews the O2 sequence. `node tools/test_wire_repair.cjs` checks its model.
+See [the repair design and implementation notes](docs/wire-repair-design.md).

@@ -69,6 +69,7 @@ scripts/
   airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
+  repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter
   crash_site.gd        the satellite crash intro and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
@@ -89,6 +90,8 @@ tools/                 the art pipeline (Python): generates everything in assets
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
   *_viewer.html             browser previews of the sprites and the map
+  wire_repair.html          browser companion to the native circuit panel
+data/repair_circuits.json   authored five-circuit sequences for power and oxygen machines
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
@@ -117,6 +120,11 @@ data images and JSON written by the same generator so they always match the pict
 Scripts must **read positions from this data** (door positions, LED pixels, crack outlines and
 so on). Never hard-code a map pixel position in a script. If you need one, the generator
 exports it.
+
+`base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
+(interaction position in world units), and `progress_px` (bar anchor in map pixels).
+`interior_gen.py` derives these from the actual machine model centres; its
+`--repair-metadata-only` option updates just this data using the existing projection origin.
 
 ### 4.2 Coordinates: one projection everywhere
 - **World**: X right, Y away from the camera, Z up, in *world units*. Gameplay lives here.
@@ -167,6 +175,10 @@ Inventory pauses the world and independently sets `multitool.inventory_suppresse
 after closing, F / X must be released before interactions resume. The inventory consumes
 modal input before map/camera handlers. Do not add another meaning to these buttons
 without the same suppression mechanism.
+Machine repairs use `multitool.repair_suppressed` independently, pause the world and consume
+modal input. F/X must be released after closing. On the board, arrows/WASD/d-pad select
+movable modules; Enter/Space/F/A turns clockwise, Q/left shoulder turns back, Esc/B closes.
+Mouse left/right click turns clockwise/back. Bolted modules and plates are skipped.
 
 ### 4.5 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
@@ -180,6 +192,9 @@ without the same suppression mechanism.
   - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
     their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
     chunks. Generated JSON is unchanged. Saving to disk is not implemented.
+  - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
+    Each stores its current puzzle, countdown, circuit index and completed repair tasks.
+    Closing a panel or changing scenes preserves the attempt; leaving pauses its countdown.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -239,6 +254,13 @@ consts in the named files.
   T/Y remains available. Ore/scrap have no consume/crafting action yet. Crates remain
   world objects handled by lift. Opening/closing without changing selection preserves
   the existing tool state. Inventory is blocked during intro/door cutscenes or map pause.
+- **Machine repairs** (`scripts/repair/`): F/X near the power or O2 generator opens one
+  rotating-wire circuit. Each machine has five authored layouts; after 30 active seconds
+  without a solution it advances to the next, reshuffles and resets the timer. Bolted wires
+  conduct but stay fixed. A matching supply-to-output route completes wiring once (50%).
+  Local machine bars show overall progress. The future cracks task accounts for the other
+  50% through `GameState.repair_for(id).complete_task("cracks")`; the task and repaired
+  machine art are not implemented yet.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -421,6 +443,9 @@ godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.p
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
 godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
+godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
+godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
+node tools/test_wire_repair.cjs                                     # browser circuit model checks
 godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 ```
 
@@ -428,7 +453,11 @@ Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
 - overworld only: `--equip`, `--use`, `--face=DX,DY`, `--door`, `--intro` / `--no-intro`,
   `--zoom=L`, `--open-map`, `--debug`
-- interior only: `--arrive`, `--exit`
+- interior only: `--arrive`, `--exit`, `--repair=power|oxygen`,
+  `--repair-done=power|oxygen` (wiring credit for screenshots), `--repair-bars`
+  (ignore ambient F input during progress-bar captures)
+- repair panel: `--reduced-motion` disables turn and completion animation; receiving
+  power activates immediately. The browser follows `prefers-reduced-motion`.
 
 **Definition of done:**
 1. Both scenes run headless with **no errors or warnings**.
@@ -447,7 +476,8 @@ Useful hooks:
 - Main base design **v3** is the default. The old designs stay available as versions.
 - The three lands and where they are; winding roads; the comms massif.
 - The base starts dead and broken; it gets repaired through play.
-- **No HUD bars**; inventory stack counts and a six-slot hotbar are approved (§12).
+- **No HUD bars**; inventory stack counts, a six-slot hotbar and local machine repair
+  progress bars are approved (§12).
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
@@ -501,17 +531,19 @@ Useful hooks:
 ---
 
 ## 11. Current state and open threads
-- **The repair loop is not built yet.** The pieces are in place, waiting for it:
+- **The repair loop is partly implemented.** Wiring is playable; these pieces remain:
   - **Dome cracks to trace and fix:**
     - `red_planet_fx.json → cracks` has, per hole: room, id, shape, outline polygon, crack
       strokes, centre, world position, and patch image and position;
     - the images are in `assets/maps/red_planet/anim/cracks/`.
-  - **The power room circuit board** (shown but not interactive yet):
+  - **The power room cabinet art** remains the original generated asset:
     - `base_interior.json → fx.circuit_board` has `center`, `socket`, the 4 `corners`
       (map px) and `world`;
     - `interior_fx.gd` pulses the empty socket.
-  - **The reactor and the oxygen generator** are broken. How they get repaired is not
-    designed yet (§10.1).
+  - **Reactor/O2 wiring is implemented:** F/X, five circuits each, timed replacement,
+    session state, bolted wires and local progress bars. The native panel uses octagons,
+    detailed PCB housings, a blue-green recess and neon green power (owner-approved).
+    One circuit earns 50% repair; cracks and the fully repaired assets are still pending.
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
@@ -548,3 +580,13 @@ Write one line per decision: date — decision (who approved it).
   move to F (gamepad X unchanged). PixelFont/palette/generated sprites are reused; inventory
   pauses gameplay. Ore/scrap are stored in GameState, persist through scenes, and can be
   rearranged; no crafting or new resource-use jobs (owner's explicit inventory request).
+- 2026-10-07 — Power/O2 generators get F/X circuit repair and local repair-progress bars.
+  Five circuits per machine; one successful circuit completes wiring, with a new circuit
+  after 30 active seconds if unsolved. Wiring earns 50%; cracks and fixed machine art come
+  later. The panel uses minimal copy, a blue-green circuit-board palette and neon green
+  connected wires. Octagonal detailed housings replace hexagons; fixed wires use bolts
+  instead of padlocks (owner's explicit repair integration and octagon requests).
+- 2026-10-07 — Enlarge the circuit terminals into a charged capacitor bank and receiving
+  relay. A single bright pulse follows the player's actual connected route from source to
+  receiver after solving; the relay closes and status LEDs light on arrival. The effect
+  is skippable and does not delay repair credit (owner's terminal/animation request).

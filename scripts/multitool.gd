@@ -42,6 +42,8 @@ var forced_use := false
 var suppressed := false
 ## Modal inventory owns input independently of the door's proximity suppression.
 var inventory_suppressed := false
+## Machine proximity and the repair modal own F independently of door/inventory input.
+var repair_suppressed := false
 
 var _player: Player
 var _terrain: MapTerrain
@@ -163,7 +165,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not suppressed and not inventory_suppressed
+	var can := ready and _player.controls_enabled and not suppressed and not inventory_suppressed and not repair_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()
