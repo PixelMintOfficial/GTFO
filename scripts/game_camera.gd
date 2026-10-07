@@ -47,6 +47,17 @@ func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2) -> void:
 	snap()
 
 
+## The camera turned round the world: the new view's furthest zoom and dome boxes. Keeps the
+## zoom level and jumps to where it wants to be in this view (at the furthest zoom, on a dome).
+func set_view_limits(max_view_px: Vector2, view_frames: Array[Rect2]) -> void:
+	_max_view = max_view_px
+	frames = view_frames
+	_build_levels()
+	if _target != null:
+		_pos = _goal()
+		global_position = _pos.round()
+
+
 ## Jump straight to the target (after a teleport).
 func snap() -> void:
 	if _target != null:

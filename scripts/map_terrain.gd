@@ -6,6 +6,11 @@ enum Surface { SOLID, STEEP, WALK }
 ## Ground data for a pre-rendered isometric map, read from the map generator's JSON:
 ## where you can walk, how high the ground is, and the projection between world
 ## coordinates (X right, Y away from the camera, in world units) and map pixels.
+##
+## The camera can turn round the world in quarter turns (ViewTurn): the generator renders the
+## map once per view. The world stays put - world_pos, walk grid, props, doors are all in view
+## 0's frame - and to_screen() shows it the way the current view does: turned `heading` quarter
+## turns (clockwise, seen from above) about view_center. load_view() switches the view.
 
 var map_size := Vector2.ZERO
 var origin := Vector2.ZERO
@@ -28,6 +33,15 @@ var light_mask: Texture2D
 var sun_mask: Texture2D
 ## Things that block like buildings but can move or go away (rocks, crates): id -> (x, y, radius).
 var blockers := {}
+## The current view: how many quarter turns the camera has made, the point it turns round,
+## its meta JSON, its picture and its depth map.
+var heading := 0
+var view_center := Vector2.ZERO
+var view_json := ""
+var map_texture: Texture2D
+var depth_map: Texture2D
+## Every view of this map (meta JSON paths, by heading); just one if it has no others.
+var views: Array[String] = []
 
 var _grid_size := 0
 var _height_offset := 100.0
@@ -38,26 +52,21 @@ var _biome_size := 0
 var _biome_cell := 4.0
 
 
-func _init(json_path: String) -> void:
+## json_path: the map's meta JSON (view 0). It opens on view `view` if the map has it.
+func _init(json_path: String, view := 0) -> void:
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(json_path))
 	var game: Dictionary = meta["game"]
-	map_size = Vector2(meta["size"][0], meta["size"][1])
-	origin = Vector2(meta["origin_px"][0], meta["origin_px"][1])
+	var dir := json_path.get_base_dir()
+	for v in meta.get("views", []):
+		views.append(dir.path_join(v))
+	if views.is_empty():
+		views.append(json_path)
 	units_per_px = game["world_units_per_px"]
 	depth_to_px = game["depth_to_px"]
 	depth_scale = game["depth_scale"]
 	px_per_unit = game.get("px_per_unit", 1.0)
 	character_scale = game.get("character_scale", 1.0)
 	spawn = Vector2(game["spawn_world"][0], game["spawn_world"][1])
-	if meta.has("zoom"):
-		max_view_px = Vector2(meta["zoom"]["max_view_px"][0], meta["zoom"]["max_view_px"][1])
-		for f in meta["zoom"].get("frames", {}).values():
-			frames.append(Rect2(f[0], f[1], f[2], f[3]))
-	var dir := json_path.get_base_dir()
-	if game.has("light_png"):
-		light_mask = load(dir.path_join(game["light_png"]))
-	if game.has("sun_png"):
-		sun_mask = load(dir.path_join(game["sun_png"]))
 	_grid_size = int(game["grid_size"])
 	_height_offset = game["height_offset"]
 	_height_scale = game["height_scale"]
@@ -71,6 +80,75 @@ func _init(json_path: String) -> void:
 		_biome = bimg.get_data()
 		_biome_size = int(b["grid_size"])
 		_biome_cell = float(b["cell"])
+	load_view(view if view < views.size() else 0)
+
+
+## Switch to another view of the map: its picture, depth, light, frame and zoom boxes.
+func load_view(k: int) -> void:
+	view_json = views[posmod(k, views.size())]
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(view_json))
+	var game: Dictionary = meta["game"]
+	var dir := view_json.get_base_dir()
+	heading = int(game.get("heading", 0))
+	var c: Array = game.get("view_center", [0.0, 0.0])
+	view_center = Vector2(c[0], c[1])
+	map_size = Vector2(meta["size"][0], meta["size"][1])
+	origin = Vector2(meta["origin_px"][0], meta["origin_px"][1])
+	frames.clear()
+	if meta.has("zoom"):
+		max_view_px = Vector2(meta["zoom"]["max_view_px"][0], meta["zoom"]["max_view_px"][1])
+		for f in meta["zoom"].get("frames", {}).values():
+			frames.append(Rect2(f[0], f[1], f[2], f[3]))
+	map_texture = load(dir.path_join(meta["image"]))
+	depth_map = load(dir.path_join(game["depth_png"]))
+	light_mask = load(dir.path_join(game["light_png"])) if game.has("light_png") else null
+	sun_mask = load(dir.path_join(game["sun_png"])) if game.has("sun_png") else null
+
+
+## A world point (or the point under it) as the current view lays it out.
+func view_point(p: Vector2) -> Vector2:
+	var d := p - view_center
+	match heading:
+		1:
+			return Vector2(d.y, -d.x) + view_center
+		2:
+			return -d + view_center
+		3:
+			return Vector2(-d.y, d.x) + view_center
+	return p
+
+
+## A point as the current view lays it out, back in the world.
+func world_point(v: Vector2) -> Vector2:
+	return world_dir(v - view_center) + view_center
+
+
+## How far from the camera a world point is in this view (what the depth map holds).
+func view_depth(p: Vector2) -> float:
+	return view_point(p).y
+
+
+## A world direction as the current view sees it, and back.
+func view_dir(w: Vector2) -> Vector2:
+	match heading:
+		1:
+			return Vector2(w.y, -w.x)
+		2:
+			return -w
+		3:
+			return Vector2(-w.y, w.x)
+	return w
+
+
+func world_dir(v: Vector2) -> Vector2:
+	match heading:
+		1:
+			return Vector2(-v.y, v.x)
+		2:
+			return -v
+		3:
+			return Vector2(v.y, -v.x)
+	return v
 
 
 static func _load_image(path: String) -> Image:
@@ -85,7 +163,8 @@ static func _load_image(path: String) -> Image:
 
 ## Map pixel position of a world point standing at height z.
 func to_screen(p: Vector2, z: float) -> Vector2:
-	return Vector2(origin.x + p.x / units_per_px, origin.y - (depth_to_px * p.y + z) * px_per_unit)
+	var v := view_point(p)
+	return Vector2(origin.x + v.x / units_per_px, origin.y - (depth_to_px * v.y + z) * px_per_unit)
 
 
 func is_walkable(p: Vector2) -> bool:

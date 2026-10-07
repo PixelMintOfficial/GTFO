@@ -39,6 +39,29 @@ var _t := 0.0
 
 func setup(meta_path: String, player: Player) -> void:
 	_player = player
+	_glow = Node2D.new()
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_glow.material = add
+	_glow.draw.connect(_draw_glow)
+	add_child(_glow)
+	_lit = Node2D.new()
+	_lit.set_meta("dn_unlit", true)
+	_lit.draw.connect(_draw_lit)
+	add_child(_lit)
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	add_child(layer)
+	_toast = Node2D.new()
+	_toast.draw.connect(_draw_toast)
+	layer.add_child(_toast)
+	load_view(meta_path)
+
+
+## The camera turned: where this view has the sun shafts, the lights, the sparks and the gas.
+func load_view(meta_path: String) -> void:
+	for a in [_shafts, _motes, _leds, _tanks, _spark_points, _sparks, _flashes, _vents, _puffs, _rooms]:
+		a.clear()
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
 	var fx: Dictionary = meta["fx"]
 	for s in fx["shafts"]:
@@ -66,22 +89,6 @@ func setup(meta_path: String, player: Player) -> void:
 	for name in meta["rooms"]:
 		var rm: Dictionary = meta["rooms"][name]
 		_rooms.append([rm["label"], Vector2(rm["center"][0], rm["center"][1]), float(rm["radius"])])
-	_glow = Node2D.new()
-	var add := CanvasItemMaterial.new()
-	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
-	_glow.material = add
-	_glow.draw.connect(_draw_glow)
-	add_child(_glow)
-	_lit = Node2D.new()
-	_lit.set_meta("dn_unlit", true)
-	_lit.draw.connect(_draw_lit)
-	add_child(_lit)
-	var layer := CanvasLayer.new()
-	layer.layer = 5
-	add_child(layer)
-	_toast = Node2D.new()
-	_toast.draw.connect(_draw_toast)
-	layer.add_child(_toast)
 
 
 static func _vec(a: Array) -> Vector2:

@@ -77,7 +77,9 @@ scripts/
   audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.8)
   world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
   inventory_ui.gd      six-slot hotbar and paused backpack; draws existing sprites and PixelFont
-  map_terrain.gd       MapTerrain: walkability, ground height, biome, world<->pixel projection
+  map_terrain.gd       MapTerrain: walkability, ground height, biome, the views, world<->pixel projection
+  view_turn.gd         ViewTurn: G / H turn the camera round the world; loads the next views ahead
+  turn_overlay.gd      TurnOverlay: the turn's swing, the world stood up in 3D for a moment
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
   multitool.gd         Multitool: equip, job picking (mine/gather/lift/fix) and their effects
@@ -101,6 +103,7 @@ shaders/
   prop_depth           props behind scenery: hidden, or tinted behind glass
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
   crash_reveal         uncovers the untouched ground behind the crashing satellite
+  turn_relief          one view's picture stood up on its depth map, for the turn's swing
   dust_gusts           dithered wind-gust overlay
 tools/                 the pipeline (Python): generates everything in assets/
   astronaut_sprite_gen.py   the astronaut and the multitool: SDF model, rig, every animation
@@ -116,8 +119,9 @@ data/repair_circuits.json   authored five-circuit sequences for power and oxygen
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
-  maps/red_planet/          generated overworld: map, depth, walk, biome, light, fx, props, flora, anim, previews
-  maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview
+  maps/red_planet/          generated overworld: map, depth, walk, biome, light, fx, props, flora, anim, previews;
+                            each view's own set beside view 0's, suffixed _r1, _r2, _r3 (§4.9)
+  maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview (four views too)
     machines/               the reactor and the oxygen generator as standalone sprites (+ machines.json, 4x previews)
   audio/                    generated sound: *.wav, audio.json, viewer.html, SOURCES.md,
                             CREDITS.md (ship this), preview.json
@@ -149,6 +153,13 @@ Scripts must **read positions from this data** (door positions, LED pixels, crac
 so on). Never hard-code a map pixel position in a script. If you need one, the generator
 exports it.
 
+**Every map has four views** (§4.9): everything above that is a picture or a pixel position
+exists once per view - view 0's files as named above, view k's beside them with a `_rk`
+suffix (`red_planet_map_r1.png`, `red_planet_fx_r2.json`, `flora/tree_3_r1.png`...). Each
+view's meta JSON lists them all (`views`) and its `game` block says which view it is
+(`heading`, `view_center`). What belongs to the world - the walk grid, the biome grid, the
+spawn, every `world` position in the data - exists once, in view 0's frame.
+
 `base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
 `interior_gen.py` derives these from the actual machine model centres; its
@@ -166,6 +177,11 @@ exports it.
   units (the astronaut is 44 px = 22 world units tall). Player speeds are in sprite units/s.
 - The interior is its own small world. Its rooms sit around Y ≈ 520 in its own coordinates
   (storage at (0, 520), power (236, 530), oxygen (−236, 530)) and share nothing with the overworld.
+- **The camera turns, the world doesn't** (§4.9). World X/Y are always view 0's: gameplay,
+  `world_pos`, props, doors, the walk grid never change with the view. `MapTerrain` turns them
+  into the current view: `to_screen()` (pixels), `view_depth()` (what the depth map holds - use
+  it, never world Y, for `sprite_depth`), `view_dir()` / `world_dir()` (the stick is screen
+  space: turn it into the world with `world_dir()`), `view_point()` / `world_point()`.
 
 ### 4.3 Draw order, depth and y-sorting
 - **Overworld nodes, in draw order:** `Map` → `CrashSite` → `BiomeFX` → `DomeFX` → `Actors`
@@ -173,7 +189,7 @@ exports it.
   (`Ambience` sits in the tree between `Multitool` and `WindFX` but draws nothing; see §4.8.)
 - **Interior nodes, in draw order:** `Map` → `InteriorFX` → `Actors` → `Multitool`.
 - Anything that moves in front of or behind the pre-rendered scenery must use a depth shader
-  with `sprite_depth` = world Y of its feet:
+  with `sprite_depth` = `terrain.view_depth(feet)` (its depth in the current view):
   - `depth_occlusion` for characters (they show as a silhouette behind things);
   - `prop_depth` for props (they hide behind things).
   Both tint through glass.
@@ -213,6 +229,7 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | toggle_inventory | E | Start | inventory_ui.gd |
 | hotbar select | 1-6 / mouse wheel / click | left shoulder cycles | inventory_ui.gd |
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
+| turn_left / turn_right (turn the camera a quarter turn) | G / H | d-pad left / right | view_turn.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
 
 F / gamepad X is shared: while a door's prompt is showing, the door sets
@@ -233,6 +250,7 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
   - `tool_out`: the multitool stays out across the airlock;
   - `clock`: game hours since the start (`DayNight` turns it into the day, hour and part of
     the day).
+  - `heading`: which way the camera faces (quarter turns, 0..3), the same indoors and out.
   - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
     quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
     resources stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
@@ -305,6 +323,37 @@ Audio.bed("amb_ice", weight)                   # ambience, crossfaded 0..1
 
 ---
 
+### 4.9 Four views: turning the camera
+The camera turns round the world in quarter turns, Don't Starve style (G / H). A pre-rendered
+map can't turn, so every map is rendered **four times**, once per view, and a turn switches
+the scene from one view to the next.
+- **The generators** build the world once, in view 0's frame, then render each view with the
+  world turned about the middle of its grid (`VIEW_C`): view = R_k (world − c) + c, R_k a quarter
+  turn clockwise k times, (x, y) → (y, −x) per turn. Terrain grids turn with the world
+  (`rot_grid`); every model is built in view 0's frame inside `canonical()` and turned whole
+  with `turned()` (an SDF wrapper), so each view shows the other sides of things. **The sun
+  stays put on screen** (upper left, §7.2): each view is lit alike, its shadows cast afresh.
+  Positions written into the data are the view's pixels; `world` positions stay view 0's.
+  Every view is as deep as the whole world (2 × `VIEW_C`'s Y ≈ 3253 units), so the depth
+  map's `DEPTH_SCALE` (20) must keep that under 65535; `view_turn_test` checks it.
+- **The game** keeps one `MapTerrain`, which loads a view with `load_view(k)`. On a turn the
+  scene's `_apply_view(k, facing)` calls every system's **`load_view(meta)`** (or `set_view`):
+  the map texture, the player (`refresh_view`: depth map, facing kept in the world), the
+  camera (`set_view_limits`), DayNight's masks, BiomeFX, DomeFX, CrashSite, WorldAmbience,
+  MapScreen, the multitool's props and lamps, doors (rebuilt), InteriorFX, the repair bars.
+  **Anything you add that draws at map pixels must do the same**: read its positions from the
+  current view's data (`terrain.view_json`) and reload them in its `load_view`. Sounds,
+  carried crates, the inventory and the clock carry on through a turn.
+- **The turn itself** (`ViewTurn` + `TurnOverlay`): ~0.4 s, eased, round the astronaut, who
+  stands still (`player.turning`). For that moment the world is stood up in 3D - each view's
+  picture lifted onto its depth map (`turn_relief`), plants, props, the domes' moving parts and
+  the astronaut as billboards (they come from each system's `visible_plants()` / `boards()`) -
+  and the game's own orthographic camera swings round. The view left dissolves into the view
+  arrived at (a pixel dither), then the overlay fades into the live view. It sits above the
+  world (layer 3) and below every UI layer. Turns wait for a calm moment: not in a cutscene, a
+  modal, mid-jump, or while the tool is being drawn or at work. The next views' textures load
+  in the background ahead of time, so a turn never waits for the disk.
+
 ---
 
 ## 5. Mechanics reference (current behaviour)
@@ -325,6 +374,10 @@ consts in the named files.
     In-between levels land on whole-pixel scales at 1080p.
   - Interior: `zoom_locked = true` (no zooming).
   - Cutscenes use `focus_override`, `snap_to` and `release_focus`.
+  - **Turning** (`view_turn.gd`): G / H (d-pad left / right) turn the view a quarter turn left /
+    right, indoors and out, in a 0.42 s eased swing round the astronaut. The stick stays screen
+    relative (up is always up the screen); the astronaut keeps facing the same way in the
+    world, so their sprite turns as the camera goes round. A press during a swing is kept.
 - **Multitool** (`multitool.gd`, `player.gd`):
   - T plays an 18-frame equip animation: the device on the backpack unfolds into a red-and-gold
     gauntlet on the right forearm.
@@ -402,9 +455,9 @@ the existing renderer (`render_groups` / `render_sprite`).
 | Generator | Writes | Run it when | Time |
 |---|---|---|---|
 | `python tools/astronaut_sprite_gen.py` then `python tools/godot_spriteframes.py` | `assets/characters/astronaut/*` | you change the astronaut, the multitool or any animation | slow (about 1,000 frames); `--quick` writes only the contact sheet |
-| `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 3 minutes, several GB of RAM |
+| `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 8 minutes for the four views (~1.5 per view), several GB of RAM |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
-| `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | a few seconds |
+| `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about 25 seconds (four views) |
 | `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
 
 **The generators share code.** `mars_map_gen.py` imports `astronaut_sprite_gen.py` (SDF
@@ -418,6 +471,8 @@ designs can be compared or restored:
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
 - `MAP_OUT=<folder>` writes the map somewhere else, so you can preview a design without
   replacing the game's map.
+- `MAP_VIEWS=0` (or `013`...) renders only those views (map and interior) - quick to check a
+  change, but the game needs all four before it ships. The walk grid comes from view 0.
 
 Running with a non-default design and `MAP_OUT` unset **replaces the game's assets**.
 
@@ -432,9 +487,15 @@ waiting for a future feature are documented in §11. Don't remove them.
 `audio.json` is the same kind of contract: `scripts/audio.gd` is the only reader, and every
 field in it exists because something in the game asks for it (§4.8).
 
+The views add: `views`, `view`, `game.heading`, `game.view_center` in every meta JSON;
+`sprites_views` and `lamps[].head_px_views` in `red_planet_props.json`; `anchor` on every plant
+sheet; `anchor` and `world` on every animated dome sprite (the turn stands them up).
+
 ### 6.4 Recipes
 - **A new prop or machine:**
-  1. Model it in the generator with existing primitives and existing ramp names.
+  1. Model it in the generator with existing primitives and existing ramp names, in view 0's
+     frame (inside `canonical()` in `mars_map_gen.py`), and render it `turned()` - then it is
+     right in every view. Never place a model in a view's coordinates.
   2. Give it a decal function for printed detail.
   3. If the player can walk around it, check that it blocks the walk grid only where it
      really stands (the interior builds footprints by sampling the SDF from floor to body
@@ -451,6 +512,7 @@ field in it exists because something in the game asks for it (§4.8).
   1. Copy the interior's structure: a generator for the picture and data (including its light
      mask), a `MapTerrain` from its JSON, the player's `setup`, and a scene FX script.
   2. Add a `DayNight` node and call `setup(player, $Map, terrain.light_mask, terrain.sun_mask)`.
+     Render it in four views, add a `ViewTurn` and an `_apply_view` like `interior.gd`'s.
   3. Add test hooks like `interior.gd`'s.
   4. Move between scenes through `GameState`.
 
@@ -460,7 +522,8 @@ field in it exists because something in the game asks for it (§4.8).
 
 ### 7.1 Projection and scale
 - Everything is drawn through **the same camera**: 2:1 pixel isometric, orthographic, 30°
-  pitch.
+  pitch, which can face the world from four sides (quarter turns, §4.9). Every view keeps the
+  2:1 look.
 - Maps are rendered at `PX = 2` pixels per world unit of height.
 - **The astronaut:**
   - 64×64 frames, feet anchored at (32, 56).
@@ -611,6 +674,8 @@ godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # throug
 godot --path . res://scenes/overworld.tscn -- --no-intro --time=22 --capture=night.png   # check a change by night too
 godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
 godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
+godot --headless --path . res://tests/view_turn_test.tscn             # turning the camera, in both scenes
+godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
 node tools/test_wire_repair.cjs                                     # browser circuit model checks
 godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
@@ -628,6 +693,8 @@ Useful hooks:
   power activates immediately. The browser follows `prefers-reduced-motion`.
 - both: `--time=HOUR` (e.g. `--time=22` for night), `--day=N`, `--day-speed=X` (time runs X
   times faster)
+- both: `--turn=N` (start N quarter turns round), `--turn-left` / `--turn-right` (turn once
+  after a second, for capturing the swing)
 
 **Quit with `--quit=SECONDS`, not with `--quit-after`.** `--quit-after` counts *frames*, and a
 headless frame can take under a millisecond, so it is unpredictable in wall-clock time and it
@@ -649,7 +716,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 **Definition of done:**
 1. Both scenes run headless with **no errors or warnings** (`make check`).
 2. You captured screenshots of what you changed and **looked at them**, at 1:1 and zoomed in,
-   **by day and by night** (`--time=12`, `--time=22`).
+   **by day and by night** (`--time=12`, `--time=22`), and **from more than one side**
+   (`--turn=1`, `--turn=2`).
 3. Walk tests show the astronaut can reach everything they should, and nothing else.
 4. Any sound you touched fires in an `--audio-debug` run, and you listened to it in the viewer.
 5. Previews and viewers (`assets/maps/red_planet/preview/`, `assets/audio/viewer.html`,
@@ -672,6 +740,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **A day/night cycle** with four parts of the day; lights stay lit at night.
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
+- **The camera turns in quarter turns** (G / H), indoors and out, in a short eased swing;
+  the sun stays on the same side of the screen in every view.
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
   Each room has two different irregular holes, kept as data so they can be traced later.
 - **No music.** Sound is the environment and the work, nothing else (§7.6).
@@ -822,3 +892,8 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-07 — The backpack and the circuit panel get sound: a real buckle for the pack, a
   real metal click per module turned, and synthesis for the screens and the charge reaching
   the relay. Everything that ends the process goes through `Audio.quit()` (owner, requested).
+- 2026-10-07 — The camera turns round the world in quarter turns, Don't Starve style: G / H
+  (d-pad left / right), indoors and out. Every map is rendered from four sides; the turn is a
+  0.42 s eased swing with the world stood up in 3D, the view left dissolving into the next.
+  90° steps keep the 2:1 iso look in every view; the sun stays put on screen (owner chose 90°
+  steps and turning indoors).

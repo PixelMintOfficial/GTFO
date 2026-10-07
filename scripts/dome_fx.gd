@@ -30,6 +30,17 @@ var _t := 0.0
 
 func setup(meta_path: String) -> void:
 	set_meta("dn_unlit", true)                           # these are lights: the sprites below take the time of day
+	load_view(meta_path)
+
+
+## The camera turned: this view's sprites on the domes, and where its lights are.
+func load_view(meta_path: String) -> void:
+	for s in _sprites:
+		(s[0] as Node).queue_free()
+	_sprites.clear()
+	_rim.clear()
+	_doors.clear()
+	_beacon = Vector2.ZERO
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
 	var anim: Dictionary = meta.get("animated", {})
 	var dir := meta_path.get_base_dir()
@@ -42,6 +53,9 @@ func setup(meta_path: String) -> void:
 		spr.z_index = 10
 		add_child(spr)
 		_sprites.append([spr, int(s["frames"]), float(s["fps"])])
+		if s.has("world"):                                # for the camera's turn: where it is in the world
+			spr.set_meta("world", Vector3(s["world"][0], s["world"][1], s["world"][2]))
+			spr.set_meta("anchor", Vector2(s["anchor"][0], s["anchor"][1]))
 	for l in anim.get("ring_lights", []):
 		_rim.append([Vector2(l[0], l[1]), float(l[2])])
 	for l in anim.get("door_lights", []):
@@ -51,6 +65,19 @@ func setup(meta_path: String) -> void:
 		_beacon = Vector2(b[0], b[1])
 	_door_lit.resize(_doors.size())
 	_door_lit.fill(false)
+
+
+## The moving parts on the domes, for the camera's turn: billboards (see TurnOverlay._board).
+func boards() -> Array:
+	var out := []
+	for s in _sprites:
+		var spr := s[0] as Sprite2D
+		if not spr.has_meta("world"):
+			continue
+		var w := spr.texture.get_width() / float(spr.hframes)
+		out.append({"tex": spr.texture, "region": Rect2(spr.frame * w, 0.0, w, spr.texture.get_height()),
+				"anchor": spr.get_meta("anchor"), "world": spr.get_meta("world")})
+	return out
 
 
 func _process(delta: float) -> void:

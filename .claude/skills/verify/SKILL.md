@@ -49,6 +49,9 @@ Everything after `--` goes to the scene. The authoritative lists are the header 
 | `--zoom=L` `--open-map` `--debug` | zoom level; open the map screen; print position/height/depth |
 | `--jump-every=S` | jump on a timer |
 | `--audio-debug` | print every sound event as it plays (`[audio] name …`) |
+| `--turn=N` | start with the camera turned N quarter turns round (both scenes) |
+| `--turn-left` / `--turn-right` | turn once after a second; burst-capture the swing |
+| `--time=H` | the time of day (`--time=22` for night) |
 | interior: `--arrive` `--exit` | play coming in through the door; use the door to leave |
 
 ## Reading the results
@@ -61,6 +64,9 @@ Everything after `--` goes to the scene. The authoritative lists are the header 
   and anything that broke the 1 px `#22182c` outline.
 - **Walkability**: `--walk` into the thing and see whether the astronaut stops, glides, skids
   or climbs. `--debug` prints ground height and map depth at the feet.
+- **Views**: the camera turns (G / H), so check a visual change from more than one side
+  (`--turn=1`, `--turn=2`), and run `res://tests/view_turn_test.tscn` if you touched anything
+  that places things on the map.
 - **Sound**: nothing is visible. Use `--audio-debug` to prove the triggers fire, then
   `make sounds` and listen. See the `sound-pipeline` skill.
 

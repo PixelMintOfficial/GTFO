@@ -22,11 +22,7 @@ func setup(meta_path: String, player: Player) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	_player = player
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
-	var mm: Dictionary = meta["minimap"]
-	_tex = load(meta_path.get_base_dir().path_join(mm["file"]))
-	_origin = Vector2(mm["origin"][0], mm["origin"][1])
-	_scale = mm["scale"]
+	load_view(meta_path)
 	_canvas = Control.new()
 	_canvas.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -40,6 +36,15 @@ func setup(meta_path: String, player: Player) -> void:
 		var pad := InputEventJoypadButton.new()
 		pad.button_index = JOY_BUTTON_BACK
 		InputMap.action_add_event("toggle_map", pad)
+
+
+## The camera turned: the map screen turns with it.
+func load_view(meta_path: String) -> void:
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var mm: Dictionary = meta["minimap"]
+	_tex = load(meta_path.get_base_dir().path_join(mm["file"]))
+	_origin = Vector2(mm["origin"][0], mm["origin"][1])
+	_scale = mm["scale"]
 
 
 func toggle() -> void:

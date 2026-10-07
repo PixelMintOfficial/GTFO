@@ -1,0 +1,330 @@
+{
+ "game": {
+  "depth_png": "base_interior_depth_r1.png",
+  "walk_png": "base_interior_walk.png",
+  "depth_scale": 20.0,
+  "height_offset": 100.0,
+  "height_scale": 150.0,
+  "world_units_per_px": 0.43301270189221935,
+  "depth_to_px": 0.5773502691896257,
+  "px_per_unit": 2.0,
+  "character_scale": 0.5,
+  "grid_size": 760,
+  "spawn_world": [
+   0.0,
+   589.5
+  ],
+  "light_png": "base_interior_light_r1.png",
+  "sun_png": "base_interior_sun_r1.png",
+  "heading": 1,
+  "view_center": [
+   0.0,
+   525.0
+  ]
+ },
+ "name": "base_interior",
+ "image": "base_interior_r1.png",
+ "size": [
+  585,
+  919
+ ],
+ "origin_px": [
+  292.5,
+  1118.0
+ ],
+ "view": 1,
+ "views": [
+  "base_interior.json",
+  "base_interior_r1.json",
+  "base_interior_r2.json",
+  "base_interior_r3.json"
+ ],
+ "rooms": {
+  "storage": {
+   "label": "STORAGE",
+   "center": [
+    0.0,
+    520.0
+   ],
+   "radius": 94.0
+  },
+  "power": {
+   "label": "POWER ROOM",
+   "center": [
+    236.0,
+    530.0
+   ],
+   "radius": 76.0
+  },
+  "oxygen": {
+   "label": "OXYGEN ROOM",
+   "center": [
+    -236.0,
+    530.0
+   ],
+   "radius": 76.0
+  }
+ },
+ "zoom": {
+  "max_view_px": [
+   585,
+   919
+  ],
+  "frames": {}
+ },
+ "door": {
+  "file": "anim/door_r1.png",
+  "frames": 12,
+  "position": [
+   442,
+   395
+  ],
+  "frame_size": [
+   108,
+   165
+  ],
+  "sort_y": 511.8,
+  "world": [
+   0.0,
+   612.1
+  ],
+  "dir": [
+   0.0,
+   -1.0
+  ],
+  "lamp_px": [
+   486.2,
+   443.7
+  ],
+  "height": 34.0
+ },
+ "repair_machines": [
+  {
+   "id": "power",
+   "label": "POWER GENERATOR",
+   "world": [
+    236.0,
+    536.0
+   ],
+   "stand_world": [
+    236.0,
+    506.0
+   ],
+   "progress_px": [
+    317.9,
+    698.3
+   ]
+  },
+  {
+   "id": "oxygen",
+   "label": "O2 GENERATOR",
+   "world": [
+    -236.0,
+    534.0
+   ],
+   "stand_world": [
+    -236.0,
+    504.0
+   ],
+   "progress_px": [
+    313.3,
+    153.3
+   ]
+  }
+ ],
+ "fx": {
+  "shafts": [
+   {
+    "hull": [
+     [
+      477.3,
+      455.8
+     ],
+     [
+      478.8,
+      461.9
+     ],
+     [
+      477.5,
+      473.7
+     ],
+     [
+      420.9,
+      592.4
+     ],
+     [
+      417.1,
+      597.2
+     ],
+     [
+      409.0,
+      604.2
+     ],
+     [
+      401.8,
+      609.5
+     ],
+     [
+      401.1,
+      609.0
+     ],
+     [
+      472.8,
+      458.5
+     ]
+    ],
+    "hole": [
+     474.0,
+     468.3
+    ]
+   },
+   {
+    "hull": [
+     [
+      400.8,
+      511.9
+     ],
+     [
+      467.8,
+      371.2
+     ],
+     [
+      472.6,
+      371.4
+     ],
+     [
+      476.0,
+      375.8
+     ],
+     [
+      475.9,
+      393.7
+     ],
+     [
+      419.1,
+      512.9
+     ],
+     [
+      406.0,
+      522.8
+     ],
+     [
+      402.1,
+      519.2
+     ]
+    ],
+    "hole": [
+     471.1,
+     379.9
+    ]
+   }
+  ],
+  "leds": [
+   {
+    "px": [
+     455.5,
+     746.5
+    ],
+    "color": "#ff5a4a",
+    "kind": "slow"
+   },
+   {
+    "px": [
+     246.7,
+     732.2
+    ],
+    "color": "#ff5a4a",
+    "kind": "fault"
+   },
+   {
+    "px": [
+     288.6,
+     226.1
+    ],
+    "color": "#ff5a4a",
+    "kind": "fault"
+   }
+  ],
+  "core": [
+   299.4,
+   749.8
+  ],
+  "sparks": [
+   [
+    298.3,
+    745.8
+   ],
+   [
+    311.0,
+    725.0
+   ],
+   [
+    431.1,
+    757.9
+   ],
+   [
+    248.4,
+    804.0
+   ],
+   [
+    291.3,
+    211.8
+   ]
+  ],
+  "vapor": [
+   {
+    "px": [
+     363.8,
+     179.2
+    ],
+    "dir": [
+     -0.916,
+     -0.402
+    ]
+   }
+  ],
+  "circuit_board": {
+   "center": [
+    249.9,
+    799.9
+   ],
+   "socket": [
+    247.6,
+    801.1
+   ],
+   "corners": [
+    [
+     252.6,
+     778.3
+    ],
+    [
+     245.9,
+     791.7
+    ],
+    [
+     245.9,
+     821.3
+    ],
+    [
+     252.6,
+     807.9
+    ]
+   ],
+   "world": [
+    266.14,
+    506.56
+   ],
+   "note": "The circuit board in the power room service cabinet. Not interactive yet."
+  },
+  "tanks": [
+   [
+    409.2,
+    235.2
+   ],
+   [
+    409.2,
+    175.3
+   ]
+  ]
+ }
+}

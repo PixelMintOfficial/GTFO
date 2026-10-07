@@ -1,0 +1,414 @@
+{
+  "name": "red_planet",
+  "image": "red_planet_map_r3.png",
+  "size": [
+    7751,
+    4756
+  ],
+  "origin_px": [
+    3875.5,
+    4456.0
+  ],
+  "world_unit_px": {
+    "vertical": 2.0,
+    "horizontal": 2.3094
+  },
+  "grid_size_world": 2300,
+  "viewport_assumed": [
+    384,
+    216
+  ],
+  "domes": {
+    "base": {
+      "center_px": [
+        3890.2,
+        3732.8
+      ],
+      "radius_world": 310.0,
+      "bbox_px": [
+        3174.2,
+        3016.8,
+        4606.1,
+        4090.7
+      ]
+    },
+    "nursery": {
+      "center_px": [
+        1857.9,
+        2289.4
+      ],
+      "radius_world": 200.0,
+      "bbox_px": [
+        1396.0,
+        1827.5,
+        2319.8,
+        2520.3
+      ]
+    },
+    "comms": {
+      "center_px": [
+        3959.4,
+        999.5
+      ],
+      "radius_world": 200.0,
+      "bbox_px": [
+        3497.6,
+        94.5,
+        4421.3,
+        1230.5
+      ]
+    }
+  },
+  "lamps": 33,
+  "view": 3,
+  "views": [
+    "red_planet_map.json",
+    "red_planet_map_r1.json",
+    "red_planet_map_r2.json",
+    "red_planet_map_r3.json"
+  ],
+  "visibility_checks": [
+    {
+      "pair": [
+        "base",
+        "nursery"
+      ],
+      "gap_x_px": 854.5,
+      "gap_y_px": 496.5,
+      "never_together": true
+    },
+    {
+      "pair": [
+        "base",
+        "comms"
+      ],
+      "gap_x_px": -1108.5,
+      "gap_y_px": 1786.4,
+      "never_together": true
+    },
+    {
+      "pair": [
+        "nursery",
+        "comms"
+      ],
+      "gap_x_px": 1177.8,
+      "gap_y_px": 597.1,
+      "never_together": true
+    }
+  ],
+  "game": {
+    "depth_png": "red_planet_depth_r3.png",
+    "walk_png": "red_planet_walk.png",
+    "depth_scale": 20.0,
+    "height_offset": 100.0,
+    "height_scale": 150.0,
+    "world_units_per_px": 0.43301270189221935,
+    "depth_to_px": 0.5773502691896257,
+    "px_per_unit": 2.0,
+    "character_scale": 0.5,
+    "grid_size": 2300,
+    "spawn_world": [
+      -827.03,
+      1439.71
+    ],
+    "notes": "World X/Y: X right, Y away from the camera. Screen = (origin_x + X / world_units_per_px, origin_y - (depth_to_px * Y + z) * px_per_unit). Walk grid pixel (u, v) with u = (X + Y) / sqrt2, v = (Y - X) / sqrt2. Channels: R,G = 16-bit value (hi, lo); depth B = 255 for glass; walk B = 255 walkable, 128 too steep to walk (can be jumped over, onto or down), 0 solid. character_scale converts sprite units (1 sprite px of height) to world units.",
+    "light_png": "red_planet_light_r3.png",
+    "heading": 3,
+    "view_center": [
+      0.0,
+      1626.3455967290593
+    ],
+    "view_notes": "The game keeps the world in view 0's frame. View k shows it turned: view point = R_k (P - view_center) + view_center, R_k a quarter turn clockwise k times ((x, y) -> (y, -x) per turn); the screen formula above applies to the view point."
+  },
+  "biomes": {
+    "png": "red_planet_biome.png",
+    "grid_size": 575,
+    "cell": 4,
+    "names": [
+      "red",
+      "forest",
+      "ice"
+    ]
+  },
+  "minimap": {
+    "file": "red_planet_minimap_r3.png",
+    "origin": [
+      60,
+      36
+    ],
+    "scale": 0.04138823022203061,
+    "size": [
+      315,
+      192
+    ]
+  },
+  "animated": {
+    "sprites": [
+      {
+        "name": "nursery_anemometer",
+        "file": "anim/nursery_anemometer_r3.png",
+        "frames": 8,
+        "fps": 14,
+        "position": [
+          1800,
+          1811
+        ],
+        "frame_size": [
+          116,
+          116
+        ],
+        "anchor": [
+          57.9,
+          58.4
+        ],
+        "world": [
+          250.0,
+          2500.0,
+          210.0
+        ]
+      },
+      {
+        "name": "comms_dish",
+        "file": "anim/comms_dish_r3.png",
+        "frames": 24,
+        "fps": 6,
+        "position": [
+          3835,
+          270
+        ],
+        "frame_size": [
+          249,
+          249
+        ],
+        "anchor": [
+          124.4,
+          124.5
+        ],
+        "world": [
+          1180.0,
+          1590.0,
+          410.5
+        ]
+      }
+    ],
+    "ring_lights": [
+      [
+        2319,
+        2267,
+        0.0,
+        "nursery"
+      ],
+      [
+        1448,
+        2376,
+        0.575,
+        "nursery"
+      ],
+      [
+        1652,
+        2476,
+        0.675,
+        "nursery"
+      ],
+      [
+        1862,
+        2500,
+        0.75,
+        "nursery"
+      ],
+      [
+        1934,
+        2497,
+        0.775,
+        "nursery"
+      ],
+      [
+        2004,
+        2488,
+        0.8,
+        "nursery"
+      ],
+      [
+        2133,
+        2455,
+        0.85,
+        "nursery"
+      ],
+      [
+        2187,
+        2431,
+        0.875,
+        "nursery"
+      ],
+      [
+        2298,
+        2339,
+        0.95,
+        "nursery"
+      ],
+      [
+        2314,
+        2303,
+        0.975,
+        "nursery"
+      ],
+      [
+        4421,
+        977,
+        0.0,
+        "comms"
+      ],
+      [
+        3497,
+        982,
+        0.5,
+        "comms"
+      ],
+      [
+        3503,
+        1018,
+        0.525,
+        "comms"
+      ],
+      [
+        3521,
+        1053,
+        0.55,
+        "comms"
+      ],
+      [
+        3550,
+        1086,
+        0.575,
+        "comms"
+      ],
+      [
+        3691,
+        1168,
+        0.65,
+        "comms"
+      ],
+      [
+        3753,
+        1186,
+        0.675,
+        "comms"
+      ],
+      [
+        3821,
+        1200,
+        0.7,
+        "comms"
+      ],
+      [
+        3891,
+        1208,
+        0.725,
+        "comms"
+      ],
+      [
+        3964,
+        1210,
+        0.75,
+        "comms"
+      ],
+      [
+        4036,
+        1207,
+        0.775,
+        "comms"
+      ],
+      [
+        4106,
+        1198,
+        0.8,
+        "comms"
+      ],
+      [
+        4173,
+        1184,
+        0.825,
+        "comms"
+      ],
+      [
+        4289,
+        1141,
+        0.875,
+        "comms"
+      ],
+      [
+        4335,
+        1113,
+        0.9,
+        "comms"
+      ],
+      [
+        4373,
+        1082,
+        0.925,
+        "comms"
+      ],
+      [
+        4400,
+        1049,
+        0.95,
+        "comms"
+      ],
+      [
+        4416,
+        1013,
+        0.975,
+        "comms"
+      ]
+    ],
+    "door_lights": [
+      [
+        4273,
+        1153,
+        0.11
+      ],
+      [
+        3569,
+        1121,
+        0.48
+      ],
+      [
+        2256,
+        2025,
+        0.85
+      ]
+    ],
+    "beacon": [
+      3959,
+      109
+    ]
+  },
+  "fx": "red_planet_fx_r3.json",
+  "zoom": {
+    "max_view_px": [
+      1583,
+      1126
+    ],
+    "frames": {
+      "base": [
+        3076,
+        2989,
+        1583,
+        1126
+      ],
+      "nursery": [
+        1372,
+        1765,
+        972,
+        806
+      ],
+      "comms": [
+        3474,
+        246,
+        972,
+        1008
+      ]
+    },
+    "note": "The furthest zoom-out shows max_view_px of map: the whole main base, no more. frames are [x, y, w, h] boxes the camera frames at that zoom."
+  }
+}

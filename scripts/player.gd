@@ -71,6 +71,8 @@ var forced_input := Vector2.ZERO
 var forced_run := false
 ## Off while a cutscene plays: the astronaut stands still and ignores the pad.
 var controls_enabled := true
+## The camera is turning round the world (ViewTurn): stand and wait.
+var turning := false
 ## A cutscene is moving the astronaut (puppet_walk / puppet_face); physics and input pause.
 var puppet := false
 ## Never shown as a silhouette behind scenery (walking through an airlock door).
@@ -171,8 +173,22 @@ func puppet_face(d: Vector2) -> void:
 
 func _set_facing(d: Vector2) -> void:
 	if d.length() > 0.001:
-		var sd := Vector2(d.x, -d.y)
+		var v := terrain.view_dir(d) if terrain != null else d
+		var sd := Vector2(v.x, -v.y)
 		facing = DIRS[posmod(int(round(sd.angle() / (PI / 4.0))), 8)]
+
+
+## The camera turned: face the same way in the world, and see the new view's depth.
+func refresh_view(world_facing: Vector2) -> void:
+	var mat := sprite.material as ShaderMaterial
+	mat.set_shader_parameter("depth_map", terrain.depth_map)
+	mat.set_shader_parameter("map_size", terrain.map_size)
+	camera.limit_right = int(terrain.map_size.x)
+	camera.limit_bottom = int(terrain.map_size.y)
+	_set_facing(world_facing)
+	if tool_state == Tool.READY and work_target == null or tool_state == Tool.HOLSTERED:
+		_animate("idle", 1.0)
+	_sync()
 
 
 ## Take the multitool out, or put it away (only with both feet on the ground).
@@ -225,7 +241,8 @@ func tool_tip() -> Vector3:
 ## Unit world direction the astronaut faces.
 func facing_dir() -> Vector2:
 	var a := DIRS.find(facing) * PI / 4.0
-	return Vector2(cos(a), -sin(a))
+	var v := Vector2(cos(a), -sin(a))
+	return terrain.world_dir(v) if terrain != null else v
 
 
 func _load_tool_tips() -> void:
@@ -255,9 +272,9 @@ func _physics_process(delta: float) -> void:
 	if terrain == null or puppet:
 		return
 	var input := forced_input
-	if input == Vector2.ZERO and controls_enabled:
+	if input == Vector2.ZERO and controls_enabled and not turning:
 		input = Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	var running := forced_run or (controls_enabled and Input.is_action_pressed("run"))
+	var running := forced_run or (controls_enabled and not turning and Input.is_action_pressed("run"))
 	if tool_state == Tool.EQUIPPING or tool_state == Tool.HOLSTERING:
 		_step_tool_draw(delta)
 		return
@@ -274,7 +291,7 @@ func _physics_process(delta: float) -> void:
 		var step := posmod(int(round(input.angle() / (PI / 4.0))), 8)
 		facing = DIRS[step]
 		screen_dir = Vector2.from_angle(step * PI / 4.0)
-		var dir := Vector2(screen_dir.x, -screen_dir.y)  # screen up = away from the camera
+		var dir := terrain.world_dir(Vector2(screen_dir.x, -screen_dir.y))  # screen up = away from the camera
 		var push := clampf(tilt, 0.0, 1.0)
 		var speed := run_cycle_speed * run_pace if running else walk_speed * push
 		anim_scale = run_pace if running else walk_anim_scale * push
@@ -313,8 +330,7 @@ func _step_working(delta: float) -> void:
 	_dust.emitting = false
 	var to: Vector2 = work_target - world_pos
 	if to.length() > 0.5:
-		var sd := Vector2(to.x, -to.y)
-		facing = DIRS[posmod(int(round(sd.angle() / (PI / 4.0))), 8)]
+		_set_facing(to)
 	var anim := StringName("use_" + facing)
 	if sprite.animation != anim:
 		sprite.play(anim)
@@ -378,7 +394,7 @@ func _not_solid(p: Vector2) -> bool:
 # ---------------------------------------------------------------- jump, fall, skid
 func _read_jump_input(delta: float) -> void:
 	_jump_buffer = maxf(0.0, _jump_buffer - delta)
-	var pressed := controls_enabled and Input.is_action_just_pressed("jump") and work_target == null
+	var pressed := controls_enabled and not turning and Input.is_action_just_pressed("jump") and work_target == null
 	if auto_jump_every > 0.0:
 		_auto_t += delta
 		if _auto_t >= auto_jump_every:
@@ -585,7 +601,8 @@ func _sync() -> void:
 	var lift := clampf(above / 70.0, 0.0, 1.0)
 	shadow.scale = Vector2.ONE * lerpf(1.0, 0.55, lift)
 	shadow.modulate.a = lerpf(1.0, 0.45, lift)
-	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_depth", -1.0e6 if ignore_occlusion else world_pos.y)
+	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_depth",
+			-1.0e6 if ignore_occlusion else terrain.view_depth(world_pos))
 
 
 func _animate(kind: String, speed_scale: float) -> void:

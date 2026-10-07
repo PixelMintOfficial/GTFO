@@ -23,7 +23,7 @@ grep -rn "<json key>" scripts/                         # every reader of that ke
 | You want to change | Generator | Target | Cost |
 |---|---|---|---|
 | the astronaut, the multitool, an animation | `astronaut_sprite_gen.py` + `godot_spriteframes.py` | `make astronaut` | slow (~1000 frames) |
-| overworld terrain, biomes, domes, roads, lamps, plants, crash site | `mars_map_gen.py` | `make map` | ~3 min, several GB RAM |
+| overworld terrain, biomes, domes, roads, lamps, plants, crash site | `mars_map_gen.py` | `make map` | ~8 min (four views), several GB RAM |
 | the loose props the multitool works on, dead lamps | `props_gen.py` | `make props` | fast |
 | the base interior, its rooms and machines | `interior_gen.py` | `make interior` | seconds |
 | any sound | `sfx_gen.py` | `make sfx` | fast — see the `sound-pipeline` skill |
@@ -47,6 +47,10 @@ are placed from the map's data.
 - Export every position a script needs into the JSON (door, lamp, LED, crack, emitter…).
   **Scripts must never hard-code a map pixel** (§4.1). If you add or rename a key, update every
   reader in `scripts/` in the same change.
+- **Every map is rendered from four sides** (AGENTS.md §4.9). Build models in view 0's frame
+  (inside `canonical()` in `mars_map_gen.py`) and render them `turned()`; write pixel positions
+  per view (they land in each view's `_rk` files) and `world` positions in view 0's frame. To
+  check quickly, `MAP_VIEWS=0` renders one view; the game needs all four before you commit.
 
 ## 3. Preview without replacing the game's assets
 

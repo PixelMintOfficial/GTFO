@@ -34,7 +34,16 @@ Pipeline
      walk/height grid, biome grid, plant sheets, glow points and the crash scene
      (the ground as it was before, the falling satellite, smoke and spark points), and the
      light mask: how much of each pixel is its own light, so it stays lit at night.
+  8. Four views: the camera turns round the world in quarter turns (G / H in the game). The
+     world is built once; each view is rendered with the world turned about the middle of its
+     grid, the sun staying put on screen. View 0 writes the usual files; view k writes the same
+     set with a _rk suffix (map, depth, light, fx, minimap, plant and door sheets...). The walk
+     and biome grids belong to the world, so there is one of each.
+
+    MAP_VIEWS=0 python tools/mars_map_gen.py     # only some of the views (default 0123)
 """
+import contextlib
+import gc
 import json
 import math
 import os
@@ -72,6 +81,165 @@ SEED = 11
 # light (lamps, lit windows, glowing plants and pools, light pooling round them, the stars) rather
 # than sunlight. The game keeps those pixels lit at night. Renderers write into it while it is set.
 EMIT = None
+
+# ================================================================== the four views
+# The camera turns round the world in quarter turns (G / H in the game). The world is built once,
+# in view 0's frame. View k is rendered with the world turned a quarter turn k times about the
+# middle of its grid (VIEW_C): view = turn(world - VIEW_C) + VIEW_C. The sun stays put on screen,
+# so every view is lit alike. While a view renders, the constants that place things (DOMES,
+# PATHS, CRASH, SOLAR, BASE_ROOMS) hold its positions; models are built in view 0's frame (inside
+# canonical()) and turned as a whole (turned()), so they show their other sides.
+VIEW = 0
+VIEWS = [int(c) for c in os.environ.get('MAP_VIEWS', '0123')]
+VIEW_C = np.array([0.0, HALF, 0.0])
+SFX = ''                          # file-name suffix of the view being written: '' for view 0, '_r1'...
+
+
+def view_sfx(k):
+    return '' if k % 4 == 0 else f'_r{k % 4}'
+
+
+def _turn2(k):
+    """The 2x2 quarter-turn matrix taking view 0's frame to view k's (clockwise seen from above)."""
+    c, s_ = [(1, 0), (0, -1), (-1, 0), (0, 1)][k % 4]
+    return np.array([[c, -s_], [s_, c]], float)
+
+
+def to_view(P, k=None):
+    """A point (or rows of points) in view 0's frame, as placed in view k."""
+    k = VIEW if k is None else k
+    out = np.array(P, float, copy=True)
+    if k % 4:
+        out[..., :2] = (out[..., :2] - VIEW_C[:2]) @ _turn2(k).T + VIEW_C[:2]
+    return out
+
+
+def to_canon(P, k=None):
+    """A point placed in view k, back in view 0's frame."""
+    k = VIEW if k is None else k
+    out = np.array(P, float, copy=True)
+    if k % 4:
+        out[..., :2] = (out[..., :2] - VIEW_C[:2]) @ _turn2(k) + VIEW_C[:2]
+    return out
+
+
+def vrot(v, k=None):
+    """A direction in view 0's frame, as it points in view k (any z is kept)."""
+    k = VIEW if k is None else k
+    out = np.array(v, float, copy=True)
+    if k % 4:
+        out[..., :2] = out[..., :2] @ _turn2(k).T
+    return out
+
+
+def crot(v, k=None):
+    k = VIEW if k is None else k
+    out = np.array(v, float, copy=True)
+    if k % 4:
+        out[..., :2] = out[..., :2] @ _turn2(k)
+    return out
+
+
+def rot_grid(a, k):
+    """A world grid [u, v] as view k lays it out (the grid turns with the world)."""
+    return np.ascontiguousarray(np.rot90(a, -(k % 4)))
+
+
+def rot_window(win, k):
+    """A grid window (u0, u1, v0, v1) after rot_grid's turn."""
+    u0, u1, v0, v1 = win
+    for _ in range(k % 4):
+        u0, u1, v0, v1 = v0, v1, N - u1, N - u0
+    return u0, u1, v0, v1
+
+
+class TurnZ:
+    """A model built in view 0's frame, seen in view k: turned with the world about a point."""
+
+    def __init__(self, inner, k, about):
+        self.inner, self.k, self.about = inner, k % 4, np.asarray(about, float)
+
+    def back(self, P):                                    # view -> the model's frame
+        out = np.array(P, float, copy=True)
+        out[..., :2] = (out[..., :2] - self.about[:2]) @ _turn2(self.k) + self.about[:2]
+        return out
+
+    def fwd(self, P):
+        out = np.array(P, float, copy=True)
+        out[..., :2] = (out[..., :2] - self.about[:2]) @ _turn2(self.k).T + self.about[:2]
+        return out
+
+    def __call__(self, P):
+        return self.inner(self.back(P))
+
+    def local(self, P):
+        return self.inner.local(self.back(P))
+
+    def __getattr__(self, k):
+        if k in ('inner', 'k', 'about'):
+            raise AttributeError(k)
+        return getattr(self.inner, k)
+
+
+def turned(parts, about=None, k=None):
+    """Parts built in view 0's frame, turned into view k (about the world's middle, or a point)."""
+    k = VIEW if k is None else k
+    if k % 4 == 0:
+        return parts
+    about = VIEW_C if about is None else about
+    return [A.Part(p.name, TurnZ(p.sdf, k, about), p.ramp, p.group, blend=p.blend, decal=p.decal, emissive=p.emissive)
+            for p in parts]
+
+
+_PLACE = None
+
+
+def _snapshot():
+    """View 0's placing constants, kept to work out every view's from."""
+    global _PLACE
+    if _PLACE is None:
+        _PLACE = dict(domes={n: (d['X'], d['Y']) for n, d in DOMES.items()},
+                      rooms=[(r['dx'], r['dy']) for r in BASE_ROOMS],
+                      paths=[list(pts) for pts in PATHS],
+                      crash=(CRASH['X'], CRASH['Y'], tuple(CRASH['came_from'])),
+                      solar=(SOLAR['X'], SOLAR['Y']))
+
+
+def apply_view_constants(k):
+    """Put the placing constants where view k sees them."""
+    global _UNITS
+    _snapshot()
+    for n, (X, Y) in _PLACE['domes'].items():
+        DOMES[n]['X'], DOMES[n]['Y'] = (float(v) for v in to_view([X, Y], k))
+    for r, (dx, dy) in zip(BASE_ROOMS, _PLACE['rooms']):
+        r['dx'], r['dy'] = (float(v) for v in vrot([dx, dy], k))
+    for pts, pts0 in zip(PATHS, _PLACE['paths']):
+        pts[:] = [tuple(float(v) for v in to_view(q, k)) for q in pts0]
+    X, Y, cf = _PLACE['crash']
+    CRASH['X'], CRASH['Y'] = (float(v) for v in to_view([X, Y], k))
+    CRASH['came_from'] = tuple(float(v) for v in vrot(cf, k))
+    SOLAR['X'], SOLAR['Y'] = (float(v) for v in to_view(_PLACE['solar'], k))
+    _UNITS = None
+
+
+@contextlib.contextmanager
+def canonical():
+    """Build models in view 0's frame: the placing constants (and VIEW) as they are in view 0."""
+    global VIEW
+    k = VIEW
+    apply_view_constants(0)
+    VIEW = 0
+    try:
+        yield
+    finally:
+        VIEW = k
+        apply_view_constants(k)
+
+
+def canon_unit(name):
+    """A dome unit (room) as it is in view 0's frame."""
+    with canonical():
+        return next(dict(u) for u in dome_units() if u['name'] == name)
 
 # ================================================================== layout (camera X/Y, world units)
 DOME_SCALE = 2.5                  # bases are designed at R0 and scaled as a whole (doors ~1.6x the astronaut)
@@ -993,6 +1161,8 @@ def variant_parts(name, v, t):
 
 def part_samples(sdf):
     """A few (centre, radius) blobs covering one part, for stamping its shadow."""
+    if isinstance(sdf, TurnZ):
+        return [(sdf.fwd(c), r) for c, r in part_samples(sdf.inner)]
     if isinstance(sdf, A.RoundCone):
         n = max(2, int(math.sqrt(sdf.l2) / 1.5))
         return [(sdf.a + sdf.ba * t, sdf.r1 + (sdf.r2 - sdf.r1) * t) for t in np.linspace(0, 1, n)]
@@ -1066,22 +1236,61 @@ def place_flora(G, U, V, rs):
                 a0, a1, b0, b1 = max(0, iu - w_), min(N, iu + w_ + 1), max(0, iv - w_), min(N, iv + w_ + 1)
                 fall = np.clip(1 - np.hypot(U[a0:a1, b0:b1] - u, V[a0:a1, b0:b1] - v) / lr, 0, 1) ** 1.5
                 G['bglow'][a0:a1, b0:b1] = np.maximum(G['bglow'][a0:a1, b0:b1], fall * (1.0 if name == 'tree' else 0.7))
-            # its shadow on the ground
-            for part in variants[name][var]:
-                for c, rad in part_samples(part.sdf):
-                    sx, sy = X + c[0] + c[2] * SUN_RUN[0], Y + c[1] + c[2] * SUN_RUN[1]
-                    gu, gv = to_grid(sx, sy)
-                    rr = rad * 0.9 + 0.3
-                    w_ = int(rr) + 2
-                    a0, a1 = max(0, int(gu) - w_), min(N, int(gu) + w_ + 1)
-                    b0, b1 = max(0, int(gv) - w_), min(N, int(gv) + w_ + 1)
-                    if a1 <= a0 or b1 <= b0:
-                        continue
-                    blob = np.hypot(U[a0:a1, b0:b1] - gu, V[a0:a1, b0:b1] - gv) < rr
-                    G['shadow'][a0:a1, b0:b1] = np.maximum(G['shadow'][a0:a1, b0:b1], 0.85 * blob)
     G['flora'] = plants
+    stamp_plant_shadows(G, U, V)
     counts = {k: sum(1 for p in plants if p['species'] == k) for k in rules}
     print(f'flora placed in {time.time() - t0:.1f}s: {counts}')
+
+
+def stamp_plant_shadows(G, U, V, k=0):
+    """Every plant's shadow on the ground (G's plants are where view k sees them; their models
+    are in view 0's frame, so turn them)."""
+    variants = G['flora_variants']
+    for pl in G['flora']:
+        X, Y = pl['X'], pl['Y']
+        for part in variants[pl['species']][pl['variant']]:
+            for c, rad in part_samples(part.sdf):
+                c = vrot(c, k)
+                sx, sy = X + c[0] + c[2] * SUN_RUN[0], Y + c[1] + c[2] * SUN_RUN[1]
+                gu, gv = to_grid(sx, sy)
+                rr = rad * 0.9 + 0.3
+                w_ = int(rr) + 2
+                a0, a1 = max(0, int(gu) - w_), min(N, int(gu) + w_ + 1)
+                b0, b1 = max(0, int(gv) - w_), min(N, int(gv) + w_ + 1)
+                if a1 <= a0 or b1 <= b0:
+                    continue
+                blob = np.hypot(U[a0:a1, b0:b1] - gu, V[a0:a1, b0:b1] - gv) < rr
+                G['shadow'][a0:a1, b0:b1] = np.maximum(G['shadow'][a0:a1, b0:b1], 0.85 * blob)
+
+
+def view_world(G0, k):
+    """The world as view k sees it: every grid turned with it (and the vectors in them), all that
+    is placed moved, and the sun's shadows cast afresh, since the sun stays put on screen."""
+    if k % 4 == 0:
+        return dict(G0)                                  # a copy: rendering drops grids it is done with
+    t0 = time.time()
+    G = {}
+    for key, val in G0.items():
+        if isinstance(val, np.ndarray) and val.shape == (N, N):
+            G[key] = rot_grid(val, k)
+        else:
+            G[key] = val
+    R = _turn2(k)
+    nx, ny = G0['nX'], G0['nY']
+    G['nX'] = rot_grid((R[0, 0] * nx + R[0, 1] * ny).astype(np.float32), k)
+    G['nY'] = rot_grid((R[1, 0] * nx + R[1, 1] * ny).astype(np.float32), k)
+    G['lamps'] = [tuple(float(v) for v in to_view(q, k)) for q in G0['lamps']]
+    G['peaks'] = [(*to_view(pk[:2], k), *pk[2:]) for pk in G0['peaks']]
+    G['flora'] = [dict(pl, X=float(xy[0]), Y=float(xy[1])) for pl in G0['flora']
+                  for xy in [to_view([pl['X'], pl['Y']], k)]]
+    G['crash_win'] = rot_window(G0['crash_win'], k)
+    G['crash_h'] = np.ascontiguousarray(np.rot90(G0['crash_h'], -(k % 4)))
+    G['shadow'] = shadow_map(G['H'])
+    c = np.arange(N, dtype=np.float32) + 0.5
+    U, V = np.meshgrid(c, c, indexing='ij')
+    stamp_plant_shadows(G, U, V, k)
+    print(f'view {k}: world turned and its shadows cast in {time.time() - t0:.1f}s')
+    return G
 
 
 def shadow_map(Hf, win=None):
@@ -2339,16 +2548,17 @@ def sprite_glows(parts, fr, box):
     x0, y0, w, h = box
     out = []
     for p in parts:
-        if p.ramp in ('pod', 'pod2', 'orb') and isinstance(p.sdf, A.Sphere):
-            c, r = p.sdf.c, p.sdf.r
+        sdf, fwd = (p.sdf.inner, p.sdf.fwd) if isinstance(p.sdf, TurnZ) else (p.sdf, lambda q: q)
+        if p.ramp in ('pod', 'pod2', 'orb') and isinstance(sdf, A.Sphere):
+            c, r = fwd(sdf.c), sdf.r
             px, py = project(*c)
             ix, iy = int(px) - x0, int(py) - y0
             if 0 <= ix < w and 0 <= iy < h and fr['D'][iy, ix] > c[1] - r - 0.8:
                 out.append([ix, iy, halo_index(r / S * 2.6), GLOW_OF[p.ramp], 230])
         elif p.name == 'cap':
-            c = p.sdf.c - np.array([0, 0, p.sdf.rad[2] * 0.7])
+            c = fwd(sdf.c - np.array([0, 0, sdf.rad[2] * 0.7]))
             px, py = project(*c)
-            out.append([int(px) - x0, int(py) - y0, halo_index(p.sdf.rad[0] / S * 0.75),
+            out.append([int(px) - x0, int(py) - y0, halo_index(sdf.rad[0] / S * 0.75),
                         GLOW_OF[getattr(p, 'gill', 'gill')], 110])
     return out
 
@@ -2392,19 +2602,20 @@ def render_flora(G, img, D, kind, gid, gb):
         spec = FLORA.get(name, dict(animated=False))
         for v in range(variant_count(name)):
             nf = FLORA_FRAMES if spec['animated'] else 1
-            frames_parts = [variant_parts(name, v, f / nf) for f in range(nf)]
+            frames_parts = [turned(variant_parts(name, v, f / nf), about=np.zeros(3)) for f in range(nf)]
             box = sprite_box(frames_parts)
             frs = [render_sprite(fp, box) for fp in frames_parts]
             glows = [sprite_glows(fp, fr, box) for fp, fr in zip(frames_parts, frs)]
-            tips = ice_cluster(np.zeros(3), variant_seed(name, v))[1] if name == 'ice' else []
+            tips = [vrot(t) for t in ice_cluster(np.zeros(3), variant_seed(name, v))[1]] if name == 'ice' else []
             sprites[(name, v)] = dict(frames=frs, box=box, glows=glows, tips=tips)
             if spec['animated']:
                 colour = np.concatenate([sprite_rgba(fr, HAZES[1], 0.09) for fr in frs], axis=1)
                 depth = np.concatenate([depth_row(fr) for fr in frs], axis=1)
-                fn = f'flora/{name}_{v}.png'
+                fn = f'flora/{name}_{v}{SFX}.png'
                 Image.fromarray(np.vstack([colour, depth])).save(os.path.join(OUT, fn))
                 sheet_of[(name, v)] = len(sheets)
-                sheets.append(dict(file=fn, frames=nf, fps=spec['fps'], frame_size=[box[2], box[3]], glows=glows))
+                sheets.append(dict(file=fn, frames=nf, fps=spec['fps'], frame_size=[box[2], box[3]], glows=glows,
+                                   anchor=[round(AX - box[0], 1), round(AY - box[1], 1)]))
     print(f'flora sprites rendered in {time.time() - t0:.1f}s')
 
     baked, live = [], []
@@ -2570,13 +2781,15 @@ def export_crash(G, pre, wreck_fx, body, kind):
     rgba = pre['rgba']
     h, w = rgba.shape[:2]
     rgba[..., 3] = np.where(kind[pre['y0']:pre['y0'] + h, pre['x0']:pre['x0'] + w] == 4, 0, rgba[..., 3])
-    Image.fromarray(rgba).save(os.path.join(adir, 'crash_before.png'))
+    Image.fromarray(rgba).save(os.path.join(adir, f'crash_before{SFX}.png'))
     # the satellite coming in, tumbling: rendered high above the origin, nothing under it
     C = cam(0.0, 0.0, 80.0)
-    frames_parts = [satellite_intact(C, f / 8 * TAU) for f in range(8)]
+    with canonical():
+        frames_parts = [satellite_intact(C, f / 8 * TAU) for f in range(8)]
+    frames_parts = [turned(fp, about=C) for fp in frames_parts]
     box = sprite_box(frames_parts)
     strip = np.concatenate([sprite_rgba(render_sprite(fp, box)) for fp in frames_parts], axis=1)
-    Image.fromarray(strip).save(os.path.join(adir, 'satellite.png'))
+    Image.fromarray(strip).save(os.path.join(adir, f'satellite{SFX}.png'))
     ox, oy = project(*C)
     cf = np.array(CRASH['came_from'])
     gz = lambda X, Y: height_at(G, X, Y)  # noqa: E731
@@ -2587,17 +2800,17 @@ def export_crash(G, pre, wreck_fx, body, kind):
         x, y = project(*P)
         return [round(float(x), 1), round(float(y), 1)]
 
-    rest = [body['X'], body['Y'], body['z']]
+    rest = to_view([body['X'], body['Y'], body['z']])
     return dict(
-        before=dict(file='anim/crash_before.png', position=[pre['x0'], pre['y0']]),
-        satellite=dict(file='anim/satellite.png', frames=8, frame_size=[box[2], box[3]],
+        before=dict(file=f'anim/crash_before{SFX}.png', position=[pre['x0'], pre['y0']]),
+        satellite=dict(file=f'anim/satellite{SFX}.png', frames=8, frame_size=[box[2], box[3]],
                        origin=[round(ox - box[0], 1), round(oy - box[1], 1)]),
         sky=px([sky[0], sky[1], gz(*td) + 420]), touchdown=px([td[0], td[1], gz(*td) + 7.0]), rest=px(rest),
         smoke=[px(p) for p in wreck_fx['smoke']], sparks=[px(p) for p in wreck_fx['sparks']],
         fire=[px(p) for p in wreck_fx['fire']], beacon=px(wreck_fx['beacon']),
         focus=px([CRASH['X'] + cf[0] * CRASH['trench'] * 0.45, CRASH['Y'] + cf[1] * CRASH['trench'] * 0.45,
                   gz(CRASH['X'], CRASH['Y'])]),
-        world=[CRASH['X'], CRASH['Y']])
+        world=[round(float(v), 2) for v in to_canon([CRASH['X'], CRASH['Y']])])
 
 
 def height_at(G, X, Y):
@@ -2607,6 +2820,9 @@ def height_at(G, X, Y):
 
 # --- ray-marched compositing --------------------------------------------------------
 def part_bound(sdf):
+    if isinstance(sdf, TurnZ):
+        c, r = part_bound(sdf.inner)
+        return sdf.fwd(c), r
     if isinstance(sdf, Scaled):
         c, r = part_bound(sdf.inner)
         return sdf.C + (c - sdf.C) * sdf.s, r * sdf.s
@@ -2685,7 +2901,11 @@ def render_props(parts, center, radius, img, D, kind, gid, gid_base, ox=0, oy=0)
         if p.decal is not None:
             sel = mat == i
             if sel.any():
-                ramp[sel] = p.decal(p, P[sel])
+                if isinstance(p.sdf, TurnZ):                   # decals work in the model's own frame
+                    q = A.Part(p.name, p.sdf.inner, p.ramp, p.group, decal=p.decal)
+                    ramp[sel] = p.decal(q, p.sdf.back(P[sel]))
+                else:
+                    ramp[sel] = p.decal(p, P[sel])
     ndl = n @ SUN
     wrap = (ndl + 0.3) / 1.3
     level = (wrap > 0.24).astype(int) + (wrap > 0.55) + (wrap > 0.86)
@@ -3157,7 +3377,7 @@ def band_xy(u, g):
 def band_point(d, g, x, y):
     az = x * 2 * math.pi / (g['n'] * g['w'])
     el = GLASS_MID + (y - g['h'] / 2) / g['R']
-    return cam(d['X'], d['Y'], d['Z']) + d['R'] * np.array([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
+    return cam(d['X'], d['Y'], d['Z']) + d['R'] * vrot([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
 
 
 def hex_cell(x, y, a):
@@ -3346,7 +3566,7 @@ def band_layers(Q, C0, d):
     g = band_grid(d)
     u = (Q - C0) / d['R']
     u /= np.maximum(np.linalg.norm(u, axis=1), 1e-9)[:, None]
-    x, y, el, az = band_xy(u, g)
+    x, y, el, az = band_xy(crot(u), g)                   # the pattern belongs to the dome, not the view
     inband = (y >= 0) & (y <= g['h'])
     trim = ~inband & ((-y < RING_TRIM) & (y < 0) | (y - g['h'] < RING_TRIM) & (y > g['h']))
     lip = inband & ((y < TRIM_LIP) | (y > g['h'] - TRIM_LIP))
@@ -3469,7 +3689,7 @@ def band_dome(img, D, kind, gid, d, gid_val):
             yc = g['a'] * 1.5 * ri + g['a'] / 2
             azc = xc * 2 * math.pi / (g['n'] * g['w'])
             elc = GLASS_MID + (yc - g['h'] / 2) / R
-            nf = np.stack([np.cos(elc) * np.cos(azc), np.cos(elc) * np.sin(azc), np.sin(elc)], -1)
+            nf = vrot(np.stack([np.cos(elc) * np.cos(azc), np.cos(elc) * np.sin(azc), np.sin(elc)], -1))
             nmix = nf * 0.7 + n_s[gl] * 0.3
             nmix /= np.linalg.norm(nmix, axis=1)[:, None]
             envg, glg = env_reflect(nmix, by[gl], 0.9975)
@@ -3513,7 +3733,7 @@ def band_dome(img, D, kind, gid, d, gid_val):
             yc = g['a'] * 1.5 * ri + g['a'] / 2
             azc = xc * 2 * math.pi / (g['n'] * g['w'])
             elc = GLASS_MID + (yc - g['h'] / 2) / R
-            nf = np.stack([np.cos(elc) * np.cos(azc), np.cos(elc) * np.sin(azc), np.sin(elc)], -1)
+            nf = vrot(np.stack([np.cos(elc) * np.cos(azc), np.cos(elc) * np.sin(azc), np.sin(elc)], -1))
             nmix = nf * 0.7 + n_s[ho] * 0.3
             nmix /= np.linalg.norm(nmix, axis=1)[:, None]
             envh, _ = env_reflect(nmix, by[ho], 0.9975)
@@ -3556,7 +3776,7 @@ def band_dome(img, D, kind, gid, d, gid_val):
         patch = np.zeros((ph, pw, 4), np.uint8)
         patch[pp[:, 1] - py0, pp[:, 0] - px0, :3] = np.clip(cols, 0, 255).astype(np.uint8)
         patch[pp[:, 1] - py0, pp[:, 0] - px0, 3] = 255
-        P = band_point(d, g, hd['x'], hd['y'])
+        P = to_canon(band_point(d, g, hd['x'], hd['y']))          # where it is in the world
         damage.append(dict(room=d['name'], id=f"{d['name']}_{h_i + 1}", shape=hd['kind'],
                            outline=[to_px(x, y) for x, y in hd['outline']],
                            cracks=[[to_px(x, y) for x, y in st] for st in hd['cracks']], center=to_px(0, 0),
@@ -3900,6 +4120,10 @@ def export_animated(D):
     out = dict(sprites=[], ring_lights=[], door_lights=[], beacon=None)
 
     def sheet(name, builder, d, frames, fps, z_center, radius, turn=2 * math.pi):
+        dname = next(n for n, v in DOMES.items() if v is d)
+        with canonical():
+            d0 = dict(DOMES[dname])
+        C0 = cam(d0['X'], d0['Y'], d0['Z'] + 0.0)
         C = cam(d['X'], d['Y'], d['Z'] + 0.0)
         cx, cy = project(*scale_pt(C + np.array([0, 0, z_center]), C, DOME_SCALE))
         rp = radius * DOME_SCALE / S + 3
@@ -3911,8 +4135,9 @@ def export_animated(D):
             Dc = np.full((h, w), np.inf, np.float32)
             kind = np.zeros((h, w), np.uint8)
             gid = np.zeros((h, w), np.int32)
-            parts = scaled(builder(d, turn * f / frames), C, DOME_SCALE, name)
-            render_groups(parts, img, Dc, kind, gid, 1, x0, y0)
+            with canonical():
+                parts = scaled(builder(d0, turn * f / frames), C0, DOME_SCALE, name)
+            render_groups(turned(parts), img, Dc, kind, gid, 1, x0, y0)
             depth_lines(img, img, Dc, kind, gid)
             filled = kind > 0
             pad = np.pad(filled, 1)
@@ -3922,9 +4147,12 @@ def export_animated(D):
             alpha = np.where(filled | ring, 255, 0).astype(np.uint8)
             strip[:, f * w:(f + 1) * w, :3] = img
             strip[:, f * w:(f + 1) * w, 3] = alpha
-        Image.fromarray(strip).save(os.path.join(adir, f'{name}.png'))
-        out['sprites'].append(dict(name=name, file=f'anim/{name}.png', frames=frames, fps=fps,
-                                   position=[x0, y0], frame_size=[w, h]))
+        Image.fromarray(strip).save(os.path.join(adir, f'{name}{SFX}.png'))
+        centre = scale_pt(C + np.array([0, 0, z_center]), C, DOME_SCALE)          # what it turns round
+        out['sprites'].append(dict(name=name, file=f'anim/{name}{SFX}.png', frames=frames, fps=fps,
+                                   position=[x0, y0], frame_size=[w, h],
+                                   anchor=[round(float(cx - x0), 1), round(float(cy - y0), 1)],
+                                   world=[round(float(v), 2) for v in to_canon(centre)]))
 
     if DOMES['base']['powered']:
         sheet('base_radar', apex_radar, DOMES['base'], 24, 8, DOMES['base']['R0'] + 5, 12.0)
@@ -4045,12 +4273,13 @@ def export_minimap(final, filled, fit=(352, 192)):
     draw_text(mm, int(wx - text_width('WRECK') / 2), int(wy + 2), 'WRECK', A.hex2rgb('#ffb27a'))
     draw_text(mm, 4, 4, 'RED PLANET', A.hex2rgb('#ec7a5a'))
     draw_text(mm, w - text_width('M CLOSE') - 4, h - 9, 'M CLOSE', A.hex2rgb('#a99bb4'))
-    Image.fromarray(mm).save(os.path.join(OUT, 'red_planet_minimap.png'))
-    return dict(file='red_planet_minimap.png', origin=[int(x0), int(y0)], scale=scale, size=[w, h])
+    Image.fromarray(mm).save(os.path.join(OUT, f'red_planet_minimap{SFX}.png'))
+    return dict(file=f'red_planet_minimap{SFX}.png', origin=[int(x0), int(y0)], scale=scale, size=[w, h])
 
 
 # ================================================================== game data
-DEPTH_SCALE = 25.0                          # depth png stores camera-depth Y * 25 in 16 bits
+DEPTH_SCALE = 20.0                          # depth png stores camera-depth Y * 20 in 16 bits (to 3276:
+                                            # the world is 2 * HALF = 3253 deep, from every side)
 HEIGHT_OFFSET, HEIGHT_SCALE = 100.0, 150.0  # walk png stores (z + 100) * 150 in 16 bits
 
 
@@ -4081,9 +4310,10 @@ def export_biome_grid(G, cell=4):
     return dict(png='red_planet_biome.png', grid_size=n, cell=cell, names=['red', 'forest', 'ice'])
 
 
-def export_game_data(G, D, kind, debris=(), body=None):
+def export_game_data(G, D, kind, debris=(), body=None, world=True):
     """Data the game needs on top of the picture: a screen-space depth map (so the
-    player can be hidden by cliffs, props and glass) and a walk/height grid."""
+    player can be hidden by cliffs, props and glass) and a walk/height grid. The walk grid
+    belongs to the world, not the view: only view 0 writes it (world=False skips it)."""
     depth = np.zeros((H, W, 4), np.uint8)
     for r0 in range(0, H, 512):
         r1 = min(H, r0 + 512)
@@ -4091,8 +4321,10 @@ def export_game_data(G, D, kind, debris=(), body=None):
         depth[r0:r1, :, 0], depth[r0:r1, :, 1] = dq >> 8, dq & 255
         depth[r0:r1, :, 2] = np.where(kind[r0:r1] == 4, 255, np.where(kind[r0:r1] == 5, PLANT_DEPTH_B, 0))
     depth[..., 3] = 255
-    Image.fromarray(depth).save(os.path.join(OUT, 'red_planet_depth.png'))
+    Image.fromarray(depth).save(os.path.join(OUT, f'red_planet_depth{SFX}.png'))
     del depth
+    if not world:
+        return None
 
     Hf = G['H'].copy()
     c = np.arange(N, dtype=np.float32) + 0.5
@@ -4188,11 +4420,17 @@ def export_doors(D, kind):
     door's place in the world (its middle on the ground, and which way it faces)."""
     adir = os.path.join(OUT, 'anim')
     out = []
-    for k, (d, dirv) in enumerate(airlock_ends()):
+    with canonical():
+        ends0 = airlock_ends()
+    for k, ((d, dirv), (d0, dirv0)) in enumerate(zip(airlock_ends(), ends0)):
         if d.get('owner') != 'base' or d.get('style') != 'band':
             continue
         C = cam(d['X'], d['Y'], d['Z'])
-        frames_parts = [scaled(airlock(d, dirv, i / (DOOR_FRAMES - 1)), C, DOME_SCALE, f'door{k}') for i in range(DOOR_FRAMES)]
+        C0 = cam(d0['X'], d0['Y'], d0['Z'])
+        with canonical():
+            frames_parts = [scaled(airlock(d0, dirv0, i / (DOOR_FRAMES - 1)), C0, DOME_SCALE, f'door{k}')
+                            for i in range(DOOR_FRAMES)]
+        frames_parts = [turned(fp) for fp in frames_parts]
         dv3 = np.array([dirv[0], dirv[1], 0.0])
         f = C + dv3 * (d['R0'] + 14.4) + np.array([0, 0, 6.0])
         door_c = scale_pt(f, C, DOME_SCALE)
@@ -4206,14 +4444,15 @@ def export_doors(D, kind):
             fr = dict(fr, rgb=rgb)
             strip.append(sprite_rgba(fr))
         img = np.concatenate(strip, axis=1)
-        fn = f'anim/door_{k}.png'
+        fn = f'anim/door_{k}{SFX}.png'
         Image.fromarray(img).save(os.path.join(OUT, fn))
         foot = scale_pt(f - np.array([0, 0, 6.0]), C, DOME_SCALE)
+        foot0 = to_canon(foot)                                  # the game keeps the world in view 0's frame
         lamp = scale_pt(f + dv3 * 1.4 + np.array([0, 0, 7.9]), C, DOME_SCALE)
         lx, ly = project(*lamp)
         out.append(dict(id=k, file=fn, frames=DOOR_FRAMES, position=[box[0], box[1]], frame_size=[box[2], box[3]],
-                        sort_y=round(float(project(*foot)[1]), 1), world=[round(float(foot[0]), 2), round(float(foot[1]), 2)],
-                        dir=[round(float(dirv[0]), 4), round(float(dirv[1]), 4)], lamp_px=[round(float(lx), 1), round(float(ly), 1)],
+                        sort_y=round(float(project(*foot)[1]), 1), world=[round(float(foot0[0]), 2), round(float(foot0[1]), 2)],
+                        dir=[round(float(dirv0[0]), 4), round(float(dirv0[1]), 4)], lamp_px=[round(float(lx), 1), round(float(ly), 1)],
                         height=round(float(14.8 * DOME_SCALE), 1)))
     print(f'doors: {len(out)} animated airlock doors')
     return out
@@ -4225,8 +4464,9 @@ def export_cracks(cracks):
     the map) to lay over it once mended."""
     cdir = os.path.join(OUT, 'anim', 'cracks')
     os.makedirs(cdir, exist_ok=True)
-    for old in os.listdir(cdir):                         # stale patches from an earlier layout
-        if old.endswith('.png'):
+    for old in os.listdir(cdir):                         # stale patches from an earlier layout (this view's)
+        stem = old[:-4] if old.endswith('.png') else ''
+        if stem and (stem.endswith(SFX) if SFX else '_r' not in stem):
             os.remove(os.path.join(cdir, old))
     out = []
     for c in cracks:
@@ -4234,7 +4474,7 @@ def export_cracks(cracks):
         x0, y0 = c['patch_pos']
         rgb = apply_haze(patch[..., :3], y0, x0)
         patch[..., :3] = np.where(patch[..., 3:] > 0, rgb, 0)
-        fn = f"anim/cracks/{c['id']}.png"
+        fn = f"anim/cracks/{c['id']}{SFX}.png"
         Image.fromarray(patch).save(os.path.join(OUT, fn))
         out.append(dict(c, patch=fn))
     if out:
@@ -4270,11 +4510,33 @@ def collect_glows(G, fxpx, D, baked, sprites):
     return pts
 
 
+_GAME0 = None
+
+
 def build():
-    global EMIT
+    """The world once, then each view of it."""
+    global VIEW, SFX
     os.makedirs(OUT, exist_ok=True)
     t_start = time.time()
-    G = build_world()
+    G0 = build_world()
+    _snapshot()
+    for k in VIEWS:
+        VIEW, SFX = k, view_sfx(k)
+        apply_view_constants(k)
+        print(f'================ view {k} ({["front", "turned right", "from behind", "turned left"][k]})')
+        G = view_world(G0, k)
+        render_view(G, G0, k)
+        del G
+        gc.collect()
+    VIEW, SFX = 0, ''
+    apply_view_constants(0)
+    print(f'done in {time.time() - t_start:.1f}s -> {OUT}')
+
+
+def render_view(G, G0, k):
+    """Render one view of the world (G: as the view sees it; G0: in view 0's frame)."""
+    global EMIT, _GAME0
+    t_start = time.time()
     set_frame(G)
     EMIT = np.zeros((H, W), np.uint8)
     hitY, hitZ, kind = render_terrain(G)
@@ -4284,56 +4546,76 @@ def build():
     gid = np.zeros((H, W), np.int32)
     lights = []
     gp = PX                                              # glow radii are given in world units
+    ground0 = lambda X, Y: height_at(G0, X, Y)  # noqa: E731  (models are built in view 0's frame)
 
-    # --- props
+    # --- props: built in view 0's frame, turned into this one
     t0 = time.time()
     gb = 1
-    comms = DOMES['comms']
-    cC = cam(comms['X'], comms['Y'], comms['Z'])
-    tower_parts, beacon = comms_tower(comms)
-    gb = render_groups(scaled(tower_parts, cC, DOME_SCALE, 'tower'), img, D, kind, gid, gb)
+    with canonical():
+        comms = DOMES['comms']
+        cC = cam(comms['X'], comms['Y'], comms['Z'])
+        tower_parts, beacon = comms_tower(comms)
+        tower_parts = scaled(tower_parts, cC, DOME_SCALE, 'tower')
+    gb = render_groups(turned(tower_parts), img, D, kind, gid, gb)
     interiors = {'base': base_interior, 'nursery': nursery_interior, 'comms': comms_interior,
                  'command': command_room, 'habitat': habitat_room, 'garage': garage_room}
     for d in dome_units():
         name = d['name']
-        C = cam(d['X'], d['Y'], d['Z'])
-        gb = render_groups(scaled(dome_ring(d), C, DOME_SCALE, f'{name}ring'), img, D, kind, gid, gb)
-        parts, ilights = interiors[name](d)
-        gb = render_groups(scaled(parts, C, DOME_SCALE, name), img, D, kind, gid, gb)
-        for k, hp in enumerate(ilights if d['powered'] else []):
-            col = A.hex2rgb('#7fe6cf') if name == 'comms' and k == 0 else A.hex2rgb('#ffcf87')
-            lights.append((scale_pt(hp, C, DOME_SCALE), 8 * DOME_SCALE * gp * 0.6, col, 0.38))
-        if name in ('base', 'command') and not d['powered']:
-            gb = render_groups(scaled(apex_radar_broken(d), C, DOME_SCALE, 'radar'), img, D, kind, gid, gb)
-    if BASE_DOME == 'rooms':
-        gb = render_groups(base_corridors(), img, D, kind, gid, gb)
-    for k, (d, dirv) in enumerate(airlock_ends()):
-        C = cam(d['X'], d['Y'], d['Z'])
-        gb = render_groups(scaled(airlock(d, dirv), C, DOME_SCALE, f'airlock{k}'), img, D, kind, gid, gb)
-    gb = render_groups(solar_field(), img, D, kind, gid, gb)
-    for k, (X, Y) in enumerate(G['lamps']):
+        d0 = canon_unit(name)
+        with canonical():
+            C = cam(d0['X'], d0['Y'], d0['Z'])
+            ring = scaled(dome_ring(d0), C, DOME_SCALE, f'{name}ring')
+            parts, ilights = interiors[name](d0)
+            parts = scaled(parts, C, DOME_SCALE, name)
+            radar = (scaled(apex_radar_broken(d0), C, DOME_SCALE, 'radar')
+                     if name in ('base', 'command') and not d0['powered'] else [])
+        gb = render_groups(turned(ring), img, D, kind, gid, gb)
+        gb = render_groups(turned(parts), img, D, kind, gid, gb)
+        for i, hp in enumerate(ilights if d['powered'] else []):
+            col = A.hex2rgb('#7fe6cf') if name == 'comms' and i == 0 else A.hex2rgb('#ffcf87')
+            lights.append((to_view(scale_pt(hp, C, DOME_SCALE)), 8 * DOME_SCALE * gp * 0.6, col, 0.38))
+        if radar:
+            gb = render_groups(turned(radar), img, D, kind, gid, gb)
+    with canonical():
+        corridors = base_corridors() if BASE_DOME == 'rooms' else []
+        locks = [scaled(airlock(d0, dirv0), cam(d0['X'], d0['Y'], d0['Z']), DOME_SCALE, f'airlock{i}')
+                 for i, (d0, dirv0) in enumerate(airlock_ends())]
+        solar = solar_field()
+    if corridors:
+        gb = render_groups(turned(corridors), img, D, kind, gid, gb)
+    for lk in locks:
+        gb = render_groups(turned(lk), img, D, kind, gid, gb)
+    gb = render_groups(turned(solar), img, D, kind, gid, gb)
+    for i, (X, Y) in enumerate(G0['lamps']):
         u, v = to_grid(X, Y)
-        z = float(G['H'][int(u), int(v)])
-        on = k not in G['dead_lamps']
-        parts, head = lamp(X, Y, z, on)
-        base = cam(X, Y, z)
-        gb = render_groups(scaled(parts, base, LAMP_SCALE, f'pathlamp{k}'), img, D, kind, gid, gb)
+        z = float(G0['H'][int(u), int(v)])
+        on = i not in G0['dead_lamps']
+        with canonical():
+            parts, head = lamp(X, Y, z, on)
+            base = cam(X, Y, z)
+            parts = scaled(parts, base, LAMP_SCALE, f'pathlamp{i}')
+        gb = render_groups(turned(parts), img, D, kind, gid, gb)
         if on:
-            lights.append((scale_pt(head, base, LAMP_SCALE), 9 * LAMP_SCALE * gp, A.hex2rgb('#ffcf87'), 0.42))
+            lights.append((to_view(scale_pt(head, base, LAMP_SCALE)), 9 * LAMP_SCALE * gp, A.hex2rgb('#ffcf87'), 0.42))
     bC = cam(DOMES['base']['X'], DOMES['base']['Y'], DOMES['base']['Z'])
     if DOMES['base']['powered'] and BASE_DOME != 'rooms':
-        lights.append((scale_pt(bC + np.array([6, 4, 41.6]), bC, DOME_SCALE), 6 * DOME_SCALE * gp * 0.6,
+        lights.append((scale_pt(bC + vrot([6, 4, 41.6]), bC, DOME_SCALE), 6 * DOME_SCALE * gp * 0.6,
                        A.hex2rgb('#ffd27a'), 0.4))
     shard_glints = []
     for d in dome_units():
         if d['style'] in ('hex', 'band'):
-            debris_parts, g_ = (glass_debris if d['style'] == 'hex' else band_debris)(d, lambda X, Y: height_at(G, X, Y))
-            shard_glints += g_
+            d0 = canon_unit(d['name'])
+            with canonical():
+                debris_parts, g_ = (glass_debris if d0['style'] == 'hex' else band_debris)(d0, ground0)
+            shard_glints += [to_view(q) for q in g_]
             if debris_parts:
-                gb = render_groups(debris_parts, img, D, kind, gid, gb)
-    wreck_parts, wreck_fx, debris, body = satellite_wreck(lambda X, Y: height_at(G, X, Y))
+                gb = render_groups(turned(debris_parts), img, D, kind, gid, gb)
+    with canonical():
+        wreck_parts, wreck_fx, debris, body = satellite_wreck(ground0)
+    wreck_fx = dict(smoke=[to_view(q) for q in wreck_fx['smoke']], sparks=[to_view(q) for q in wreck_fx['sparks']],
+                    beacon=to_view(wreck_fx['beacon']), fire=[to_view(q) for q in wreck_fx['fire']])
     gw0 = gb
-    gb = render_groups(wreck_parts, img, D, kind, gid, gb)
+    gb = render_groups(turned(wreck_parts), img, D, kind, gid, gb)
     gw1 = gb
     print(f'props in {time.time() - t0:.1f}s')
     gb, flora_out, live, baked, sprites = render_flora(G, img, D, kind, gid, gb)
@@ -4389,8 +4671,8 @@ def build():
         add_glow(final, sx, sy, rad, colr, s_, EMIT)
     EMIT[~filled] = 255                                   # space looks the same by day and night
     EMIT[ring] = 0
-    Image.fromarray(final).save(os.path.join(OUT, 'red_planet_map.png'))
-    Image.fromarray(EMIT, 'L').save(os.path.join(OUT, 'red_planet_light.png'))
+    Image.fromarray(final).save(os.path.join(OUT, f'red_planet_map{SFX}.png'))
+    Image.fromarray(EMIT, 'L').save(os.path.join(OUT, f'red_planet_light{SFX}.png'))
     print(f'light mask: {np.count_nonzero(EMIT[filled] > 127)} lit pixels on the ground')
     glows = collect_glows(G, fxpx, D, baked, sprites)
     rs_g = np.random.default_rng(SEED + 818)
@@ -4405,9 +4687,10 @@ def build():
     paint_live(final, live, sprites)                     # the minimap and previews show them too
 
     # --- metadata + visibility check
-    meta = dict(name='red_planet', image='red_planet_map.png', size=[W, H],
+    meta = dict(name='red_planet', image=f'red_planet_map{SFX}.png', size=[W, H],
                 origin_px=[AX, AY], world_unit_px={'vertical': PX, 'horizontal': round(1 / S, 4)},
-                grid_size_world=N, viewport_assumed=list(VIEWPORT), domes={}, lamps=len(G['lamps']))
+                grid_size_world=N, viewport_assumed=list(VIEWPORT), domes={}, lamps=len(G['lamps']),
+                view=k, views=[f'red_planet_map{view_sfx(i)}.json' for i in range(4)])
     boxes = {}
     for name, d in DOMES.items():
         cx, cy = project(d['X'], d['Y'], d['Z'])
@@ -4429,17 +4712,26 @@ def build():
     meta['visibility_checks'] = checks
     live_glow_flags(flora_out, live, sprites, D)
     flora_depth(live, sprites, D, kind)                  # the player can walk behind the swaying plants
-    meta['game'] = export_game_data(G, D, kind, debris, body)
-    meta['game']['light_png'] = 'red_planet_light.png'
-    meta['biomes'] = export_biome_grid(G)
+    game = export_game_data(G, D, kind, debris, body, world=(k == 0))
+    if game is None:                                     # the world's data comes from view 0
+        game = dict(_GAME0 or json.load(open(os.path.join(OUT, 'red_planet_map.json')))['game'])
+    else:
+        _GAME0 = dict(game)
+    game.update(depth_png=f'red_planet_depth{SFX}.png', light_png=f'red_planet_light{SFX}.png', heading=k,
+                view_center=[float(VIEW_C[0]), float(VIEW_C[1])],
+                view_notes='The game keeps the world in view 0\'s frame. View k shows it turned: view point = '
+                           'R_k (P - view_center) + view_center, R_k a quarter turn clockwise k times '
+                           '((x, y) -> (y, -x) per turn); the screen formula above applies to the view point.')
+    meta['game'] = game
+    meta['biomes'] = export_biome_grid(G0)
     meta['minimap'] = export_minimap(final, filled)
     meta['animated'] = export_animated(D)
     fx = dict(flora=flora_out, halos=export_halos(), glow_colors=GLOW_COLORS, glows=glows,
               crash=export_crash(G, pre, wreck_fx, body, kind), cracks=export_cracks(base_cracks),
               doors=export_doors(D, kind))
-    with open(os.path.join(OUT, 'red_planet_fx.json'), 'w') as fh:
+    with open(os.path.join(OUT, f'red_planet_fx{SFX}.json'), 'w') as fh:
         json.dump(fx, fh, separators=(',', ':'))
-    meta['fx'] = 'red_planet_fx.json'
+    meta['fx'] = f'red_planet_fx{SFX}.json'
     margin = 24
     frames = {}
     for name, b in DOMES.items():
@@ -4461,13 +4753,17 @@ def build():
                         note='The furthest zoom-out shows max_view_px of map: the whole main base, no more. '
                              'frames are [x, y, w, h] boxes the camera frames at that zoom.')
     print(f"zoom: furthest view {meta['zoom']['max_view_px']} map px")
-    with open(os.path.join(OUT, 'red_planet_map.json'), 'w') as fh:
+    with open(os.path.join(OUT, f'red_planet_map{SFX}.json'), 'w') as fh:
         json.dump(meta, fh, indent=2)
 
-    # close-ups for quick review
+    # close-ups for quick review (view 0), an overview of every view
     prev = os.path.join(OUT, 'preview')
     os.makedirs(prev, exist_ok=True)
     im = Image.fromarray(final)
+    im.resize((W // 4, H // 4), Image.LANCZOS).save(os.path.join(prev, f'overview_quarter{SFX}.png'))
+    if k != 0:
+        print(f'view {k} rendered in {time.time() - t_start:.1f}s')
+        return
     for name, box in boxes.items():
         im.crop((int(box[0] - 120), int(box[1] - 60), int(box[2] + 120), int(box[3] + 80))).save(
             os.path.join(prev, f'{name}_closeup.png'))
@@ -4493,7 +4789,7 @@ def build():
         page = fh.read().replace('__MAP__', json.dumps(viewer))
     with open(os.path.join(OUT, 'viewer.html'), 'w', encoding='utf-8') as fh:
         fh.write('<!doctype html>\n' + page)
-    print(f'done in {time.time() - t_start:.1f}s -> {OUT}')
+    print(f'view {k} rendered in {time.time() - t_start:.1f}s')
 
 
 if __name__ == '__main__':

@@ -61,6 +61,256 @@
    ]
   }
  },
+ "sprites_views": [
+  {
+   "ore_rock": {
+    "file": "props/ore_rock.png",
+    "frames": 4,
+    "frame_size": [
+     43,
+     40
+    ],
+    "anchor": [
+     20.5,
+     29.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "props/ore_chunk.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     19
+    ],
+    "anchor": [
+     11.5,
+     13.0
+    ]
+   },
+   "scrap": {
+    "file": "props/scrap.png",
+    "frames": 3,
+    "frame_size": [
+     33,
+     32
+    ],
+    "anchor": [
+     15.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "props/crate.png",
+    "frames": 1,
+    "frame_size": [
+     51,
+     48
+    ],
+    "anchor": [
+     25.5,
+     32.0
+    ]
+   },
+   "crate_small": {
+    "file": "props/crate_small.png",
+    "frames": 1,
+    "frame_size": [
+     41,
+     38
+    ],
+    "anchor": [
+     20.5,
+     25.0
+    ]
+   }
+  },
+  {
+   "ore_rock": {
+    "file": "props/ore_rock_r1.png",
+    "frames": 4,
+    "frame_size": [
+     41,
+     43
+    ],
+    "anchor": [
+     19.5,
+     32.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "props/ore_chunk_r1.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     21
+    ],
+    "anchor": [
+     13.5,
+     15.0
+    ]
+   },
+   "scrap": {
+    "file": "props/scrap_r1.png",
+    "frames": 3,
+    "frame_size": [
+     32,
+     32
+    ],
+    "anchor": [
+     15.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "props/crate_r1.png",
+    "frames": 1,
+    "frame_size": [
+     45,
+     55
+    ],
+    "anchor": [
+     22.5,
+     36.0
+    ]
+   },
+   "crate_small": {
+    "file": "props/crate_small_r1.png",
+    "frames": 1,
+    "frame_size": [
+     37,
+     43
+    ],
+    "anchor": [
+     18.5,
+     28.0
+    ]
+   }
+  },
+  {
+   "ore_rock": {
+    "file": "props/ore_rock_r2.png",
+    "frames": 4,
+    "frame_size": [
+     43,
+     40
+    ],
+    "anchor": [
+     22.5,
+     29.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "props/ore_chunk_r2.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     23
+    ],
+    "anchor": [
+     11.5,
+     17.0
+    ]
+   },
+   "scrap": {
+    "file": "props/scrap_r2.png",
+    "frames": 3,
+    "frame_size": [
+     33,
+     32
+    ],
+    "anchor": [
+     17.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "props/crate_r2.png",
+    "frames": 1,
+    "frame_size": [
+     51,
+     48
+    ],
+    "anchor": [
+     25.5,
+     32.0
+    ]
+   },
+   "crate_small": {
+    "file": "props/crate_small_r2.png",
+    "frames": 1,
+    "frame_size": [
+     41,
+     38
+    ],
+    "anchor": [
+     20.5,
+     25.0
+    ]
+   }
+  },
+  {
+   "ore_rock": {
+    "file": "props/ore_rock_r3.png",
+    "frames": 4,
+    "frame_size": [
+     41,
+     42
+    ],
+    "anchor": [
+     21.5,
+     31.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "props/ore_chunk_r3.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     22
+    ],
+    "anchor": [
+     9.5,
+     16.0
+    ]
+   },
+   "scrap": {
+    "file": "props/scrap_r3.png",
+    "frames": 3,
+    "frame_size": [
+     32,
+     32
+    ],
+    "anchor": [
+     16.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "props/crate_r3.png",
+    "frames": 1,
+    "frame_size": [
+     45,
+     55
+    ],
+    "anchor": [
+     22.5,
+     36.0
+    ]
+   },
+   "crate_small": {
+    "file": "props/crate_small_r3.png",
+    "frames": 1,
+    "frame_size": [
+     37,
+     43
+    ],
+    "anchor": [
+     18.5,
+     28.0
+    ]
+   }
+  }
+ ],
  "objects": [
   {
    "id": "ore_rock0",
@@ -216,6 +466,24 @@
     2253.3,
     1795.2
    ],
+   "head_px_views": [
+    [
+     2253.3,
+     1795.2
+    ],
+    [
+     4546.3,
+     1216.6
+    ],
+    [
+     5497.7,
+     2350.1
+    ],
+    [
+     3204.7,
+     3347.7
+    ]
+   ],
    "height": 21.6
   },
   {
@@ -226,6 +494,24 @@
    "head_px": [
     2495.3,
     1726.0
+   ],
+   "head_px_views": [
+    [
+     2495.3,
+     1726.0
+    ],
+    [
+     4682.6,
+     1336.4
+    ],
+    [
+     5255.7,
+     2417.1
+    ],
+    [
+     3068.4,
+     3225.6
+    ]
    ],
    "height": 21.6
   },
@@ -238,6 +524,24 @@
     2362.1,
     2405.4
    ],
+   "head_px_views": [
+    [
+     2362.1,
+     2405.4
+    ],
+    [
+     3322.8,
+     1269.3
+    ],
+    [
+     5388.9,
+     1736.7
+    ],
+    [
+     4428.2,
+     3291.7
+    ]
+   ],
    "height": 21.6
   },
   {
@@ -249,8 +553,26 @@
     2622.7,
     2336.6
    ],
+   "head_px_views": [
+    [
+     2622.7,
+     2336.6
+    ],
+    [
+     3451.6,
+     1395.2
+    ],
+    [
+     5128.3,
+     1796.7
+    ],
+    [
+     4299.4,
+     3157.1
+    ]
+   ],
    "height": 21.6
   }
  ],
- "note": "Props the multitool works on. world = [X, Y] ground position; anchor = the foot point in each frame (frames side by side). job: mine / gather / lift. lamps: dead path lamps to fix."
+ "note": "Props the multitool works on. world = [X, Y] ground position (view 0 frame); anchor = the foot point in each frame (frames side by side). job: mine / gather / lift. lamps: dead path lamps to fix. sprites_views / head_px_views: the same for each view of the map."
 }

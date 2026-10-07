@@ -51,8 +51,21 @@ func setup(sheet: Dictionary, frame: int, terrain: MapTerrain, depth_map: Textur
 func place(p: Vector2) -> void:
 	world = p
 	position = _terrain.to_screen(p, _terrain.height_at(p)).round()
-	_mat.set_shader_parameter("sprite_depth", p.y)
+	_mat.set_shader_parameter("sprite_depth", _terrain.view_depth(p))
 	_update_blocker()
+
+
+## The camera turned: this view's drawing of it, and its depth map.
+func set_view(sheet: Dictionary, depth_map: Texture2D) -> void:
+	var frame := sprite.frame
+	sprite.texture = sheet["tex"]
+	sprite.hframes = int(sheet["frames"])
+	sprite.frame = clampi(frame, 0, sprite.hframes - 1)
+	sprite.offset = -sheet["anchor"]
+	_mat.set_shader_parameter("depth_map", depth_map)
+	_mat.set_shader_parameter("map_size", _terrain.map_size)
+	place(world)
+	set_lift(lift)
 
 
 func set_lift(px: float) -> void:

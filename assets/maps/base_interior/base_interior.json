@@ -2,7 +2,7 @@
  "game": {
   "depth_png": "base_interior_depth.png",
   "walk_png": "base_interior_walk.png",
-  "depth_scale": 25.0,
+  "depth_scale": 20.0,
   "height_offset": 100.0,
   "height_scale": 150.0,
   "world_units_per_px": 0.43301270189221935,
@@ -15,7 +15,12 @@
    589.5
   ],
   "light_png": "base_interior_light.png",
-  "sun_png": "base_interior_sun.png"
+  "sun_png": "base_interior_sun.png",
+  "heading": 0,
+  "view_center": [
+   0.0,
+   525.0
+  ]
  },
  "name": "base_interior",
  "image": "base_interior.png",
@@ -26,6 +31,13 @@
  "origin_px": [
   784.0,
   860.0
+ ],
+ "view": 0,
+ "views": [
+  "base_interior.json",
+  "base_interior_r1.json",
+  "base_interior_r2.json",
+  "base_interior_r3.json"
  ],
  "rooms": {
   "storage": {

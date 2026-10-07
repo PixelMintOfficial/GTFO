@@ -58,6 +58,8 @@ static var night := 0.0
 static var daylight := 1.0
 static var phase := "MORNING"
 static var day := 1
+## The daylight's colour right now (for things drawn outside the shaders, like the camera's turn).
+static var light_mul := Color.WHITE
 
 var clock_panel: DayClock
 ## How many times faster than normal the clock runs (a test hook sets it).
@@ -65,18 +67,17 @@ var speed := 1.0
 
 var _player: Player
 var _graded: ShaderMaterial
+var _map_mat: ShaderMaterial
 var _pending: Array[Node] = []
 
 
 ## map: the scene's pre-rendered map sprite. light_mask / sun_mask: its light and sun masks.
 func setup(player: Player, map: Sprite2D, light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
 	_player = player
-	var mat := ShaderMaterial.new()
-	mat.shader = MAP_SHADER
-	mat.set_shader_parameter("light_mask", light_mask)
-	if sun_mask != null:
-		mat.set_shader_parameter("sun_mask", sun_mask)
-	map.material = mat
+	_map_mat = ShaderMaterial.new()
+	_map_mat.shader = MAP_SHADER
+	map.material = _map_mat
+	set_masks(light_mask, sun_mask)
 	_graded = ShaderMaterial.new()
 	_graded.shader = GRADED_SHADER
 	_run_test_hooks()
@@ -87,6 +88,12 @@ func setup(player: Player, map: Sprite2D, light_mask: Texture2D, sun_mask: Textu
 	new_day.connect(clock_panel.on_new_day)
 	get_tree().node_added.connect(_on_node_added)
 	_grade_tree.call_deferred(get_parent())                # once the scene has made all its nodes
+
+
+## The camera turned: the new view's light (and sun) masks.
+func set_masks(light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
+	_map_mat.set_shader_parameter("light_mask", light_mask)
+	_map_mat.set_shader_parameter("sun_mask", sun_mask)
 
 
 ## Where the current part of the day is: 0 as it begins, 1 as it ends.
@@ -131,6 +138,7 @@ func _update(delta: float, quiet: bool) -> void:
 	daylight = 1.0 - night
 	var mul: Color = light[0]
 	var add: Color = light[1]
+	light_mul = Color(mul.r + add.r, mul.g + add.g, mul.b + add.b)
 	RenderingServer.global_shader_parameter_set("dn_mul", Vector3(mul.r, mul.g, mul.b))
 	RenderingServer.global_shader_parameter_set("dn_add", Vector3(add.r, add.g, add.b))
 	RenderingServer.global_shader_parameter_set("dn_sat", light[2])

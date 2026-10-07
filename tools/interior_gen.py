@@ -25,6 +25,11 @@ Day and night: the light mask (_light.png) says how much of each pixel is its ow
 Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _light.png, _sun.png, .json, anim/,
 and machines/: the power room's reactor and the oxygen generator on their own, as transparent sprites.
 --repair-metadata-only refreshes machine interaction anchors without rendering the art.
+
+Four views: like the overworld, the base is rendered from four sides (the camera turns in quarter
+turns). Each view cuts away the walls nearest the camera. View 0 writes the usual files, view k
+the same set with a _rk suffix; the walk grid belongs to the base, so there is one. The sun shafts
+fall the same way in the world in every view; the furniture's key light stays put on screen.
 """
 import json
 import math
@@ -108,6 +113,14 @@ def cam(X, Y, z=0.0):
     return np.array([X, Y, z], float)
 
 
+M.VIEW_C = np.array([0.0, OY + 5.0, 0.0])                # the views turn round the middle of the base
+
+
+def view_th(th):
+    """An angle round a room (in the base's frame) as the current view sees it."""
+    return th - M.VIEW * math.pi / 2
+
+
 def room_pt(name, ang_deg, r, z=0.0):
     rm = ROOMS[name]
     a = math.radians(ang_deg)
@@ -120,9 +133,10 @@ def r_in(name):
 
 # ================================================================== frame
 def set_frame():
-    xmax = max(abs(rm['X']) + rm['R'] for rm in ROOMS.values()) + WALL_T + 14
-    ymax = max(rm['Y'] + rm['R'] for rm in ROOMS.values()) + WALL_T
-    ymin = min(rm['Y'] - rm['R'] for rm in ROOMS.values()) - WALL_T - 10
+    cv = {n: M.to_view([rm['X'], rm['Y']]) for n, rm in ROOMS.items()}     # where this view sees the rooms
+    xmax = max(abs(cv[n][0]) + rm['R'] for n, rm in ROOMS.items()) + WALL_T + 14
+    ymax = max(cv[n][1] + rm['R'] for n, rm in ROOMS.items()) + WALL_T
+    ymin = min(cv[n][1] - rm['R'] for n, rm in ROOMS.items()) - WALL_T - 10
     M.W = int(2 * xmax / S) + 40
     M.AX = M.W / 2.0
     M.AY = float(int((KY * ymax + WALL_H) * PX) + 34)
@@ -157,19 +171,21 @@ def floor_region(X, Y):
 
 # ================================================================== walls (SDF shells; shaded afterwards)
 class RoomWall:
-    """A round wall: tall at the back, cut low at the front, with openings."""
+    """A round wall: tall on the side away from the camera, cut low on the side nearest it, with
+    openings. Built in the base's frame; th is an angle round the room in that frame."""
 
-    def __init__(self, name, cuts):
+    def __init__(self, name, cuts, view=None):
         rm = ROOMS[name]
         self.c = np.array([rm['X'], rm['Y']])
         self.R = rm['R']
         self.cuts = cuts            # boxes (cx, cy, hx, hy, top) cut through the wall
+        self.view = M.VIEW if view is None else view
 
     def local(self, P):
         return P
 
     def height(self, th):
-        return WALL_LOW + (WALL_H - WALL_LOW) * M.smoothstep(-0.36, 0.04, np.sin(th))
+        return WALL_LOW + (WALL_H - WALL_LOW) * M.smoothstep(-0.36, 0.04, np.sin(th - self.view * math.pi / 2))
 
     def __call__(self, P):
         dx, dy = P[:, 0] - self.c[0], P[:, 1] - self.c[1]
@@ -213,11 +229,17 @@ def wall_parts():
         left, right = sorted((a, b), key=lambda n: ROOMS[n]['X'])
         xa, xb = x0 + ROOMS[left]['R'] - 3, x1 - ROOMS[right]['R'] + 3
         cx, hx = (xa + xb) / 2, (xb - xa) / 2
-        parts.append(P_('cwall', BoxWall((cx, y + CORR_HALF + WALL_T / 2, CORR_H / 2), (hx, WALL_T / 2, CORR_H / 2)), 'white',
-                        f'cwall_{b}'))
-        parts.append(P_('cwall', BoxWall((cx, y - CORR_HALF - WALL_T / 2, WALL_LOW / 2), (hx, WALL_T / 2, WALL_LOW / 2)), 'white',
-                        f'cfront_{b}'))
+        for side in (1, -1):
+            h = corridor_wall_h(side)
+            parts.append(P_('cwall', BoxWall((cx, y + side * (CORR_HALF + WALL_T / 2), h / 2), (hx, WALL_T / 2, h / 2)), 'white',
+                            f'cwall_{b}_{side}'))
     return parts
+
+
+def corridor_wall_h(side):
+    """A corridor's wall on one side (+1 / -1 along the base's y): tall only if it is the far side
+    in this view; when the corridor runs away from the camera both are cut low."""
+    return CORR_H if M.vrot([0.0, float(side)])[1] > 0.5 else WALL_LOW
 
 
 class Cut:
@@ -801,7 +823,7 @@ def shade_walls(img, D, gid, wall_gids, bay_img):
     ys, xs = np.nonzero(np.isin(gid, wall_gids))
     O = view_rays(ys, xs)
     t = (D[ys, xs] - O[:, 1]) / M.F[1]
-    P = O + t[:, None] * M.F
+    P = M.to_canon(O + t[:, None] * M.F)                  # the wall points, in the base's frame
     z = P[:, 2]
     bay = bay_img[ys, xs]
     room, th = wall_layers(P)
@@ -825,9 +847,11 @@ def shade_walls(img, D, gid, wall_gids, bay_img):
         face[sel] = f
         nrm[sel] = np.stack([dx / r, dy / r, np.zeros_like(r)], -1) * np.where(inner, -1, 1)[:, None]
     cor = room < 0                                        # corridor walls
-    face[cor & (z > CORR_H - 0.8)] = 2
-    face[cor & (z > WALL_LOW - 0.8) & (P[:, 1] < OY)] = 2
-    nrm[cor] = (0.0, -1.0, 0.0)
+    side = np.where(P[:, 1] > OY + 5.0, 1, -1)
+    for sd in (1, -1):
+        face[cor & (side == sd) & (z > corridor_wall_h(sd) - 0.8)] = 2
+    nrm[cor] = np.stack([np.zeros(len(P)), -side, np.zeros(len(P))], -1)[cor]
+    nrm = M.vrot(nrm)                                     # lit and seen in the view
     # height bands on the inner faces
     inner = face == 0
     outer = face == 1
@@ -850,7 +874,7 @@ def shade_walls(img, D, gid, wall_gids, bay_img):
     cs = inner & (z > CORAL[0]) & (z < CORAL[1])
     col[cs] = CORAL_R[np.clip(np.floor(1.6 + 1.4 * facing[cs] + bay[cs] * 0.6), 0, 3).astype(int)]
     # windows: two rows of hexagons glowing with daylight; the corridors get a light strip instead
-    win = inner & (z > WIN[0]) & (z < WIN[1])
+    win = inner & (z > WIN[0]) & (z < WIN[1]) & ~(cor & (corridor_wall_h(1) < WIN[1]) & (corridor_wall_h(-1) < WIN[1]))
     arc = np.where(cor, P[:, 0], arc)
     glow_mask = np.zeros(len(P), np.float32)
     hole_mask = np.zeros(len(P), bool)
@@ -962,7 +986,7 @@ def shade_floor(img, D, kind, region, Xf, Yf, ys, xs, bay, prop_ao, shafts_floor
     # gloss: the walls mirrored in the floor
     refl = np.zeros(n, np.float32)
     rcol = np.zeros((n, 3), np.float32)
-    Rd = np.array([M.F[0], M.F[1], -M.F[2]])
+    Rd = M.crot(np.array([M.F[0], M.F[1], -M.F[2]]))     # the view's reflected ray, in the base's frame
     for i, name in enumerate(names):
         sel = np.nonzero(region == i + 1)[0]
         if sel.size == 0:
@@ -1054,7 +1078,7 @@ def shaft_geometry():
     for poly in hole_world_polys():
         t = poly[:, 2] / -LIGHT_IN[2]
         land = poly + t[:, None] * LIGHT_IN
-        scr = np.array([M.project(*p) for p in np.vstack([poly, land])])
+        scr = np.array([M.project(*M.to_view(p)) for p in np.vstack([poly, land])])
         from scipy.spatial import ConvexHull
         hull = scr[ConvexHull(scr).vertices]
         out.append(dict(hole=poly, floor=land[:, :2], hull=hull))
@@ -1077,51 +1101,19 @@ def fill_poly_mask(poly, h, w):
 
 # ================================================================== build
 def build():
+    """The base's furniture once (so every view shows the same things), then each view of it."""
     t_start = time.time()
     os.makedirs(os.path.join(OUT, 'anim'), exist_ok=True)
-    set_frame()
-    W, H = M.W, M.H
     M.SUN = SUN_IN
-    img = np.zeros((H, W, 3), np.uint8)
-    D = np.full((H, W), np.inf, np.float32)
-    kind = np.zeros((H, W), np.uint8)
-    gid = np.zeros((H, W), np.int32)
-    jj, ii = np.mgrid[0:H, 0:W]
-    bay_img = M.BAYER[jj % 4, ii % 4]
     rs = np.random.default_rng(77)
-    M.EMIT = np.zeros((H, W), np.uint8)                  # props drawn with a light ramp mark it
-
-    # --- the floor (plane z = 0)
-    O = view_rays(jj.ravel(), ii.ravel())
-    t = -O[:, 2] / M.F[2]
-    P = O + t[:, None] * M.F
-    region = floor_region(P[:, 0], P[:, 1]).reshape(H, W)
-    fl = region > 0
-    D[fl] = P[:, 1].reshape(H, W)[fl]
-    kind[fl] = 1
-    Xf, Yf = P[:, 0].reshape(H, W), P[:, 1].reshape(H, W)
-    del O, t, P
-
-    # --- walls
-    t0 = time.time()
-    gb = 1
-    wparts = wall_parts()
-    gw0 = gb
-    gb = M.render_groups(wparts, img, D, kind, gid, gb)
-    wall_gids = np.arange(gw0, gb)
-    print(f'walls in {time.time() - t0:.1f}s')
-
-    # --- furniture
-    t0 = time.time()
     s_parts = storage_props(rs)
     p_parts, reactor_c, pfx = power_props(rs)
     o_parts, gen_c, tanks, ofx = oxygen_props(rs)
-    gb = M.render_groups(s_parts + p_parts + o_parts, img, D, kind, gid, gb)
-    gb = M.render_groups(door_parts(0.0), img, D, kind, gid, gb)
+    M.VIEW, M.SFX = 0, ''
+    set_frame()
     export_machines(p_parts + o_parts, dict(power_generator=reactor_c, oxygen_generator=gen_c))
-    print(f'furniture in {time.time() - t0:.1f}s')
 
-    # footprints for soft contact shadows on the floor and for the walk grid
+    # footprints for soft contact shadows on the floor and for the walk grid (the base's frame)
     foot = np.zeros((N, N), bool)
     c = np.arange(N, dtype=np.float32) + 0.5
     U, V = np.meshgrid(c, c, indexing='ij')
@@ -1144,16 +1136,64 @@ def build():
         foot[a0:a1, b0:b1] |= hit.reshape(a1 - a0, b1 - b0)
     foot = ndi.binary_fill_holes(foot)
     ao_grid = ndi.gaussian_filter(foot.astype(np.float32), 3.0)
+    furniture = dict(parts=s_parts + p_parts + o_parts, reactor_c=reactor_c, gen_c=gen_c, pfx=pfx, ofx=ofx, tanks=tanks,
+                     foot=foot, ao_grid=ao_grid, Xg=Xg, Yg=Yg)
+    for k in M.VIEWS:
+        M.VIEW, M.SFX = k, M.view_sfx(k)
+        render_view(k, furniture)
+    M.VIEW, M.SFX = 0, ''
+    print(f'interior done in {time.time() - t_start:.1f}s -> {OUT}')
+
+
+def label_visible(ang):
+    """Lettering on a room's wall shows only where this view leaves the wall standing tall."""
+    return math.sin(view_th(math.radians(ang))) > 0.3
+
+
+def render_view(k, fur):
+    t_start = time.time()
+    sfx = M.SFX
+    set_frame()
+    W, H = M.W, M.H
+    img = np.zeros((H, W, 3), np.uint8)
+    D = np.full((H, W), np.inf, np.float32)
+    kind = np.zeros((H, W), np.uint8)
+    gid = np.zeros((H, W), np.int32)
+    jj, ii = np.mgrid[0:H, 0:W]
+    bay_img = M.BAYER[jj % 4, ii % 4]
+    M.EMIT = np.zeros((H, W), np.uint8)                  # props drawn with a light ramp mark it
+
+    # --- the floor (plane z = 0)
+    O = view_rays(jj.ravel(), ii.ravel())
+    t = -O[:, 2] / M.F[2]
+    P = O + t[:, None] * M.F
+    Pc = M.to_canon(P)                                    # the floor's patterns belong to the base
+    region = floor_region(Pc[:, 0], Pc[:, 1]).reshape(H, W)
+    fl = region > 0
+    D[fl] = P[:, 1].reshape(H, W)[fl]
+    kind[fl] = 1
+    Xf, Yf = Pc[:, 0].reshape(H, W), Pc[:, 1].reshape(H, W)
+    del O, t, P, Pc
+
+    # --- walls (cut away on the side nearest the camera), furniture and the door, turned into the view
+    t0 = time.time()
+    gb = 1
+    wparts = M.turned(wall_parts())
+    gw0 = gb
+    gb = M.render_groups(wparts, img, D, kind, gid, gb)
+    wall_gids = np.arange(gw0, gb)
+    gb = M.render_groups(M.turned(fur['parts']), img, D, kind, gid, gb)
+    gb = M.render_groups(M.turned(door_parts(0.0)), img, D, kind, gid, gb)
+    print(f'view {M.VIEW}: walls and furniture in {time.time() - t0:.1f}s')
 
     # --- shading
     sh = shaft_geometry()
     ys, xs = np.nonzero(fl & (gid == 0))
     pu, pv = M.to_grid(Xf[ys, xs], Yf[ys, xs])
-    prop_ao = np.clip(M.sample(ao_grid, pu, pv) * 1.3, 0, 1)
+    prop_ao = np.clip(M.sample(fur['ao_grid'], pu, pv) * 1.3, 0, 1)
     fglow, sun = shade_floor(img, D, kind, region[ys, xs], Xf[ys, xs], Yf[ys, xs], ys, xs, bay_img[ys, xs], prop_ao,
                              [s['floor'] for s in sh])
     wglow, _, _ = shade_walls(img, D, gid, wall_gids, bay_img)
-
     # --- outlines
     dark = (img.astype(np.float32) * 0.62).astype(np.uint8)
     M.depth_lines(img, dark, D, kind, gid)
@@ -1198,44 +1238,52 @@ def build():
     light[~filled] = 1.0                                  # the void round the cutaway never changes
     light[ring] = 0.0
     sun[~filled | ring] = 0.0
-    Image.fromarray(np.round(np.clip(light, 0, 1) * 255).astype(np.uint8), 'L').save(os.path.join(OUT, 'base_interior_light.png'))
-    Image.fromarray(np.round(np.clip(sun, 0, 1) * 255).astype(np.uint8), 'L').save(os.path.join(OUT, 'base_interior_sun.png'))
+    Image.fromarray(np.round(np.clip(light, 0, 1) * 255).astype(np.uint8), 'L').save(
+        os.path.join(OUT, f'base_interior_light{sfx}.png'))
+    Image.fromarray(np.round(np.clip(sun, 0, 1) * 255).astype(np.uint8), 'L').save(os.path.join(OUT, f'base_interior_sun{sfx}.png'))
     M.EMIT = None
     for name, txt, ang, z, colr in (('storage', 'STORAGE', 64.0, 22.5, '#e2604a'), ('storage', 'B-01', 120.0, 22.5, '#e2604a'),
                                     ('power', 'POWER', 64.0, 23.0, '#e2604a'), ('oxygen', 'OXYGEN', 90.0, 33.5, '#2aa89c')):
-        x, y = M.project(*room_pt(name, ang, r_in(name), z))
+        if not label_visible(ang):
+            continue
+        x, y = M.project(*M.to_view(room_pt(name, ang, r_in(name), z)))
         M.draw_text(final, int(x - M.text_width(txt) / 2), int(y), txt, A.hex2rgb(colr), shadow=tuple(int(v) for v in WHITE[3]))
-    x, y = M.project(*room_pt('power', 90.0, r_in('power') - 1.2, 27.0))
-    M.draw_text(final, int(x - M.text_width('OFFLINE') / 2), int(y - 2), 'OFFLINE', A.hex2rgb('#ff5a4a'), shadow=(20, 16, 30))
-    Image.fromarray(final).save(os.path.join(OUT, 'base_interior.png'))
+    if label_visible(90.0):
+        x, y = M.project(*M.to_view(room_pt('power', 90.0, r_in('power') - 1.2, 27.0)))
+        M.draw_text(final, int(x - M.text_width('OFFLINE') / 2), int(y - 2), 'OFFLINE', A.hex2rgb('#ff5a4a'), shadow=(20, 16, 30))
+    Image.fromarray(final).save(os.path.join(OUT, f'base_interior{sfx}.png'))
 
     # --- game data
-    meta = export_game_data(D, kind, foot, Xg, Yg)
-    meta['game'].update(light_png='base_interior_light.png', sun_png='base_interior_sun.png')
-    meta.update(name='base_interior', image='base_interior.png', size=[W, H], origin_px=[M.AX, M.AY])
+    reactor_c, gen_c, pfx, ofx, tanks = fur['reactor_c'], fur['gen_c'], fur['pfx'], fur['ofx'], fur['tanks']
+    meta = export_game_data(D, kind, fur['foot'], fur['Xg'], fur['Yg'], world=(M.VIEW == 0))
+    meta['game'].update(light_png=f'base_interior_light{sfx}.png', sun_png=f'base_interior_sun{sfx}.png', heading=M.VIEW,
+                        view_center=[float(M.VIEW_C[0]), float(M.VIEW_C[1])])
+    meta.update(name='base_interior', image=f'base_interior{sfx}.png', size=[W, H], origin_px=[M.AX, M.AY], view=M.VIEW,
+                views=[f'base_interior{M.view_sfx(i)}.json' for i in range(4)])
     meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R']) for name, rm in ROOMS.items()}
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
     meta['door'] = export_door()
     meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
     meta['fx'] = dict(
         shafts=[dict(hull=[[round(float(x), 1), round(float(y), 1)] for x, y in s['hull']],
-                     hole=[round(float(v), 1) for v in M.project(*s['hole'].mean(axis=0))]) for s in sh],
+                     hole=pxl(s['hole'].mean(axis=0))) for s in sh],
         leds=[dict(px=pxl(p), color='#ff5a4a', kind=k) for p, k in pfx['leds'] + ofx['leds']],
         core=pxl(pfx['core']),
         sparks=[pxl(p) for p in pfx['sparks'] + ofx['sparks']],
         vapor=[dict(px=pxl(p), dir=[round(float(v), 3) for v in A.nz(np.array(M.project(*(p + d))) - np.array(M.project(*p)))])
                for p, d in ofx['vapor']],
         circuit_board=board_info(pfx['pcb']),
-        tanks=[[round(float(v), 1) for v in M.project(*(t + A.nz(gen_c - t) * 8.6 + np.array([0, 0, 17.0])))] for t in tanks],
+        tanks=[pxl(t + A.nz(gen_c - t) * 8.6 + np.array([0, 0, 17.0])) for t in tanks],
     )
-    with open(os.path.join(OUT, 'base_interior.json'), 'w') as fh:
+    with open(os.path.join(OUT, f'base_interior{sfx}.json'), 'w') as fh:
         json.dump(meta, fh, indent=1)
-    Image.fromarray(final).resize((W // 2, H // 2), Image.LANCZOS).save(os.path.join(OUT, 'preview_half.png'))
-    print(f'interior done in {time.time() - t_start:.1f}s -> {OUT}')
+    Image.fromarray(final).resize((W // 2, H // 2), Image.LANCZOS).save(os.path.join(OUT, f'preview_half{sfx}.png'))
+    print(f'view {M.VIEW} rendered in {time.time() - t_start:.1f}s')
 
 
 def pxl(P):
-    return [round(float(v), 1) for v in M.project(*P)]
+    """A point in the base's frame, in the current view's map pixels."""
+    return [round(float(v), 1) for v in M.project(*M.to_view(P))]
 
 
 def repair_machine_info(reactor_c, gen_c):
@@ -1249,18 +1297,23 @@ def repair_machine_info(reactor_c, gen_c):
 
 
 def refresh_repair_metadata():
-    path = os.path.join(OUT, 'base_interior.json')
-    with open(path) as fh:
-        meta = json.load(fh)
-    # build() establishes these offsets before exporting projected positions.
-    M.AX, M.AY = meta['origin_px']
     rs = np.random.default_rng(42)
     _, reactor_c, _ = power_props(rs)
     _, gen_c, _, _ = oxygen_props(rs)
-    meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
-    with open(path, 'w') as fh:
-        json.dump(meta, fh, indent=1)
-        fh.write('\n')
+    for k in range(4):                                    # every view's data that exists
+        path = os.path.join(OUT, f'base_interior{M.view_sfx(k)}.json')
+        if not os.path.exists(path):
+            continue
+        with open(path) as fh:
+            meta = json.load(fh)
+        # build() establishes these offsets before exporting projected positions.
+        M.AX, M.AY = meta['origin_px']
+        M.VIEW = k
+        meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
+        with open(path, 'w') as fh:
+            json.dump(meta, fh, indent=1)
+            fh.write('\n')
+    M.VIEW = 0
     print('Machine repair anchors refreshed; existing art preserved.')
 
 
@@ -1273,12 +1326,13 @@ def board_info(b):
                 note='The circuit board in the power room service cabinet. Not interactive yet.')
 
 
-def export_game_data(D, kind, foot, Xg, Yg):
+def export_game_data(D, kind, foot, Xg, Yg, world=True):
+    """The view's depth map, and (view 0, world=True) the base's walk grid."""
     depth = np.zeros((M.H, M.W, 4), np.uint8)
     dq = np.where(kind > 0, np.clip(D * M.DEPTH_SCALE, 0, 65534), 65535).astype(np.uint32)
     depth[..., 0], depth[..., 1] = dq >> 8, dq & 255
     depth[..., 3] = 255
-    Image.fromarray(depth).save(os.path.join(OUT, 'base_interior_depth.png'))
+    Image.fromarray(depth).save(os.path.join(OUT, f'base_interior_depth{M.SFX}.png'))
     region = floor_region(Xg, Yg)
     walk = np.zeros(region.shape, bool)
     for i, (name, rm) in enumerate(ROOMS.items()):
@@ -1292,11 +1346,12 @@ def export_game_data(D, kind, foot, Xg, Yg):
     grid[..., 0], grid[..., 1] = int(hq) >> 8, int(hq) & 255
     grid[..., 2] = np.where(walk, 255, 0)
     grid[..., 3] = 255
-    Image.fromarray(grid.transpose(1, 0, 2).copy()).save(os.path.join(OUT, 'base_interior_walk.png'))
+    if world:
+        Image.fromarray(grid.transpose(1, 0, 2).copy()).save(os.path.join(OUT, 'base_interior_walk.png'))
     st = ROOMS['storage']
     spawn = [st['X'], st['Y'] + r_in('storage') - 22.0]
     print(f'walkable {walk.mean() * 100:.1f}% of the grid')
-    return dict(game=dict(depth_png='base_interior_depth.png', walk_png='base_interior_walk.png', depth_scale=M.DEPTH_SCALE,
+    return dict(game=dict(depth_png=f'base_interior_depth{M.SFX}.png', walk_png='base_interior_walk.png', depth_scale=M.DEPTH_SCALE,
                           height_offset=M.HEIGHT_OFFSET, height_scale=M.HEIGHT_SCALE, world_units_per_px=S, depth_to_px=KY,
                           px_per_unit=PX, character_scale=1.0 / PX, grid_size=N, spawn_world=spawn))
 
@@ -1338,16 +1393,17 @@ def export_machines(parts, feet):
 
 
 def export_door():
-    """The airlock door's opening as sprite frames, and where the astronaut stands to use it."""
-    frames = [door_parts(i / (M.DOOR_FRAMES - 1)) for i in range(M.DOOR_FRAMES)]
+    """The airlock door's opening as sprite frames, and where the astronaut stands to use it (in the
+    base's frame; the sprite and pixels as the current view sees it)."""
+    frames = [M.turned(door_parts(i / (M.DOOR_FRAMES - 1))) for i in range(M.DOOR_FRAMES)]
     box = M.sprite_box(frames, pad=3)
     strip = np.concatenate([M.sprite_rgba(M.render_sprite(fp, box)) for fp in frames], axis=1)
-    Image.fromarray(strip).save(os.path.join(OUT, 'anim', 'door.png'))
+    Image.fromarray(strip).save(os.path.join(OUT, 'anim', f'door{M.SFX}.png'))
     f = door_frame_pt()
     lamp = f + np.array([0, -1.4 * DOOR_K, (6.9 + 7.9) * DOOR_K])
-    lx, ly = M.project(*lamp)
-    return dict(file='anim/door.png', frames=M.DOOR_FRAMES, position=[box[0], box[1]], frame_size=[box[2], box[3]],
-                sort_y=round(float(M.project(*f)[1]), 1), world=[round(float(f[0]), 2), round(float(f[1]), 2)],
+    lx, ly = M.project(*M.to_view(lamp))
+    return dict(file=f'anim/door{M.SFX}.png', frames=M.DOOR_FRAMES, position=[box[0], box[1]], frame_size=[box[2], box[3]],
+                sort_y=round(float(M.project(*M.to_view(f))[1]), 1), world=[round(float(f[0]), 2), round(float(f[1]), 2)],
                 dir=[0.0, -1.0], lamp_px=[round(float(lx), 1), round(float(ly), 1)], height=round(14.8 * DOOR_K, 1))
 
 

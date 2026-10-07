@@ -75,6 +75,8 @@ var _was_lit := false
 var _last_equip_frame := -1
 var _t := 0.0
 var _discs := {}
+var _props_data: Dictionary = {}
+var _props_dir := ""
 var _halos := {}
 
 
@@ -108,10 +110,9 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 		return
 	var data = JSON.parse_string(FileAccess.get_file_as_string(props_json))
 	var dir := props_json.get_base_dir()
-	for name in data["sprites"]:
-		var s: Dictionary = data["sprites"][name]
-		_sheets[name] = {"tex": load(dir.path_join(s["file"])), "frames": int(s["frames"]),
-				"anchor": Vector2(s["anchor"][0], s["anchor"][1])}
+	_props_data = data
+	_props_dir = dir
+	_load_sheets(terrain.heading)
 	for i in data["objects"].size():
 		var o: Dictionary = data["objects"][i]
 		var id := props_json + ":" + str(i)
@@ -127,7 +128,7 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 			prop.set_meta("inventory_id", id)
 	for l in data["lamps"]:
 		var w := Vector2(l["world"][0], l["world"][1])
-		_lamps.append({"world": w, "head": Vector2(l["head_px"][0], l["head_px"][1]),
+		_lamps.append({"world": w, "head": _lamp_head(l, terrain.heading), "heads": l.get("head_px_views", [l["head_px"]]),
 				"base": terrain.to_screen(w, terrain.height_at(w)).round(),
 				"lit": false, "progress": 0.0, "t": 0.0, "radius": 4.0, "job": "fix"})
 		var lg := Node2D.new()
@@ -136,6 +137,41 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 		lg.draw.connect(_draw_lamp.bind(lg, _lamps[-1]))
 		actors.add_child(lg)
 		_lamp_glows.append(lg)
+
+
+## This view's drawing of each kind of prop.
+func _load_sheets(k: int) -> void:
+	var views: Array = _props_data.get("sprites_views", [])
+	var sprites: Dictionary = views[k] if k < views.size() else _props_data["sprites"]
+	for name in sprites:
+		var s: Dictionary = sprites[name]
+		_sheets[name] = {"tex": load(_props_dir.path_join(s["file"])), "frames": int(s["frames"]),
+				"anchor": Vector2(s["anchor"][0], s["anchor"][1])}
+
+
+static func _lamp_head(l: Dictionary, k: int) -> Vector2:
+	var heads: Array = l.get("head_px_views", [l["head_px"]])
+	var h: Array = heads[k] if k < heads.size() else l["head_px"]
+	return Vector2(h[0], h[1])
+
+
+## The camera turned: redraw the props as this view sees them, and move the lamps' light.
+func set_view(depth_map: Texture2D) -> void:
+	_depth_map = depth_map
+	if _props_data.is_empty():
+		return
+	_load_sheets(_terrain.heading)
+	for p in _props:
+		if is_instance_valid(p) and not p.gone and _sheets.has(p.kind):
+			p.set_view(_sheets[p.kind], depth_map)
+	for i in _lamps.size():
+		var l: Dictionary = _lamps[i]
+		var heads: Array = l["heads"]
+		var h: Array = heads[_terrain.heading] if _terrain.heading < heads.size() else heads[0]
+		l["head"] = Vector2(h[0], h[1])
+		l["base"] = _terrain.to_screen(l["world"], _terrain.height_at(l["world"])).round()
+		_lamp_glows[i].position = Vector2(0, l["base"].y + 1.0)
+		_lamp_glows[i].queue_redraw()
 
 
 func _spawn_prop(kind: String, world: Vector2, frame: int, job: String, radius: float, solid: bool) -> WorldProp:
@@ -168,7 +204,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not suppressed and not inventory_suppressed and not repair_suppressed
+	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()

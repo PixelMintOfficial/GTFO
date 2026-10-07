@@ -95,12 +95,13 @@ check-interior:
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error' /tmp/gtfo-interior.log \
 		|| { echo "interior: errors above" >&2; exit 1; }
 
-# The regression suites: the inventory's real input events, and the circuit repair model
-# over a thousand shuffled boards. They report their own pass/fail and exit nonzero.
+# The regression suites: the inventory's real input events, the circuit repair model over a
+# thousand shuffled boards, and the camera's turn. They report their own pass/fail and exit nonzero.
 check-tests:
 	@echo "== tests"
 	@$(GODOT) --headless --path . res://tests/inventory_test.tscn 2>&1 | tee /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/repair_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/view_turn_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error|[1-9][0-9]* failures' /tmp/gtfo-tests.log \
 		|| { echo "tests: failures above" >&2; exit 1; }
 
