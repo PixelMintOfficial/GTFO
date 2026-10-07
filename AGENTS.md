@@ -98,6 +98,7 @@ assets/                (lowercase, always)
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
   maps/red_planet/          generated overworld: map, depth, walk, biome, light, fx, props, flora, anim, previews
   maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview
+    machines/               the reactor and the oxygen generator as standalone sprites (+ machines.json, 4x previews)
 ```
 
 ---

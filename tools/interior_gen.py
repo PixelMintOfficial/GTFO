@@ -22,7 +22,8 @@ Day and night: the light mask (_light.png) says how much of each pixel is its ow
   (shafts, sunlit patches, the windows' glow). The game keeps the first lit at night and takes the
   second away.
 
-Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _light.png, _sun.png, .json, anim/.
+Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _light.png, _sun.png, .json, anim/,
+and machines/: the power room's reactor and the oxygen generator on their own, as transparent sprites.
 """
 import json
 import math
@@ -1116,6 +1117,7 @@ def build():
     o_parts, gen_c, tanks, ofx = oxygen_props(rs)
     gb = M.render_groups(s_parts + p_parts + o_parts, img, D, kind, gid, gb)
     gb = M.render_groups(door_parts(0.0), img, D, kind, gid, gb)
+    export_machines(p_parts + o_parts, dict(power_generator=reactor_c, oxygen_generator=gen_c))
     print(f'furniture in {time.time() - t0:.1f}s')
 
     # footprints for soft contact shadows on the floor and for the walk grid
@@ -1269,6 +1271,42 @@ def export_game_data(D, kind, foot, Xg, Yg):
     return dict(game=dict(depth_png='base_interior_depth.png', walk_png='base_interior_walk.png', depth_scale=M.DEPTH_SCALE,
                           height_offset=M.HEIGHT_OFFSET, height_scale=M.HEIGHT_SCALE, world_units_per_px=S, depth_to_px=KY,
                           px_per_unit=PX, character_scale=1.0 / PX, grid_size=N, spawn_world=spawn))
+
+
+MACHINES = {   # name: what it is, which part groups belong to it
+    'power_generator': ('The power room reactor, smashed open: gash showing the dead core, fallen coil, '
+                        'cap knocked askew, wires spilling out.',
+                        lambda g: g in ('reactor', 'coil7', 'coil24', 'coilfallen', 'cap') or g.startswith(('wireg', 'wiret'))),
+    'oxygen_generator': ('The oxygen generator, broken down: smashed turbine chamber, bent fan, cap askew, '
+                         'blown-off panel and spilled wires, cracked cell, fallen coolant cylinder.',
+                         lambda g: g in ('gen', 'genpanel', 'fins', 'chamber', 'fan', 'o2cap', 'cool0', 'cool1', 'o2ctl')
+                         or g.startswith(('o2wire', 'cell'))),
+}
+
+
+def export_machines(parts, feet):
+    """The two machines on their own, as transparent sprites: the very parts the room is rendered
+    from, under the same light. machines.json gives each one's size and anchor (the pixel where
+    the middle of its base stands on the floor). preview/ holds 4x copies for looking at."""
+    out = os.path.join(OUT, 'machines')
+    os.makedirs(os.path.join(out, 'preview'), exist_ok=True)
+    info = {}
+    for name, (what, pick) in MACHINES.items():
+        ps = [p for p in parts if pick(p.group)]
+        box = M.sprite_box([ps], pad=3)
+        rgba = M.sprite_rgba(M.render_sprite(ps, box))
+        ys, xs = np.nonzero(rgba[..., 3])
+        y0, y1, x0, x1 = ys.min() - 1, ys.max() + 2, xs.min() - 1, xs.max() + 2      # trim to the drawing
+        rgba = rgba[y0:y1, x0:x1]
+        Image.fromarray(rgba).save(os.path.join(out, f'{name}.png'))
+        h, w = rgba.shape[:2]
+        Image.fromarray(rgba).resize((w * 4, h * 4), Image.NEAREST).save(os.path.join(out, 'preview', f'{name}_x4.png'))
+        ax, ay = M.project(*feet[name])
+        info[name] = dict(file=f'machines/{name}.png', size=[int(w), int(h)],
+                          anchor=[round(float(ax - box[0] - x0), 1), round(float(ay - box[1] - y0), 1)], note=what)
+        print(f'machine: {name} {w}x{h} px')
+    with open(os.path.join(out, 'machines.json'), 'w') as fh:
+        json.dump(info, fh, indent=1)
 
 
 def export_door():
