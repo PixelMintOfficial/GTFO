@@ -1,0 +1,9 @@
+{
+  "health": {"maximum": 100},
+  "oxygen": {"maximum": 100, "depletion": 5, "recovery": 20, "damage_threshold": 0, "damage": 5, "damage_interval": 2, "cause": "NO OXYGEN"},
+  "hunger": {"maximum": 100, "depletion": 0.08, "sprint_multiplier": 1.75, "damage_threshold": 0, "damage": 2, "damage_interval": 5, "cause": "STARVATION"},
+  "thirst": {"maximum": 100, "depletion": 0.12, "sprint_multiplier": 2, "damage_threshold": 0, "damage": 3, "damage_interval": 4, "cause": "DEHYDRATION"},
+  "warning_fraction": 0.2,
+  "unsafe_room_radius_fraction": 0.9,
+  "consumables": {"ration": {"stat": "hunger", "restore": 35, "starter_count": 6}, "water": {"stat": "thirst", "restore": 40, "starter_count": 6}}
+}

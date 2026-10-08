@@ -193,6 +193,8 @@ func _input(event: InputEvent) -> void:
 			_focus = posmod(_focus - 6, GameState.INVENTORY_SIZE)
 		elif event.is_action_pressed("inventory_down"):
 			_focus = (_focus + 6) % GameState.INVENTORY_SIZE
+		elif event.is_action_pressed("consume_item") and _picked < 0:
+			Audio.play("ui_place" if GameState.consume_slot(_focus) else "ui_deny")
 		get_viewport().set_input_as_handled()
 
 
@@ -246,7 +248,7 @@ func _draw_inventory() -> void:
 		var kind: String = slot.get("kind", "")
 		PixelFont.draw(_canvas, Vector2(49, 127), GameState.ITEMS[kind]["name"] if kind != "" else "EMPTY SLOT", GOLD)
 		PixelFont.draw(_canvas, Vector2(49, 137), "SELECT TWO", MUTED)
-		PixelFont.draw(_canvas, Vector2(49, 145), "SLOTS TO SWAP", MUTED)
+		PixelFont.draw(_canvas, Vector2(49, 145), "C - EAT/DRINK", MUTED)
 		PixelFont.draw(_canvas, Vector2(49, 154), "ARROWS - MOVE   ENTER - PICK   ESC - BACK", MUTED)
 		for i in range(6, GameState.INVENTORY_SIZE):
 			_draw_slot(i)
@@ -262,7 +264,7 @@ func _draw_inventory() -> void:
 	elif opened:
 		name = "QUICK ACCESS - " + name
 	else:
-		name += "   E - BACKPACK"
+		name += "   C - USE" if selected.get("kind", "") in ["ration", "water"] else "   E - BACKPACK"
 	var w := PixelFont.width(name)
 	_canvas.draw_rect(Rect2(192 - floori(w / 2.0) - 4, 163, w + 8, 10), VOID)
 	PixelFont.draw(_canvas, Vector2(192 - floori(w / 2.0), 165), name, WHITE)
@@ -288,6 +290,8 @@ func _draw_slot(index: int) -> void:
 				for x in pattern[y].length():
 					if pattern[y][x] == "#":
 						_canvas.draw_rect(Rect2(r.position + Vector2(9 + x * 2, 7 + y * 2), Vector2(2, 2)), GOLD)
+		elif kind in ["ration", "water"]:
+			SurvivalHUD.draw_icon(_canvas, "hunger" if kind == "ration" else "thirst", r.position + Vector2(9, 9), GOLD if kind == "ration" else TEAL, 2)
 		else:
 			var tex: Texture2D = _textures[kind]
 			# Existing pixel art, rendered at native size; no new generated assets.

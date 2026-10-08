@@ -69,6 +69,13 @@ var facing := "SE"
 ## Overrides the controls when non-zero (used by automated test runs).
 var forced_input := Vector2.ZERO
 var forced_run := false
+## Environment adapters can disable suit air or mark the head submerged. Scenery pools
+## currently have no swimming volume; the intact suit supplies breathable air by default.
+var breathable := true
+var head_submerged := false
+## Scene callback reports local air safety using authored world metadata.
+var air_source: Callable
+var sprinting := false
 ## Off while a cutscene plays: the astronaut stands still and ignores the pad.
 var controls_enabled := true
 ## The camera is turning round the world (ViewTurn): stand and wait.
@@ -108,6 +115,14 @@ var open_frames := Vector2i(-1, -1)
 @onready var sprite: AnimatedSprite2D = $Sprite
 @onready var shadow: Sprite2D = $Shadow
 @onready var camera: GameCamera = $Camera
+
+
+func can_breathe() -> bool:
+	return breathable and not head_submerged and (not air_source.is_valid() or bool(air_source.call()))
+
+
+func take_damage(amount: float, cause := "INJURY") -> void:
+	GameState.survival.damage(amount, cause)
 
 
 func _ready() -> void:
@@ -269,6 +284,7 @@ func camera_focus() -> Vector2:
 
 
 func _physics_process(delta: float) -> void:
+	sprinting = false
 	if terrain == null or puppet:
 		return
 	var input := forced_input
@@ -298,6 +314,7 @@ func _physics_process(delta: float) -> void:
 		if _jump == Jump.CROUCH or _jump == Jump.LAND:
 			speed *= squash_speed
 		moved = _try_move(dir * speed * _scale * delta)
+		sprinting = moved and running
 
 	_step_vertical(delta)
 	if _jump == Jump.GROUNDED:

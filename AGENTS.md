@@ -253,7 +253,7 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
   - `heading`: which way the camera faces (quarter turns, 0..3), the same indoors and out.
   - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
     quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
-    resources stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
+    resources/rations/water stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
     `inventory_changed`. A full bag leaves gathered props in the world.
   - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
     their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
@@ -261,6 +261,10 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
     Each stores its current puzzle, countdown, circuit index and completed repair tasks.
     Closing a panel or changing scenes preserves the attempt; leaving pauses its countdown.
+  - `survival`: `SurvivalState` with health/oxygen/hunger/thirst, changed/died signals and
+    clamped mutation APIs. `data/survival.json` owns balance, starter supplies and consumable
+    restoration. `consume_slot` uses the existing inventory. `rescue` restores vitals and
+    supplies at overworld spawn while preserving session progress. See docs/survival.md.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -393,12 +397,12 @@ consts in the named files.
     | lift | violet `#b583ff` | crate | tap F to float it so it follows you; tap again to set it down |
     | fix | cyan `#7fd8ff` | dead lamp | hold F for 2.4 s; the lamp flickers back on |
 
-  - Inventory now shows resource stack counts (§12); there are no health/resource bars.
+  - Inventory shows resource stack counts; survival meters above it are approved (§12).
 - **Inventory** (`inventory_ui.gd`): six-slot bottom hotbar; E / Start toggles the paused
   24-slot backpack. Click two slots to swap, or arrows/d-pad and Enter/A to pick/place.
   Esc/B cancels a pending swap first, then closes. 1-6/wheel/left shoulder select hotbar;
   selecting the multitool equips it, selecting resources/empty slots holsters it.
-  T/Y remains available. Ore/scrap have no consume/crafting action yet. Crates remain
+  T/Y remains available. Rations/water use C/right-stick click; ore/scrap have no consume/crafting action. Crates remain
   world objects handled by lift. Opening/closing without changing selection preserves
   the existing tool state. Inventory is blocked during intro/door cutscenes or map pause.
 - **Machine repairs** (`scripts/repair/`): F/X near the power or O2 generator opens one
@@ -735,8 +739,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **Trails are not drawn on the ground**: they form where the plants thin out, and lamps line
   them.
 - The base starts dead and broken; it gets repaired through play.
-- **No HUD bars**; inventory stack counts, a six-slot hotbar, local machine repair
-  progress bars and the time panel (day number and part of the day) are approved (§12).
+- **Compact HUD only**; four survival meters, inventory stack counts, a six-slot hotbar,
+  local machine repair progress and the time panel are approved (§12).
 - **A day/night cycle** with four parts of the day; lights stay lit at night.
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
@@ -825,8 +829,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
 - **Inventory is implemented:** session backpack, resource stacks, quick access and slot
-  swaps. Resources are gathered through the existing tool; crafting/consumption is not
-  implemented. No new generated item art or map data keys.
+  swaps. Resources are gathered through the existing tool; ration/water consumption is
+  implemented. No crafting or new generated item art/map data keys.
 - **Sound is built** (§4.8, §7.6): ambience for the three lands and the dead base, positional
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
   the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel
@@ -897,3 +901,27 @@ Write one line per decision: date — decision (who approved it).
   0.42 s eased swing with the world stood up in 3D, the view left dissolving into the next.
   90° steps keep the 2:1 iso look in every view; the sun stays put on screen (owner chose 90°
   steps and turning indoors).
+- 2026-10-08 — Owner's explicit survival request approves health, oxygen, hunger and thirst,
+  compact icon/bar telemetry above the existing hotbar, and ration/water consumables.
+  GameState.survival owns session vitals (SurvivalState); data/survival.json owns all balance
+  values. C/right-stick click consumes selected food/drink (focused slot in the backpack).
+  Unsafe air in the damaged oxygen room spends suit reserve; wiring completion restores air.
+  Head submersion and scene air callbacks are the integration points for future environments;
+  scenery pools remain non-swimmable. Starvation/dehydration/suffocation cause timed damage.
+  Death pauses play; Enter/A rescues at overworld spawn with full vitals and fresh supplies,
+  preserving inventory resources, clock and world/repair progress. No disk save is added.
+  Explicit --survival-debug enables F6-F10 test controls; details in docs/survival.md.
+- 2026-10-08 — Owner's HUD-only redesign replaces rectangular survival bars with four
+  twelve-segment pixel dials in one rounded top-right panel (red/pink health, cyan oxygen,
+  amber food, blue water, matching the supplied reference). SurvivalMeter reads existing
+  GameState values as clamped percentages, with prominent numbers and subtle /100 text.
+  The left grip alone drags the panel; right-click grip, Home or left-stick click resets.
+  SurvivalHUDLayout saves normalized placement to user://survival_hud.cfg on release/reset;
+  this is a UI preference, not a gameplay save. Room/day toasts avoid the panel by moving
+  below it when intersecting. Existing gameplay/balance/controls remain unchanged.
+  Debug-only --hud-preview=H,O,F,W and F11/F12 preview quarter-values without touching vitals.
+  Focused tests and restart-persistence probes are part of make check; see docs/survival-hud.md.
+- 2026-10-08 — Owner's visual-polish request reduces the survival panel to 138x34 logical
+  pixels, with 30x30 dials, thinner rings, refined shaded icons and tighter spacing. Main
+  numbers use scale-1 PixelFont; /100 and ring contours use a finer hard-edged UI pixel grid.
+  Existing segment/value bindings, gameplay, dragging and preference persistence are unchanged.

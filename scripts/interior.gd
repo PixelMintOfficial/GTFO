@@ -5,6 +5,7 @@ extends Node2D
 ## Test hooks (after "--"): --spawn=X,Y  --walk=DX,DY[,run]  --capture=PATH
 ## --seconds=S  --burst=N  --gap=S  --arrive (play coming in through the door)  --exit (use the door)
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
+## --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ## --repair=power|oxygen opens that machine's circuit; --repair-done marks wiring for captures.
 ## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
 ## --audio-debug (print every sound as it plays)
@@ -41,6 +42,13 @@ func _ready() -> void:
 	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	# Damaged O2 room has unsafe air; the suit spends its reserve until wiring is restored.
+	# Room coordinates are world metadata and remain valid through camera turns.
+	var room: Dictionary = meta["rooms"]["oxygen"]
+	var air_center := Vector2(room["center"][0], room["center"][1])
+	var air_radius := float(room["radius"]) * float(GameState.survival.config["unsafe_room_radius_fraction"])
+	player.air_source = func() -> bool:
+		return player.world_pos.distance_to(air_center) >= air_radius or GameState.repair_for("oxygen").task_completed("wiring")
 	_setup_door(meta)
 	repairs = MachineRepairs.new()
 	add_child(repairs)
@@ -48,6 +56,9 @@ func _ready() -> void:
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
 	inventory_ui.setup(player, multitool)
+	var survival_hud := SurvivalHUD.new()
+	add_child(survival_hud)
+	survival_hud.setup(player, multitool)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view)
