@@ -132,6 +132,12 @@
    ]
   }
  ],
+ "repair_variants": {
+  "1": "repaired_power/base_interior.json",
+  "2": "repaired_oxygen/base_interior.json",
+  "3": "repaired_both/base_interior.json"
+ },
+ "fixed_machines": [],
  "fx": {
   "shafts": [
    {

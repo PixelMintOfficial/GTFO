@@ -6,7 +6,9 @@ extends Node2D
 ## --seconds=S  --burst=N  --gap=S  --arrive (play coming in through the door)  --exit (use the door)
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ## --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
-## --repair=power|oxygen opens that machine's circuit; --repair-done marks wiring for captures.
+## --repair=power|oxygen opens its current task (three demo scraps supplied for captures).
+## --repair-done=power|oxygen|both marks both tasks for repaired-art captures.
+## --repair-circuit=power|oxygen skips cracks only for circuit screenshots/tests.
 ## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
 ## --audio-debug (print every sound as it plays)
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
@@ -14,11 +16,13 @@ extends Node2D
 ## --turn-left / --turn-right (turn the camera once after a second, see ViewTurn)
 
 const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
+const PROPS_JSON := "res://assets/maps/base_interior/interior_props.json"
 
 var terrain: MapTerrain
 var door: AirlockDoor
 var repairs: MachineRepairs
 var view_turn: ViewTurn
+var _repair_mask := 0
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -32,12 +36,13 @@ func _ready() -> void:
 	Audio.bed("amb_interior", 1.0)             # wind through the smashed windows, from inside
 	if _args().has("turn"):
 		GameState.heading = posmod(int(_args()["turn"]), 4)
-	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
+	_repair_mask = _completed_mask()
+	terrain = MapTerrain.new(_repair_map(_repair_mask), GameState.heading)
 	$Map.texture = terrain.map_texture
 	player.setup(terrain, terrain.depth_map)
 	player.camera.zoom_locked = true                     # no zooming out indoors
 	player.camera.setup(player, $Map, terrain.max_view_px)
-	multitool.setup("", player, terrain, $Actors, terrain.depth_map)
+	multitool.setup(PROPS_JSON, player, terrain, $Actors, terrain.depth_map)
 	fx.setup(terrain.view_json, player)
 	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
@@ -53,6 +58,8 @@ func _ready() -> void:
 	repairs = MachineRepairs.new()
 	add_child(repairs)
 	repairs.setup(meta, player, multitool)
+	for machine_id in ["power", "oxygen"]:
+		GameState.repair_for(machine_id).changed.connect(_repair_changed)
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
 	inventory_ui.setup(player, multitool)
@@ -93,6 +100,30 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	_setup_door(meta)
 
 
+func _completed_mask() -> int:
+	return (1 if GameState.repair_for("power").progress() >= 1 else 0) + (2 if GameState.repair_for("oxygen").progress() >= 1 else 0)
+
+
+func _repair_map(mask: int) -> String:
+	if mask == 0:
+		return MAP_JSON
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
+	return MAP_JSON.get_base_dir().path_join(meta["repair_variants"][str(mask)])
+
+
+func _repair_changed() -> void:
+	var mask := _completed_mask()
+	if mask == _repair_mask:
+		return
+	_repair_mask = mask
+	_refresh_repaired_art.call_deferred()
+
+
+func _refresh_repaired_art() -> void:
+	terrain.replace_variant(_repair_map(_repair_mask))
+	_apply_view(terrain.heading, player.facing_dir())
+
+
 func _leave() -> void:
 	GameState.arrive = "door"
 	GameState.tool_out = player.tool_state == Player.Tool.READY
@@ -121,8 +152,16 @@ func _run_test_hooks(args: Dictionary) -> void:
 	if args.has("repair-bars"):
 		repairs.set_process_unhandled_input(false)
 	if args.has("repair-done"):
-		GameState.repair_for(args["repair-done"]).complete_task("wiring")
+		for id in ["power", "oxygen"]:
+			if args["repair-done"] == id or args["repair-done"] == "both":
+				GameState.repair_for(id).complete_task("cracks")
+				GameState.repair_for(id).complete_task("wiring")
+	if args.has("repair-circuit"):
+		GameState.repair_for(args["repair-circuit"]).complete_task("cracks")
+		get_tree().create_timer(.25).timeout.connect(func() -> void: repairs.open_machine(args["repair-circuit"]))
 	if args.has("repair"):
+		while GameState.item_count("scrap") < 3:
+			GameState.store_item("scrap")
 		get_tree().create_timer(0.25).timeout.connect(func() -> void: repairs.open_machine(args["repair"]))
 	if args.has("spawn"):
 		var xy: PackedStringArray = args["spawn"].split(",")

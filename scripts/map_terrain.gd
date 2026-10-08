@@ -11,6 +11,8 @@ enum Surface { SOLID, STEEP, WALK }
 ## map once per view. The world stays put - world_pos, walk grid, props, doors are all in view
 ## 0's frame - and to_screen() shows it the way the current view does: turned `heading` quarter
 ## turns (clockwise, seen from above) about view_center. load_view() switches the view.
+## replace_variant() changes an interior's repaired artwork and walk grid while keeping
+## this terrain instance, world positions, and the current heading shared by all systems.
 
 var map_size := Vector2.ZERO
 var origin := Vector2.ZERO
@@ -103,6 +105,18 @@ func load_view(k: int) -> void:
 	depth_map = load(dir.path_join(game["depth_png"]))
 	light_mask = load(dir.path_join(game["light_png"])) if game.has("light_png") else null
 	sun_mask = load(dir.path_join(game["sun_png"])) if game.has("sun_png") else null
+
+
+func replace_variant(json_path: String) -> void:
+	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(json_path))
+	var dir := json_path.get_base_dir()
+	views.clear()
+	for path in meta["views"]:
+		views.append(dir.path_join(path))
+	var image := _load_image(dir.path_join(meta["game"]["walk_png"]))
+	image.convert(Image.FORMAT_RGBA8)
+	_walk = image.get_data()
+	load_view(heading)
 
 
 ## A world point (or the point under it) as the current view lays it out.

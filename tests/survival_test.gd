@@ -146,6 +146,7 @@ func _ready() -> void:
 	var astronaut: Player = inside.get_node("Actors/Player")
 	astronaut.teleport(Vector2(-236, 492))
 	check(not astronaut.can_breathe(), "damaged oxygen room air")
+	GameState.repair_for("oxygen").complete_task("cracks")             # wiring follows cracks
 	GameState.repair_for("oxygen").complete_task("wiring")
 	check(astronaut.can_breathe(), "wiring restores air")
 	astronaut.head_submerged = true

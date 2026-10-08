@@ -259,8 +259,9 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
     their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
     chunks. Generated JSON is unchanged. Saving to disk is not implemented.
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
-    Each stores its current puzzle, countdown, circuit index and completed repair tasks.
-    Closing a panel or changing scenes preserves the attempt; leaving pauses its countdown.
+    Each stores its crack placements/seams, circuit puzzle/countdown/index and completed tasks.
+    Closing or changing scenes preserves both puzzles. `item_count` and `consume_item` perform
+    the atomic three-scrap transaction only on crack success; ore is never consumed here.
   - `survival`: `SurvivalState` with health/oxygen/hunger/thirst, changed/died signals and
     clamped mutation APIs. `data/survival.json` owns balance, starter supplies and consumable
     restoration. `consume_slot` uses the existing inventory. `rescue` restores vitals and
@@ -402,16 +403,30 @@ consts in the named files.
   24-slot backpack. Click two slots to swap, or arrows/d-pad and Enter/A to pick/place.
   Esc/B cancels a pending swap first, then closes. 1-6/wheel/left shoulder select hotbar;
   selecting the multitool equips it, selecting resources/empty slots holsters it.
-  T/Y remains available. Rations/water use C/right-stick click; ore/scrap have no consume/crafting action. Crates remain
+  T/Y remains available. Rations/water use C/right-stick click; scrap is consumed only on
+  machine crack success; ore has no consume action. Crates remain
   world objects handled by lift. Opening/closing without changing selection preserves
   the existing tool state. Inventory is blocked during intro/door cutscenes or map pause.
-- **Machine repairs** (`scripts/repair/`): F/X near the power or O2 generator opens one
-  rotating-wire circuit. Each machine has five authored layouts; after 30 active seconds
-  without a solution it advances to the next, reshuffles and resets the timer. Bolted wires
-  conduct but stay fixed. A matching supply-to-output route completes wiring once (50%).
-  Local machine bars show overall progress. The future cracks task accounts for the other
-  50% through `GameState.repair_for(id).complete_task("cracks")`; the task and repaired
-  machine art are not implemented yet.
+- **Machine repairs** (`scripts/repair/`): F/X near power/O2 requires three scraps and opens
+  untimed, full-screen **Crack Repair** on the owner's exact supplied Power/O2 panel images.
+  Original PNGs stay unchanged under `machines/reference/`; the UI displays their wall crop.
+  This is an explicit owner-approved exception to the generated-art rule (§12).
+  The teal console and pale silver worn scraps match the approved browser draft; scraps are
+  enlarged 12%. Pick or drag three
+  irregular scraps over the holes, covering each aperture/fracture with a 2px margin, then
+  weld each perimeter to 95% with a 3px torch. Steady strokes work; fast strokes leave gaps,
+  holding still for about three seconds overheats and melts a small nearby weld. Lift to cool.
+  The draft's rounded raised filler and crescent ridges follow the hand stroke, cooling from
+  red hot metal to grey steel; its small red/gold torch is reused. No timer or visible percentages
+  in this task; each sealed scrap glows teal once and fades fully over one second.
+  Q/left shoulder selects scrap, arrows/d-pad move the virtual cursor, F/Enter/A picks/places
+  or holds the torch, Esc/B closes. The tray also supports click-hover-place and drag/drop.
+  All three seals spend three scraps once and earn 50%; CIRCUIT continues into wiring.
+  Five circuit layouts per machine retain their 30-active-second replacement and bolted wires.
+  A matching route earns the other 50%. Both tasks persist through closes/airlocks. After both,
+  generated restored machine geometry replaces broken room art, debris, depth, walk and light
+  data in all four views, with fault sparks/leaks removed. Six gatherable scraps in the base
+  use the existing prop sheets and normal multitool gathering. Reduced motion disables sparks.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -441,7 +456,9 @@ consts in the named files.
 ## 6. The art pipeline
 
 ### 6.1 How art is made
-All art is **rendered by code**. Signed-distance-field (SDF) models are ray-marched straight
+All world art is **rendered by code**. The owner's exact Crack Repair panel PNGs are the
+explicit approved UI exception (§12): preserve those source files unchanged; derive only
+their crop and hole metadata in the generator. Signed-distance-field (SDF) models are ray-marched straight
 at pixel resolution through the game's exact camera, then cel-shaded from hand-picked colour
 ramps, dithered, inner-lined and outlined. This is why everything matches. Do not import
 hand-drawn, AI-generated, downloaded or upscaled art into the game.
@@ -528,6 +545,9 @@ sheet; `anchor` and `world` on every animated dome sprite (the turn stands them 
 - Everything is drawn through **the same camera**: 2:1 pixel isometric, orthographic, 30°
   pitch, which can face the world from four sides (quarter turns, §4.9). Every view keeps the
   2:1 look.
+  The owner-approved Crack Repair inspection wall faces the orthographic camera directly
+  for a flat UI view. Its default uses the owner's supplied panel images unchanged; legacy
+  inspection versions use the same SDF renderer, machine materials and pixel shading.
 - Maps are rendered at `PX = 2` pixels per world unit of height.
 - **The astronaut:**
   - 64×64 frames, feet anchored at (32, 56).
@@ -691,7 +711,8 @@ Useful hooks:
 - overworld only: `--equip`, `--use`, `--face=DX,DY`, `--door`, `--intro` / `--no-intro`,
   `--zoom=L`, `--open-map`, `--debug`
 - interior only: `--arrive`, `--exit`, `--repair=power|oxygen`,
-  `--repair-done=power|oxygen` (wiring credit for screenshots), `--repair-bars`
+  `--repair-done=power|oxygen|both` (both tasks for screenshots),
+  `--repair-circuit=power|oxygen` (circuit-only preview), `--repair-bars`
   (ignore ambient F input during progress-bar captures)
 - repair panel: `--reduced-motion` disables turn and completion animation; receiving
   power activates immediately. The browser follows `prefers-reduced-motion`.
@@ -824,13 +845,27 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - **Reactor/O2 wiring is implemented:** F/X, five circuits each, timed replacement,
     session state, bolted wires and local progress bars. The native panel uses octagons,
     detailed PCB housings, a blue-green recess and neon green power (owner-approved).
-    One circuit earns 50% repair; cracks and the fully repaired assets are still pending.
+    Crack repair runs first, earns 50%, and consumes three scraps only when all patches seal.
+    Wiring earns the other 50%; generated repaired room variants replace the broken machines.
+    `machines/machines.json -> repair_panel` exports the flat inspection image (`file`),
+    logical `size`, three local task `sites`, `view: "flat"` and `design`. Reference panels add
+    `source_rect` (wall crop), `baked_damage`, per-hole relative `damage_samples` and source
+    `sha256`. The samples are measured from the original holes/rims for placement checks.
+    `--repair-panels-only` refreshes this metadata without writing the supplied PNGs or
+    rendering the rooms. Earlier model-projected
+    `repair_sites` remain exported for reference; gameplay uses the flat panel sites.
+    `REPAIR_PANEL_DESIGN=reference` is the default; `equipment`, `detailed` and `simple`
+    retain earlier generated inspection designs.
+    `base_interior.json -> repair_variants` maps completed-machine bitmasks (1 power, 2 oxygen,
+    3 both) to generated room variants; `fixed_machines` declares their restored equipment.
+    `interior_props.json` exports six gatherable scraps using existing prop sprites in four views.
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
 - **Inventory is implemented:** session backpack, resource stacks, quick access and slot
   swaps. Resources are gathered through the existing tool; ration/water consumption is
-  implemented. No crafting or new generated item art/map data keys.
+  implemented, and three scraps per successful crack repair are consumed atomically.
+  Crafting and disk saving remain unimplemented.
 - **Sound is built** (§4.8, §7.6): ambience for the three lands and the dead base, positional
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
   the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel
@@ -901,6 +936,33 @@ Write one line per decision: date — decision (who approved it).
   0.42 s eased swing with the world stood up in 3D, the view left dissolving into the next.
   90° steps keep the 2:1 iso look in every view; the sun stays put on screen (owner chose 90°
   steps and turning indoors).
+- 2026-10-07 — Integrate the approved three-hole scrap-welding draft before circuits on power
+  and O2, using actual machine structure as the background. Untimed, 95% per seam, 3px torch,
+  overheating/fast-stroke gaps, red cooling weld, sparks, one-second teal seal glow. Consume
+  three scraps only after success; preserve attempts/materials on close. Restore the machines
+  visually after both tasks, in all four views; provide enough gatherable interior salvage
+  using existing props (owner, approved draft and explicitly requested game integration).
+- 2026-10-07 — Crack Repair uses a full-screen, flat metal wall with three holes/fractures,
+  following the owner's reference. Model the wall from each machine's casing: coral/gold
+  for power, teal trim/cooling grille for O2. Use the existing renderer and materials for
+  this front-facing inspection view; world machines keep their four isometric views.
+- 2026-10-08 — Return Crack Repair to the approved draft's teal console, irregular scrap
+  silhouettes and pale silver palette (#d5d8e5, #9a9bb6, #fbfbff). Enlarge the draft's holes
+  and scraps 12%; detail each flat wall using its actual machine's collars, casing, leads,
+  coolant cells, fan and vents. Keep the earlier plain wall as `REPAIR_PANEL_DESIGN=simple`;
+  the requested detailed variant is the default (owner's three image references).
+- 2026-10-08 — Simplify the owner's two equipment-panel references into bold flat modules:
+  a red core, pressure gauge, gold pipes and vent for power; a round chamber, coolant pipes,
+  status bay, fan and vent for O2. Keep the teal console, silver scraps and 12% enlargement.
+  Omit the reference's extra labels, graphs and surface noise. `REPAIR_PANEL_DESIGN=equipment`
+  becomes the default; previous `detailed` and `simple` designs remain available (owner).
+- 2026-10-08 — Use the owner's exact Power/O2 panel PNGs, unchanged, for Crack Repair;
+  this explicitly approves an exception to the generated-art rule for these two UI assets.
+  `REPAIR_PANEL_DESIGN=reference` is the default; earlier generated designs remain available.
+  Measure hole placement from their pixels and display only the wall crop. Restore the draft's
+  red/gold torch and layered round filler with stroke-aligned crescent ridges. Reduce heat
+  buildup from 1.1/s to 0.35/s, increase cooling, and shrink local melt damage (owner's
+  explicit exact-image, draft-welding and reduced-overheating request).
 - 2026-10-08 — Owner's explicit survival request approves health, oxygen, hunger and thirst,
   compact icon/bar telemetry above the existing hotbar, and ration/water consumables.
   GameState.survival owns session vitals (SurvivalState); data/survival.json owns all balance

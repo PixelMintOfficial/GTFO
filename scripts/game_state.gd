@@ -16,7 +16,8 @@ var heading := 0
 var clock := 8.0
 
 ## Backpack: first six slots are the hotbar. Only the multitool can be equipped;
-## ore/scrap are resources; ration/water restore vitals through consume_slot().
+## ore is stored; three scraps are consumed atomically on successful machine crack repair;
+## ration/water restore vitals through consume_slot().
 signal inventory_changed
 const HOTBAR_SIZE := 6
 const INVENTORY_SIZE := 24
@@ -129,6 +130,33 @@ func select_slot(index: int) -> void:
 		return
 	selected_slot = index
 	inventory_changed.emit()
+
+
+func item_count(kind: String) -> int:
+	var total := 0
+	for slot in inventory:
+		if slot.get("kind", "") == kind:
+			total += int(slot["count"])
+	return total
+
+
+## All-or-nothing consumption, across stacks. Failed/unfinished repairs never call this.
+func consume_item(kind: String, count: int) -> bool:
+	if count <= 0 or item_count(kind) < count:
+		return false
+	var left := count
+	for i in inventory.size():
+		if inventory[i].get("kind", "") != kind:
+			continue
+		var used := mini(left, int(inventory[i]["count"]))
+		inventory[i]["count"] -= used
+		left -= used
+		if inventory[i]["count"] == 0:
+			inventory[i] = {}
+		if left == 0:
+			break
+	inventory_changed.emit()
+	return true
 
 
 func swap_slots(a: int, b: int) -> void:

@@ -12,6 +12,7 @@ extends Node2D
 ## Hold F to mine, gather and fix; tap F to pick a crate up and again to set it down.
 ## A small icon over the nearest thing in reach shows which job the tool will do.
 ## Gather commits to GameState before the zip animation. A full bag leaves the prop intact.
+## Loose chunks reload only in the scene whose props JSON owns their session ID.
 
 signal inventory_full
 
@@ -122,6 +123,8 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 				float(o["radius"]), bool(o["solid"]))
 		prop.set_meta("inventory_id", id)
 	for id in GameState.spawned_props:
+		if not str(id).begins_with(props_json + ":"):
+			continue
 		if not GameState.removed_props.has(id):
 			var o: Dictionary = GameState.spawned_props[id]
 			var prop := _spawn_prop("ore_chunk", o["world"], o["frame"], "gather", 2.5, false)

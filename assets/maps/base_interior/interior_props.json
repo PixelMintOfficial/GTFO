@@ -1,0 +1,384 @@
+{
+ "sprites": {
+  "ore_rock": {
+   "file": "../red_planet/props/ore_rock.png",
+   "frames": 4,
+   "frame_size": [
+    43,
+    40
+   ],
+   "anchor": [
+    20.5,
+    29.0
+   ]
+  },
+  "ore_chunk": {
+   "file": "../red_planet/props/ore_chunk.png",
+   "frames": 3,
+   "frame_size": [
+    23,
+    19
+   ],
+   "anchor": [
+    11.5,
+    13.0
+   ]
+  },
+  "scrap": {
+   "file": "../red_planet/props/scrap.png",
+   "frames": 3,
+   "frame_size": [
+    33,
+    32
+   ],
+   "anchor": [
+    15.5,
+    18.0
+   ]
+  },
+  "crate": {
+   "file": "../red_planet/props/crate.png",
+   "frames": 1,
+   "frame_size": [
+    51,
+    48
+   ],
+   "anchor": [
+    25.5,
+    32.0
+   ]
+  },
+  "crate_small": {
+   "file": "../red_planet/props/crate_small.png",
+   "frames": 1,
+   "frame_size": [
+    41,
+    38
+   ],
+   "anchor": [
+    20.5,
+    25.0
+   ]
+  }
+ },
+ "sprites_views": [
+  {
+   "ore_rock": {
+    "file": "../red_planet/props/ore_rock.png",
+    "frames": 4,
+    "frame_size": [
+     43,
+     40
+    ],
+    "anchor": [
+     20.5,
+     29.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "../red_planet/props/ore_chunk.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     19
+    ],
+    "anchor": [
+     11.5,
+     13.0
+    ]
+   },
+   "scrap": {
+    "file": "../red_planet/props/scrap.png",
+    "frames": 3,
+    "frame_size": [
+     33,
+     32
+    ],
+    "anchor": [
+     15.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "../red_planet/props/crate.png",
+    "frames": 1,
+    "frame_size": [
+     51,
+     48
+    ],
+    "anchor": [
+     25.5,
+     32.0
+    ]
+   },
+   "crate_small": {
+    "file": "../red_planet/props/crate_small.png",
+    "frames": 1,
+    "frame_size": [
+     41,
+     38
+    ],
+    "anchor": [
+     20.5,
+     25.0
+    ]
+   }
+  },
+  {
+   "ore_rock": {
+    "file": "../red_planet/props/ore_rock_r1.png",
+    "frames": 4,
+    "frame_size": [
+     41,
+     43
+    ],
+    "anchor": [
+     19.5,
+     32.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "../red_planet/props/ore_chunk_r1.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     21
+    ],
+    "anchor": [
+     13.5,
+     15.0
+    ]
+   },
+   "scrap": {
+    "file": "../red_planet/props/scrap_r1.png",
+    "frames": 3,
+    "frame_size": [
+     32,
+     32
+    ],
+    "anchor": [
+     15.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "../red_planet/props/crate_r1.png",
+    "frames": 1,
+    "frame_size": [
+     45,
+     55
+    ],
+    "anchor": [
+     22.5,
+     36.0
+    ]
+   },
+   "crate_small": {
+    "file": "../red_planet/props/crate_small_r1.png",
+    "frames": 1,
+    "frame_size": [
+     37,
+     43
+    ],
+    "anchor": [
+     18.5,
+     28.0
+    ]
+   }
+  },
+  {
+   "ore_rock": {
+    "file": "../red_planet/props/ore_rock_r2.png",
+    "frames": 4,
+    "frame_size": [
+     43,
+     40
+    ],
+    "anchor": [
+     22.5,
+     29.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "../red_planet/props/ore_chunk_r2.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     23
+    ],
+    "anchor": [
+     11.5,
+     17.0
+    ]
+   },
+   "scrap": {
+    "file": "../red_planet/props/scrap_r2.png",
+    "frames": 3,
+    "frame_size": [
+     33,
+     32
+    ],
+    "anchor": [
+     17.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "../red_planet/props/crate_r2.png",
+    "frames": 1,
+    "frame_size": [
+     51,
+     48
+    ],
+    "anchor": [
+     25.5,
+     32.0
+    ]
+   },
+   "crate_small": {
+    "file": "../red_planet/props/crate_small_r2.png",
+    "frames": 1,
+    "frame_size": [
+     41,
+     38
+    ],
+    "anchor": [
+     20.5,
+     25.0
+    ]
+   }
+  },
+  {
+   "ore_rock": {
+    "file": "../red_planet/props/ore_rock_r3.png",
+    "frames": 4,
+    "frame_size": [
+     41,
+     42
+    ],
+    "anchor": [
+     21.5,
+     31.0
+    ]
+   },
+   "ore_chunk": {
+    "file": "../red_planet/props/ore_chunk_r3.png",
+    "frames": 3,
+    "frame_size": [
+     23,
+     22
+    ],
+    "anchor": [
+     9.5,
+     16.0
+    ]
+   },
+   "scrap": {
+    "file": "../red_planet/props/scrap_r3.png",
+    "frames": 3,
+    "frame_size": [
+     32,
+     32
+    ],
+    "anchor": [
+     16.5,
+     18.0
+    ]
+   },
+   "crate": {
+    "file": "../red_planet/props/crate_r3.png",
+    "frames": 1,
+    "frame_size": [
+     45,
+     55
+    ],
+    "anchor": [
+     22.5,
+     36.0
+    ]
+   },
+   "crate_small": {
+    "file": "../red_planet/props/crate_small_r3.png",
+    "frames": 1,
+    "frame_size": [
+     37,
+     43
+    ],
+    "anchor": [
+     18.5,
+     28.0
+    ]
+   }
+  }
+ ],
+ "objects": [
+  {
+   "kind": "scrap",
+   "frame": 0,
+   "job": "gather",
+   "world": [
+    220.0,
+    472.0
+   ],
+   "radius": 4.0,
+   "solid": false
+  },
+  {
+   "kind": "scrap",
+   "frame": 1,
+   "job": "gather",
+   "world": [
+    246.0,
+    471.0
+   ],
+   "radius": 4.0,
+   "solid": false
+  },
+  {
+   "kind": "scrap",
+   "frame": 2,
+   "job": "gather",
+   "world": [
+    270.0,
+    484.0
+   ],
+   "radius": 4.0,
+   "solid": false
+  },
+  {
+   "kind": "scrap",
+   "frame": 0,
+   "job": "gather",
+   "world": [
+    -252.0,
+    470.0
+   ],
+   "radius": 4.0,
+   "solid": false
+  },
+  {
+   "kind": "scrap",
+   "frame": 1,
+   "job": "gather",
+   "world": [
+    -226.0,
+    469.0
+   ],
+   "radius": 4.0,
+   "solid": false
+  },
+  {
+   "kind": "scrap",
+   "frame": 2,
+   "job": "gather",
+   "world": [
+    -202.0,
+    482.0
+   ],
+   "radius": 4.0,
+   "solid": false
+  }
+ ],
+ "lamps": [],
+ "note": "Six loose scraps for the two three-patch machine repairs. Session IDs persist through airlocks."
+}

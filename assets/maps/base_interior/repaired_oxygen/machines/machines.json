@@ -1,0 +1,54 @@
+{
+ "power_generator": {
+  "file": "machines/power_generator.png",
+  "size": [
+   97,
+   105
+  ],
+  "anchor": [
+   37.0,
+   77.1
+  ],
+  "note": "The power room reactor, smashed open: gash showing the dead core, fallen coil, cap knocked askew, wires spilling out.",
+  "repair_sites": [
+   [
+    30.1,
+    55.3
+   ],
+   [
+    46.3,
+    43.7
+   ],
+   [
+    39.3,
+    21.3
+   ]
+  ]
+ },
+ "oxygen_generator": {
+  "file": "machines/oxygen_generator.png",
+  "size": [
+   94,
+   92
+  ],
+  "anchor": [
+   44.0,
+   76.4
+  ],
+  "note": "The oxygen generator, broken down: smashed turbine chamber, bent fan, cap askew, blown-off panel and spilled wires, cracked cell, fallen coolant cylinder.",
+  "repair_sites": [
+   [
+    30.1,
+    69.4
+   ],
+   [
+    48.6,
+    60.1
+   ],
+   [
+    39.8,
+    14.3
+   ]
+  ]
+ }
+}

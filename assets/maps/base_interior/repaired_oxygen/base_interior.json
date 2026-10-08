@@ -1,0 +1,327 @@
+{
+ "game": {
+  "depth_png": "base_interior_depth.png",
+  "walk_png": "base_interior_walk.png",
+  "depth_scale": 20.0,
+  "height_offset": 100.0,
+  "height_scale": 150.0,
+  "world_units_per_px": 0.43301270189221935,
+  "depth_to_px": 0.5773502691896257,
+  "px_per_unit": 2.0,
+  "character_scale": 0.5,
+  "grid_size": 760,
+  "spawn_world": [
+   0.0,
+   589.5
+  ],
+  "light_png": "base_interior_light.png",
+  "sun_png": "base_interior_sun.png",
+  "heading": 0,
+  "view_center": [
+   0.0,
+   525.0
+  ]
+ },
+ "name": "base_interior",
+ "image": "base_interior.png",
+ "size": [
+  1568,
+  415
+ ],
+ "origin_px": [
+  784.0,
+  860.0
+ ],
+ "view": 0,
+ "views": [
+  "base_interior.json",
+  "base_interior_r1.json",
+  "base_interior_r2.json",
+  "base_interior_r3.json"
+ ],
+ "rooms": {
+  "storage": {
+   "label": "STORAGE",
+   "center": [
+    0.0,
+    520.0
+   ],
+   "radius": 94.0
+  },
+  "power": {
+   "label": "POWER ROOM",
+   "center": [
+    236.0,
+    530.0
+   ],
+   "radius": 76.0
+  },
+  "oxygen": {
+   "label": "OXYGEN ROOM",
+   "center": [
+    -236.0,
+    530.0
+   ],
+   "radius": 76.0
+  }
+ },
+ "zoom": {
+  "max_view_px": [
+   1568,
+   415
+  ],
+  "frames": {}
+ },
+ "door": {
+  "file": "anim/door.png",
+  "frames": 12,
+  "position": [
+   698,
+   37
+  ],
+  "frame_size": [
+   172,
+   166
+  ],
+  "sort_y": 153.2,
+  "world": [
+   0.0,
+   612.1
+  ],
+  "dir": [
+   0.0,
+   -1.0
+  ],
+  "lamp_px": [
+   784.0,
+   88.8
+  ],
+  "height": 34.0
+ },
+ "repair_machines": [
+  {
+   "id": "power",
+   "label": "POWER GENERATOR",
+   "world": [
+    236.0,
+    536.0
+   ],
+   "stand_world": [
+    236.0,
+    506.0
+   ],
+   "progress_px": [
+    1329.0,
+    155.1
+   ]
+  },
+  {
+   "id": "oxygen",
+   "label": "O2 GENERATOR",
+   "world": [
+    -236.0,
+    534.0
+   ],
+   "stand_world": [
+    -236.0,
+    504.0
+   ],
+   "progress_px": [
+    239.0,
+    157.4
+   ]
+  }
+ ],
+ "repair_variants": {
+  "1": "repaired_power/base_interior.json",
+  "2": "repaired_oxygen/base_interior.json",
+  "3": "repaired_both/base_interior.json"
+ },
+ "fixed_machines": [
+  "oxygen"
+ ],
+ "fx": {
+  "shafts": [
+   {
+    "hull": [
+     [
+      858.1,
+      73.7
+     ],
+     [
+      862.2,
+      66.3
+     ],
+     [
+      872.6,
+      66.1
+     ],
+     [
+      880.1,
+      73.9
+     ],
+     [
+      979.5,
+      199.1
+     ],
+     [
+      978.4,
+      199.5
+     ],
+     [
+      965.3,
+      196.3
+     ],
+     [
+      952.4,
+      192.6
+     ],
+     [
+      945.2,
+      189.6
+     ],
+     [
+      861.7,
+      84.4
+     ]
+    ],
+    "hole": [
+     869.7,
+     76.7
+    ]
+   },
+   {
+    "hull": [
+     [
+      702.6,
+      66.8
+     ],
+     [
+      806.0,
+      197.0
+     ],
+     [
+      798.9,
+      199.0
+     ],
+     [
+      784.2,
+      199.6
+     ],
+     [
+      776.2,
+      197.3
+     ],
+     [
+      684.7,
+      82.0
+     ],
+     [
+      685.3,
+      74.9
+     ],
+     [
+      694.9,
+      67.9
+     ]
+    ],
+    "hole": [
+     692.1,
+     78.5
+    ]
+   }
+  ],
+  "leds": [
+   {
+    "px": [
+     1329.0,
+     134.5
+    ],
+    "color": "#ff5a4a",
+    "kind": "slow"
+   },
+   {
+    "px": [
+     1259.2,
+     259.5
+    ],
+    "color": "#ff5a4a",
+    "kind": "fault"
+   },
+   {
+    "px": [
+     259.8,
+     232.1
+    ],
+    "color": "#7fe6cf",
+    "kind": "steady"
+   }
+  ],
+  "core": [
+   1322.1,
+   219.3
+  ],
+  "sparks": [
+   [
+    1322.1,
+    215.9
+   ],
+   [
+    1324.4,
+    187.5
+   ],
+   [
+    1283.8,
+    180.7
+   ],
+   [
+    1398.7,
+    260.6
+   ]
+  ],
+  "vapor": [],
+  "circuit_board": {
+   "center": [
+    1398.6,
+    255.9
+   ],
+   "socket": [
+    1404.2,
+    255.5
+   ],
+   "corners": [
+    [
+     1385.0,
+     239.7
+    ],
+    [
+     1411.9,
+     243.1
+    ],
+    [
+     1411.9,
+     272.7
+    ],
+    [
+     1385.0,
+     269.3
+    ]
+   ],
+   "world": [
+    266.14,
+    506.56
+   ],
+   "note": "The circuit board in the power room service cabinet. Not interactive yet."
+  },
+  "tanks": [
+   [
+    298.9,
+    161.4
+   ],
+   [
+    179.1,
+    161.4
+   ]
+  ]
+ }
+}

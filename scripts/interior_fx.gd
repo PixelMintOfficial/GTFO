@@ -6,6 +6,7 @@ extends Node2D
 ## the power room's circuit board pulsing, and the room's name fading in as you walk into it.
 ## The sun's shafts and the dust in them fade with the daylight (DayNight); at night only the
 ## base's own lights are left.
+## Repaired room variants omit their fault emitters and use steady cyan status LEDs.
 
 const DUST := Color("#ffe6b4")
 const SPARK_HOT := Color("#fff0a0")
@@ -60,6 +61,9 @@ func setup(meta_path: String, player: Player) -> void:
 
 ## The camera turned: where this view has the sun shafts, the lights, the sparks and the gas.
 func load_view(meta_path: String) -> void:
+	for i in _vents.size():
+		Audio.release("gas:%d" % i)
+	_socket = Vector2.ZERO
 	for a in [_shafts, _motes, _leds, _tanks, _spark_points, _sparks, _flashes, _vents, _puffs, _rooms]:
 		a.clear()
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
@@ -216,7 +220,7 @@ func _draw_glow() -> void:
 		if l[2] == "fault":
 			var c := fmod(_t + l[0].x * 0.003, 1.4)
 			on = c < 0.12 or (c > 0.28 and c < 0.4)
-		else:
+		elif l[2] != "steady":
 			on = fmod(_t, 2.6) < 1.3
 		if on:
 			_halo(l[0], 6, Color(l[1], 0.5))
@@ -226,7 +230,8 @@ func _draw_glow() -> void:
 	for f in _flashes:
 		if (f[0] as Vector2).distance_to(_core) < 40.0:
 			flare = maxf(flare, 1.0 - f[1] / 0.16)
-	_halo(_core, 14, Color(1.0, 0.25, 0.18, 0.14 + 0.07 * sin(_t * 1.2) + 0.2 * flare))
+	if _core != Vector2.ZERO:
+		_halo(_core, 14, Color(1.0, 0.25, 0.18, 0.14 + 0.07 * sin(_t * 1.2) + 0.2 * flare))
 	for tk in _tanks:
 		if fmod(_t + tk.x * 0.01, 3.0) < 0.2:
 			_glow.draw_rect(Rect2((tk as Vector2).round(), Vector2.ONE), Color(0.5, 1.0, 0.9, 0.9))

@@ -16,6 +16,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	for machine_id in ["power", "oxygen"]:
 		var repair := GameState.repair_for(machine_id)
+		repair.complete_task("cracks") # This gallery isolates circuit visuals.
 		room.repairs.open_machine(machine_id)
 		room.repairs.panel.set_process_input(false)
 		for index in 5:
