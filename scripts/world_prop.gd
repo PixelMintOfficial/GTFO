@@ -4,6 +4,9 @@ extends Node2D
 ## a piece of scrap, a crate. It lives in world coordinates like the astronaut, is drawn at
 ## its projected position (y-sorted with the astronaut), hides behind nearer scenery, and can
 ## float above the ground (lifted, or hopping) while its shadow stays below.
+## A box you can stand on (the cargo box) has a top and a footprint: resting on the ground it is
+## one of MapTerrain's platforms, so the astronaut can jump onto it and is stopped by its sides.
+## Crushed flat (top 0) it stays one, level with the floor: walked over, and drawn under you.
 
 const SHADER := preload("res://shaders/prop_depth.gdshader")
 
@@ -18,6 +21,11 @@ var lift := 0.0
 ## Work done on it so far, 0..1 (mining cracks, how far it has been pulled in).
 var progress := 0.0
 var gone := false
+## Something to stand on: its height, world units, and its footprint (none: zero), half its
+## size along its own X / Y, turned by yaw.
+var top := 0.0
+var half := Vector2.ZERO
+var yaw := 0.0
 
 var sprite: Sprite2D
 var shadow: Sprite2D
@@ -80,7 +88,36 @@ func set_lift(px: float) -> void:
 func remove() -> void:
 	gone = true
 	_terrain.blockers.erase(get_instance_id())
+	_terrain.platforms.erase(get_instance_id())
 	queue_free()
+
+
+## Its new height to stand on (0: flat on the floor).
+func set_top(h: float) -> void:
+	top = h
+	_update_blocker()
+
+
+## Whether a world point is over its footprint (grown by margin), as if it stood at `at`.
+func covers(p: Vector2, margin := 0.0, at: Variant = null) -> bool:
+	var c := world
+	if at != null:
+		c = at
+	var q := (p - c).rotated(-yaw).abs()
+	return q.x <= half.x + margin and q.y <= half.y + margin
+
+
+## Whether it would fit at a world point: its middle, and its corners if it has a footprint,
+## clear of walls and anything solid.
+func fits(p: Vector2) -> bool:
+	if _terrain.surface(p) == MapTerrain.Surface.SOLID:
+		return false
+	if half == Vector2.ZERO:
+		return true
+	for c: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+		if _terrain.surface(p + (half * c).rotated(yaw)) == MapTerrain.Surface.SOLID:
+			return false
+	return true
 
 
 ## Where its middle is drawn on screen (for beams and effects).
@@ -94,6 +131,10 @@ func _update_blocker() -> void:
 		_terrain.blockers[get_instance_id()] = Vector3(world.x, world.y, radius)
 	else:
 		_terrain.blockers.erase(get_instance_id())
+	if half != Vector2.ZERO and lift < 1.0 and not gone:
+		_terrain.platforms[get_instance_id()] = [world, half, yaw, _terrain.height_at(world) + top]
+	else:
+		_terrain.platforms.erase(get_instance_id())
 
 
 static func _shadow_texture(r: float) -> ImageTexture:

@@ -87,7 +87,8 @@ scripts/
   airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
-  repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter
+  repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter;
+                       window_repair.gd / window_cracks.gd: storage's smashed panes and the cargo box
   crash_site.gd        the satellite crash intro and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
@@ -123,6 +124,7 @@ assets/                (lowercase, always)
                             each view's own set beside view 0's, suffixed _r1, _r2, _r3 (§4.9)
   maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview (four views too)
     machines/               the reactor and the oxygen generator as standalone sprites (+ machines.json, 4x previews)
+    props/                  the cargo box (whole, 3 cracks, crushed) and ration packs, four views
   audio/                    generated sound: *.wav, audio.json, viewer.html, SOURCES.md,
                             CREDITS.md (ship this), preview.json
   audio/sources/            the open-licence recordings, git-ignored (make sources)
@@ -159,6 +161,12 @@ suffix (`red_planet_map_r1.png`, `red_planet_fx_r2.json`, `flora/tree_3_r1.png`.
 view's meta JSON lists them all (`views`) and its `game` block says which view it is
 (`heading`, `view_center`). What belongs to the world - the walk grid, the biome grid, the
 spawn, every `world` position in the data - exists once, in view 0's frame.
+
+`base_interior.json → window_cracks` lists storage's three smashed panes: `id` (its hole shape),
+`world` (where to stand under it: the middle of the box pushed to the wall), `hole` (the hole's
+middle, with height), `px` (where this view draws it) and `seen` (this view leaves its wall
+standing). `interior_props.json`'s `cargo_box` object adds `top` (its height), `half` (half its
+footprint), `yaw` (its turn) and `contents` (what spills when it breaks).
 
 `base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
@@ -257,7 +265,11 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
     `inventory_changed`. A full bag leaves gathered props in the world.
   - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
     their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
-    chunks. Generated JSON is unchanged. Saving to disk is not implemented.
+    chunks and `/spill/N` for the cargo box's rations; `spawned_props` entries keep their `kind`
+    and `radius`. Generated JSON is unchanged. Saving to disk is not implemented.
+  - `window_repair`: `WindowRepair`: storage's mended panes, the cracks the cargo box has
+    taken (one per pane), where it was last set down, and whether it broke. Reset with the
+    world ledger (`reset_inventory`), which holds its spilled rations.
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
     Each stores its crack placements/seams, circuit puzzle/countdown/index and completed tasks.
     Closing or changing scenes preserves both puzzles. `item_count` and `consume_item` perform
@@ -371,8 +383,12 @@ consts in the named files.
   - Steep ground (B = 128) can't be walked up, but you can jump onto, over or down it.
     Standing on it makes you slide.
   - Solid ground (B = 0) and `MapTerrain.blockers` (props) always stop you.
+  - Boxes you can stand on (`MapTerrain.platforms`, registered by a `WorldProp` with a footprint)
+    stop you at their sides; a held jump lands you on top; walking off the edge drops you.
+    On or over one, the astronaut draws above it. `collapse()` knocks you down (a box giving way):
+    a hard landing, then `collapse_time` (0.9 s) crouched with no control.
 - **Jump**: a low-gravity moon jump.
-  - Holding jump goes higher; letting go early cuts it short.
+  - Holding jump goes higher (about 30 units: enough for the 14.4-unit cargo box); a tap does not.
   - There's a floaty hang near the top, plus crouch and land squash.
 - **Camera** (`game_camera.gd`):
   - Overworld: 4 zoom levels; the furthest frames the whole main base and never more.
@@ -394,8 +410,8 @@ consts in the named files.
     | Job | Colour | Target | How it works |
     |---|---|---|---|
     | mine | orange `#ff8a3a` | ore rock | hold F for 1.6 s; the rock bursts into chunks |
-    | gather | teal `#4fe0c8` | ore chunk, scrap | hold F for 0.55 s; a spiral pulls it into the backpack |
-    | lift | violet `#b583ff` | crate | tap F to float it so it follows you; tap again to set it down |
+    | gather | teal `#4fe0c8` | ore chunk, scrap, ration pack | hold F for 0.55 s; a spiral pulls it into the backpack |
+    | lift | violet `#b583ff` | crate, cargo box | tap F to float it so it follows you; tap again to set it down (never the box under your feet) |
     | fix | cyan `#7fd8ff` | dead lamp | hold F for 2.4 s; the lamp flickers back on |
 
   - Inventory shows resource stack counts; survival meters above it are approved (§12).
@@ -427,6 +443,18 @@ consts in the named files.
   generated restored machine geometry replaces broken room art, debris, depth, walk and light
   data in all four views, with fault sparks/leaks removed. Six gatherable scraps in the base
   use the existing prop sheets and normal multitool gathering. Reduced motion disables sparks.
+- **Storage's smashed panes and the cargo box** (`scripts/repair/window_cracks.gd`):
+  - Three panes are smashed in storage's window band: two in the wall you face coming in, the
+    third in the wall behind you, cut away in that view (turn to find it: views 1 and 2 show it).
+  - The cargo box is a loose prop: lift it with the tool, set it down under a pane, jump on.
+    It takes your weight with a crack, once per pane, and not again until that pane is mended.
+  - When the last pane is mended with you standing on it, it groans (0.45 s), gives way and
+    crushes flat: you go down with it (`collapse`), and its 4 ration packs (MREs) spill clear
+    of the wreck, to be gathered with the tool. The wreck stays; nothing to lift or stand on.
+  - **Mending a pane is not built yet.** `STAND_IN_FIX` stands in for it: landing on the box
+    under a pane (within 20 units of its `world`) counts as mending it. The real job calls
+    `WindowCracks.fix(id)`; cracks, the break and the saved state stay as they are.
+  - State survives the airlock (`GameState.window_repair`). No `[F] EXIT` prompt while up on a box.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -511,6 +539,12 @@ field in it exists because something in the game asks for it (§4.8).
 The views add: `views`, `view`, `game.heading`, `game.view_center` in every meta JSON;
 `sprites_views` and `lamps[].head_px_views` in `red_planet_props.json`; `anchor` on every plant
 sheet; `anchor` and `world` on every animated dome sprite (the turn stands them up).
+
+The panes and the box add (§4.1): `window_cracks` in every interior meta JSON (incl. the
+repaired variants; read by `WindowCracks`), and `top` / `half` / `yaw` / `contents` /
+`drop_sound` on props objects (read by `Multitool.setup`; any prop with `top` is something to
+stand on; `drop_sound` names the `audio.json` sound it makes when the tool sets it down, else
+`lift_drop`).
 
 ### 6.4 Recipes
 - **A new prop or machine:**
@@ -699,6 +733,8 @@ godot --path . res://scenes/overworld.tscn -- --no-intro --time=22 --capture=nig
 godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
 godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
 godot --headless --path . res://tests/view_turn_test.tscn             # turning the camera, in both scenes
+godot --headless --path . res://tests/window_crack_test.tscn          # the cargo box: jump on, lift, crack, break, rations
+godot --path . res://scenes/interior.tscn -- --cargo=gash --turn=2 --cargo-mended=2 --cargo-land --capture=break.png --seconds=0.5 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
 node tools/test_wire_repair.cjs                                     # browser circuit model checks
@@ -707,10 +743,11 @@ godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 
 Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
-- `--quit=SECONDS`, `--audio-debug` (both scenes)
-- overworld only: `--equip`, `--use`, `--face=DX,DY`, `--door`, `--intro` / `--no-intro`,
-  `--zoom=L`, `--open-map`, `--debug`
-- interior only: `--arrive`, `--exit`, `--repair=power|oxygen`,
+- `--quit=SECONDS`, `--audio-debug`, `--equip`, `--use`, `--face=DX,DY` (both scenes)
+- overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`
+- interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
+  `--cargo-mended=N` (the first N panes mended first), `--cargo-land` (land on the box),
+  `--arrive`, `--exit`, `--repair=power|oxygen`,
   `--repair-done=power|oxygen|both` (both tasks for screenshots),
   `--repair-circuit=power|oxygen` (circuit-only preview), `--repair-bars`
   (ignore ambient F input during progress-bar captures)
@@ -768,7 +805,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **The camera turns in quarter turns** (G / H), indoors and out, in a short eased swing;
   the sun stays on the same side of the screen in every view.
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
-  Each room has two different irregular holes, kept as data so they can be traced later.
+  Each room has two different irregular holes, kept as data so they can be traced later
+  (inside, storage has a third on its far wall, §12).
 - **No music.** Sound is the environment and the work, nothing else (§7.6).
 - **Sound is data, not code**: every sound is declared in `sfx_gen.py` and read from
   `audio.json`. The alien tech is synthesised; the natural world is recorded, under an open
@@ -860,6 +898,11 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
     3 both) to generated room variants; `fixed_machines` declares their restored equipment.
     `interior_props.json` exports six gatherable scraps using existing prop sprites in four views.
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
+  - **Storage's three smashed panes**: reaching them with the cargo box is built (§5); mending
+    them is not. `WindowCracks.STAND_IN_FIX` mends a pane when you land on the box under it;
+    the fix job should call `WindowCracks.fix(id)` and remove the stand-in. `window_cracks`
+    gives each pane's hole (world, with height) and its pixels per view for that job.
+  - The overworld dome still shows two holes in the storage room; the interior has three.
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
 - **Inventory is implemented:** session backpack, resource stacks, quick access and slot
@@ -868,8 +911,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   Crafting and disk saving remain unimplemented.
 - **Sound is built** (§4.8, §7.6): ambience for the three lands and the dead base, positional
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
-  the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel
-  and the UI. What is missing:
+  the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel,
+  the cargo box (`cargo_*`, `ration_land`, `pane_mend`) and the UI. What is missing:
   - no volume controls and nothing saved (there are no settings and no save file yet);
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
@@ -987,3 +1030,18 @@ Write one line per decision: date — decision (who approved it).
   pixels, with 30x30 dials, thinner rings, refined shaded icons and tighter spacing. Main
   numbers use scale-1 PixelFont; /100 and ring contours use a finer hard-edged UI pixel grid.
   Existing segment/value bindings, gameplay, dragging and preference persistence are unchanged.
+- 2026-10-09 — Owner's explicit request: storage's cargo box becomes a liftable prop you can
+  jump onto (MapTerrain platforms), used to reach three smashed panes - the two in view plus a
+  third ('gash') in the wall behind you, found by turning the camera. Inside only: the
+  overworld dome keeps its two holes per room. The box cracks once per pane and not again until
+  that pane is mended; after the third is mended with you on it, it gives way, you collapse
+  (existing landing frames held, no new animation) and four rations spill to be gathered.
+  Mending is a stand-in for now (landing under a pane mends it, `STAND_IN_FIX`); the real fix
+  job comes later. Sounds reuse existing ones (rock_crack, door_close, land_soft, repair_done)
+  until new ones can be made in sfx_gen.py (owner, requested).
+- 2026-10-09 — The cargo box gets its own sounds (owner, requested): cargo_land (steel under the
+  boots, over the landing thud), cargo_crack, cargo_groan, cargo_burst, cargo_drop (its
+  drop_sound when the tool sets it down; crates keep lift_drop), ration_land and pane_mend.
+  Recorded steel, cracking, squeak, impact and glass from the existing CC0 packs, with small
+  synthesised layers (hollow shell, steel stress, groan, glass seal); no new packs. Baked with
+  --only, so every existing sound is unchanged.

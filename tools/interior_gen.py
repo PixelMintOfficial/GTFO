@@ -32,7 +32,11 @@ REPAIR_PANEL_DESIGN=reference (default) | equipment | detailed | simple retains 
 The reference mode exports the wall crop and damage samples read from the original pixels;
 it never writes the owner-supplied PNGs. --repair-panels-only refreshes inspection metadata
 without rendering the room variants (legacy designs regenerate their inspection images).
-interior_props.json places six gatherable scraps using the existing generated prop sheets.
+interior_props.json places six gatherable scraps using the existing generated prop sheets, and the
+cargo box: a loose prop now (props/cargo_box*.png: whole, three cracks, burst open) that the tool
+lifts and the astronaut stands on (top, half, yaw), with the ration packs it spills (props/ration*.png).
+Storage's window band has three smashed panes, one on the far wall (hidden in the view you come in
+by); window_cracks in each view's JSON says where to stand under each and where this view draws it.
 --repair-metadata-only refreshes machine interaction anchors without rendering the art.
 
 Four views: like the overworld, the base is rendered from four sides (the camera turns in quarter
@@ -83,7 +87,12 @@ CORAL = (31.0, 33.0)              # coral accent strip
 WIN = (37.0, 49.0)                # the window band
 LIGHT_IN = A.nz([0.62, -0.42, -0.66])   # sunlight through the holes: across to the right, forward, down
 SUN_IN = A.nz([-0.42, -0.62, 0.66])     # key light on the furniture (from the front left, above)
-HOLES = [('burst', 66.0), ('crescent', 114.0)]   # storage window band (angle round the room, degrees)
+HOLES = [('burst', 66.0), ('crescent', 114.0),    # storage window band (angle round the room, degrees)
+         ('gash', -100.0)]                       # the third faces away from the door: turn the camera to find it
+CARGO_AT = (52.0, 34.0)           # the cargo box, from storage's middle (a loose prop now: the tool lifts it)
+CARGO_YAW = -0.25                 # how it is turned on the floor; its footprint turns with it
+CARGO_HALF = np.array([11.5, 7.0, 7.2])
+CARGO_RATIONS = 4                 # ration packs inside, spilled when it gives way
 
 # ================================================================== palette
 WHITE = M.hexa('#3c3954', '#5f5c79', '#8c8aa5', '#b8b7cb', '#dad9e6', '#f0f0f6', '#ffffff').astype(np.float32)
@@ -537,6 +546,83 @@ def rack(name, ang, rs, group):
     return parts
 
 
+CARGO_CRACKS = [   # one for each pane the box is stood on to reach: where it starts, its plane, how far it runs
+    (np.array([-4.5, -7.0, 7.2]), A.nz([1.0, 0.15, 0.0]), 7.5),       # over the top and down the front
+    (np.array([11.5, 2.0, 7.2]), A.nz([0.1, 1.0, 0.25]), 8.0),        # over the top and down the right end
+    (np.array([3.0, 7.0, 7.2]), A.nz([1.0, -0.3, 0.1]), 8.5),         # over the top and down the back
+]
+
+
+def decal_cargo_wall(part, P):
+    """A wall of the cargo box: dark ribs across it, the coral band near its top (not on the lid)."""
+    q = part.sdf.local(P)
+    h = part.sdf.half
+    out = np.full(len(P), OID['steel'])
+    along = q[:, 0] if h[0] >= h[1] else q[:, 1]
+    out[np.mod(along + 0.5, 2.6) < 0.7] = OID['cable']
+    if h[2] > 2.0:
+        out[np.abs(q[:, 2] - h[2] * 0.45) < 0.8] = OID['coral']
+    return out
+
+
+def decal_cargo(stage):
+    """The cargo box after `stage` cracks: each a jagged split over the top and down one side,
+    a dark gap with a bright torn edge, so the top shows every crack from every view."""
+    def decal(part, P):
+        out = decal_container(part, P)
+        q = part.sdf.local(P)
+        for i, (c, n, length) in enumerate(CARGO_CRACKS[:stage]):
+            s = np.linalg.norm(q - c, axis=1)
+            d = (q - c) @ n + 0.45 * np.sin(s * 1.7 + i) + 0.2 * np.sin(s * 4.3 + 2 * i)
+            w = 0.35 + 0.4 * np.clip(1 - s / length, 0, 1)
+            near = s < length
+            out[near & (np.abs(d) > w) & (np.abs(d) < w + 0.45)] = OID['white']
+            out[near & (np.abs(d) < w)] = OID['dark']
+        return out
+    return decal
+
+
+def decal_ration(part, P):
+    """A ration pack: tan foil, crimped steel seals at the ends, a coral label on top."""
+    q = part.sdf.local(P)
+    h = part.sdf.half
+    out = np.full(len(P), OID['sack'])
+    out[np.abs(q[:, 0]) > h[0] - 0.45] = OID['steel']
+    out[(np.abs(q[:, 0]) < h[0] * 0.38) & (q[:, 2] > 0)] = OID['coral']
+    return out
+
+
+def ration(k):
+    """A ration pack (an MRE) lying on the floor, three ways."""
+    R = A.rz([0.4, -0.7, 1.3][k]) @ A.rx([0.0, 0.18, -0.12][k])
+    return [P_('pouch', A.RoundBox(np.array([0.0, 0.0, 0.75]), (2.3, 1.6, 0.55), 0.45, R), 'sack', 'ration', decal_ration)]
+
+
+def cargo_box(stage):
+    """The storage room's cargo box, standing at the origin: whole (0), cracked once per pane it
+    has been stood on to reach (1-3), or crushed flat (4) - its walls burst out round the tray,
+    the lid dropped onto it, ration packs left in it. Flat, so whoever is in it stands on top."""
+    R = A.rz(CARGO_YAW)
+    h = CARGO_HALF
+    if stage < 4:
+        return [P_('container', A.RoundBox(np.array([0.0, 0.0, h[2]]), h, 0.8, R), 'steel', 'cargo', decal_cargo(stage))]
+
+    def piece(c, half, rot):
+        return A.RoundBox(R @ np.asarray(c, float), half, 0.4, R @ rot)
+
+    def fallen(hinge, c, half, rot):                     # a wall turned about its bottom edge
+        hinge = np.asarray(hinge, float)
+        return piece(hinge + rot @ (np.asarray(c, float) - hinge), half, rot)
+    return [P_('tray', piece([0, 0, 0.9], (h[0], h[1], 0.9), np.eye(3)), 'steel', 'cargo', decal_cargo_wall),
+            P_('wall', fallen([0, -7.4, 0.4], [0, -7.4, 7.0], (h[0] - 0.4, 0.5, 6.6), A.rx(1.42)), 'steel', 'cargo', decal_cargo_wall),
+            P_('wall', fallen([0, 7.4, 0.4], [0, 7.4, 7.0], (h[0] - 0.3, 0.5, 6.6), A.rx(-1.36)), 'steel', 'cargo', decal_cargo_wall),
+            P_('wall', fallen([-11.9, 0, 0.4], [-11.9, 0, 6.4], (0.5, h[1] - 0.6, 6.0), A.ry(-1.45)), 'steel', 'cargo', decal_cargo_wall),
+            P_('wall', fallen([11.9, 0, 0.4], [11.9, 0, 6.4], (0.5, h[1] - 0.6, 6.0), A.ry(1.18)), 'steel', 'cargo', decal_cargo_wall),
+            P_('lid', piece([-1.6, 1.0, 2.4], (h[0] - 1.6, h[1] - 1.2, 0.5), A.rz(0.2) @ A.ry(0.1)), 'steel', 'cargo', decal_cargo_wall),
+            P_('pouch', piece([7.4, -3.6, 2.2], (2.3, 1.6, 0.55), A.rz(0.5) @ A.rx(0.2)), 'sack', 'cargo', decal_ration),
+            P_('pouch', piece([-4.0, -11.5, 1.6], (2.3, 1.6, 0.55), A.rz(-0.8)), 'sack', 'cargo', decal_ration)]
+
+
 def storage_props(rs):
     st = ROOMS['storage']
     C = cam(st['X'], st['Y'])
@@ -550,10 +636,7 @@ def storage_props(rs):
     for k, (dx, dy, kk, yaw) in enumerate([(48, -32, 0.9, 0.3), (60, -22, 0.75, -0.4)]):
         parts += crate(C + np.array([dx, dy, 0]), kk, yaw, group=f'stackB{k}')
     parts += crate(C + np.array([18, -50, 0.5]), 0.8, 0.6, tilt=1.15, group='tipped')            # knocked over
-    # a cargo container
-    R = A.rz(-0.25)
-    parts.append(P_('container', A.RoundBox(C + np.array([52, 34, 7.2]), (11.5, 7.0, 7.2), 0.8, R), 'steel', 'container',
-                    decal_container))
+    # (the cargo box at CARGO_AT is a loose prop the tool can lift: export_cargo_box)
     # barrels
     for k, (dx, dy, ramp) in enumerate([(-30, -40, 'teal'), (-24, -46, 'mustard'), (-36, -48, 'teal')]):
         b = C + np.array([dx, dy, 4.0])
@@ -572,6 +655,12 @@ def storage_props(rs):
         sz = rs.uniform(0.6, 1.6)
         parts.append(P_('shard', A.RoundBox(cam(X, Y, 0.25), (sz, sz * 0.6, 0.18), 0.1, A.rz(rs.uniform(0, TAU))),
                         'tglass' if k % 3 else 'shard', f'gshard{k}'))
+    rg = np.random.default_rng(260)                      # and under the far pane (its own dice: the rest stays put)
+    for k in range(12):
+        p = room_pt('storage', HOLES[2][1] + rg.uniform(-14, 14), rg.uniform(64, 84), 0.25)
+        sz = rg.uniform(0.6, 1.6)
+        parts.append(P_('shard', A.RoundBox(p, (sz, sz * 0.6, 0.18), 0.1, A.rz(rg.uniform(0, TAU))),
+                        'tglass' if k % 3 else 'shard', f'gshard_far{k}'))
     return parts
 
 
@@ -901,10 +990,10 @@ def shade_walls(img, D, gid, wall_gids, bay_img):
         cw[sw & ~frame] = cw[sw & ~frame] * 0.6 + 255 * 0.4
         col[win] = cw
         glow_mask[np.nonzero(win)[0][~frame]] = 0.55
-        # storage: the two smashed panes, bright with sun
+        # storage: the three smashed panes, bright with daylight
         si = names.index('storage')
         for kind_, ang in HOLES:
-            rs = np.random.default_rng(int(ang))
+            rs = np.random.default_rng(int(ang) % 360)
             poly, cracks = M.hole_shape(kind_, a * 1.15, rs)
             st = (room[win] == si)
             lx = x - math.radians(ang) * rr[win]
@@ -1063,14 +1152,22 @@ def shade_floor(img, D, kind, region, Xf, Yf, ys, xs, bay, prop_ao, shafts_floor
 
 
 # ================================================================== the light through the holes
+def sunlit(ang):
+    """Does the sun shine in through a pane at this angle round storage? Only those facing it."""
+    a = math.radians(ang)
+    return math.cos(a) * -LIGHT_IN[0] + math.sin(a) * -LIGHT_IN[1] > 0.0
+
+
 def hole_world_polys():
-    """Each smashed pane in storage's back wall as a polygon in the world."""
+    """Each smashed pane the sun shines through, as a polygon in the world."""
     a = (WIN[1] - WIN[0]) / 2.5
     Ri = r_in('storage')
     st = ROOMS['storage']
     out = []
     for kind_, ang in HOLES:
-        rs = np.random.default_rng(int(ang))
+        if not sunlit(ang):
+            continue
+        rs = np.random.default_rng(int(ang) % 360)
         poly, _ = M.hole_shape(kind_, a * 1.15, rs)
         pts = []
         for lx, ly in poly:
@@ -1290,6 +1387,7 @@ def render_view(k, fur):
     meta['repair_variants'] = {str(mask): folder + '/base_interior.json' for mask, folder in
                                [(1, 'repaired_power'), (2, 'repaired_oxygen'), (3, 'repaired_both')]}
     meta['fixed_machines'] = sorted(fur['fixed'])
+    meta['window_cracks'] = window_crack_info()
     meta['fx'] = dict(
         shafts=[dict(hull=[[round(float(x), 1), round(float(y), 1)] for x, y in s['hull']],
                      hole=pxl(s['hole'].mean(axis=0))) for s in sh],
@@ -1725,10 +1823,56 @@ def export_loose_scrap(reactor_c, gen_c):
             p = c + offset
             objects.append(dict(kind='scrap', frame=frame, job='gather',
                                 world=[float(p[0]), float(p[1])], radius=4.0, solid=False))
-    data = dict(sprites=relative(sheets['sprites']), sprites_views=[relative(s) for s in sheets['sprites_views']],
-                objects=objects, lamps=[], note='Six loose scraps for the two three-patch machine repairs. Session IDs persist through airlocks.')
+    own_views, box = export_cargo_box()
+    objects.append(box)
+    sprites_views = [dict(relative(s), **own) for s, own in zip(sheets['sprites_views'], own_views)]
+    data = dict(sprites=sprites_views[0], sprites_views=sprites_views, objects=objects, lamps=[],
+                note='Six loose scraps for the two three-patch machine repairs, and the cargo box (lift it, stand on it: '
+                     'top = its height, half = half its footprint turned by yaw, contents = what spills when it breaks). '
+                     'Session IDs persist through airlocks.')
     with open(os.path.join(OUT, 'interior_props.json'), 'w') as fh:
         json.dump(data, fh, indent=1)
+
+
+def prop_sheet(name, frames_parts, k):
+    """A loose thing's frames in a strip, as view k sees it (turned about its foot), the way
+    tools/props_gen.py draws the overworld's props but under the base's light; the anchor is
+    where its foot point sits."""
+    frames_parts = [M.turned(fp, about=np.zeros(3), k=k) for fp in frames_parts]
+    box = M.sprite_box(frames_parts, pad=3)
+    strip = np.concatenate([M.sprite_rgba(M.render_sprite(fp, box)) for fp in frames_parts], axis=1)
+    fn = f'props/{name}{M.view_sfx(k)}.png'
+    Image.fromarray(strip).save(os.path.join(OUT, fn))
+    return dict(file=fn, frames=len(frames_parts), frame_size=[box[2], box[3]],
+                anchor=[round(M.AX - box[0], 1), round(M.AY - box[1], 1)])
+
+
+def export_cargo_box():
+    """The cargo box as a loose prop the tool lifts and you stand on (frames: whole, three cracks,
+    burst), and the ration packs it spills, in every view. Returns each view's sheets and the box."""
+    os.makedirs(os.path.join(OUT, 'props'), exist_ok=True)
+    models = dict(cargo_box=[cargo_box(s) for s in range(5)], ration=[ration(k) for k in range(3)])
+    views = [{name: prop_sheet(name, fps, k) for name, fps in models.items()} for k in range(4)]
+    st = ROOMS['storage']
+    h = CARGO_HALF
+    box = dict(kind='cargo_box', frame=0, job='lift', world=[st['X'] + CARGO_AT[0], st['Y'] + CARGO_AT[1]],
+               radius=round(float(np.hypot(h[0], h[1])), 1), solid=False, top=round(float(2 * h[2]), 1),
+               half=[float(h[0]), float(h[1])], yaw=CARGO_YAW, contents=dict(kind='ration', count=CARGO_RATIONS),
+               drop_sound='cargo_drop')
+    return views, box
+
+
+def window_crack_info():
+    """Storage's smashed panes, to stand under and mend: where on the floor to stand (world, the
+    middle of the box pushed to the wall under it), the middle of the hole (world, with its
+    height), and where this view draws that (map px; seen = the view leaves that wall standing)."""
+    out = []
+    for kind_, ang in HOLES:
+        mid = room_pt('storage', ang, r_in('storage'), (WIN[0] + WIN[1]) / 2)
+        stand = room_pt('storage', ang, r_in('storage') - 14.0)
+        out.append(dict(id=kind_, world=[round(float(v), 2) for v in stand[:2]], hole=[round(float(v), 2) for v in mid],
+                        px=pxl(mid), seen=bool(RoomWall('storage', []).height(math.radians(ang)) > WIN[1])))
+    return out
 
 
 def restore_oxygen(parts, c, tanks):

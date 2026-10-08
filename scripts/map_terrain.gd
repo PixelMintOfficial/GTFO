@@ -35,6 +35,9 @@ var light_mask: Texture2D
 var sun_mask: Texture2D
 ## Things that block like buildings but can move or go away (rocks, crates): id -> (x, y, radius).
 var blockers := {}
+## Things you can stand on that can move or go away (the cargo box): id -> [centre: Vector2,
+## half its footprint: Vector2, yaw, the height of its top]. Below the top they block like a wall.
+var platforms := {}
 ## The current view: how many quarter turns the camera has made, the point it turns round,
 ## its meta JSON, its picture and its depth map.
 var heading := 0
@@ -201,6 +204,23 @@ func surface(p: Vector2) -> Surface:
 		if p.distance_squared_to(Vector2(c.x, c.y)) < c.z * c.z:
 			return Surface.SOLID
 	return Surface.WALK if b > 191 else Surface.STEEP
+
+
+## The top of whatever platform covers a world point (its footprint grown by margin), or -INF
+## where none does.
+func platform_top(p: Vector2, margin := 0.0) -> float:
+	var top := -INF
+	for k in platforms:
+		var b: Array = platforms[k]
+		var q := (p - (b[0] as Vector2)).rotated(-float(b[2])).abs()
+		if q.x <= b[1].x + margin and q.y <= b[1].y + margin:
+			top = maxf(top, b[3])
+	return top
+
+
+## How high you would stand at a world point: the ground, or the top of a platform over it.
+func stand_height(p: Vector2) -> float:
+	return maxf(height_at(p), platform_top(p))
 
 
 ## Unit direction (world X/Y) the ground falls away fastest.

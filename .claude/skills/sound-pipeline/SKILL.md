@@ -46,8 +46,9 @@ Both go through the **same mastering chain**, which is what makes them sit toget
        chain=[trim(), hp(130), lp(9000), fade(0.003, 0.05), rms_to(-20.0), declick()],
        note='why this source, with the --probe numbers'),
    ```
-   Ops available: `trim cut head pitch hp lp bp tilt gain norm rms_to fade env space loopify
-   declick limit dc`. Match loudness with `rms_to`, not `norm`: peak matching makes a
+   Ops available: `trim cut head delay pitch hp lp bp tilt gain norm rms_to fade env space
+   loopify declick limit dc` (`delay` lands a layer at its moment inside the sound). Layers are
+   mixed at their raw level, so put `rms_to` in a layer's chain to set it by number. Match loudness with `rms_to`, not `norm`: peak matching makes a
    transient-heavy footstep far quieter than a wind bed. Every sound gets a peak ceiling
    automatically, so a recipe cannot clip.
 

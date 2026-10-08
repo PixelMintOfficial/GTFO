@@ -148,9 +148,10 @@ func _ready() -> void:
 	var power := GameState.repair_for("power")
 	var oxygen := GameState.repair_for("oxygen")
 	_check(not controller.open_machine("power") and not get_tree().paused, "missing scrap blocks entry without pausing")
-	_check(tool._props.size() == 6, "base supplies enough real gatherable scrap for both machines")
+	var scrap_props := tool._props.filter(func(p: WorldProp) -> bool: return p.kind == "scrap")
+	_check(scrap_props.size() == 6, "base supplies enough real gatherable scrap for both machines")
 	player.set_tool_out(true)
-	for prop in tool._props.duplicate():
+	for prop in scrap_props:
 		player.teleport(prop.world + Vector2(0, -5))
 		_check(player._can_be(player.world_pos, false), "loose scrap can be reached on foot")
 		await get_tree().process_frame
@@ -306,7 +307,8 @@ func _ready() -> void:
 	await get_tree().process_frame
 	_check(GameState.repair_for("power") == power and GameState.repair_for("oxygen") == oxygen, "repairs persist across scene reload")
 	_check(room.terrain.view_json.contains("repaired_both"), "fixed artwork persists across scene reload")
-	_check(room.get_node("Multitool")._props.is_empty(), "collected interior scrap never respawns through the airlock")
+	_check(room.get_node("Multitool")._props.all(func(p: WorldProp) -> bool: return p.kind != "scrap"),
+			"collected interior scrap never respawns through the airlock")
 	room.queue_free()
 	await get_tree().process_frame
 	print("Repair: ", _checks, " checks; ", _failures, " failures; 1000 shuffled native circuits.")

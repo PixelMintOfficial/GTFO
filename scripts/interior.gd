@@ -1,15 +1,20 @@
 extends Node2D
 ## Inside the main base: storage (the airlock comes in here), the power room to the right and
 ## the oxygen room to the left. The power is out. F at the airlock door goes back outside.
+## Storage's three smashed panes and the cargo box you stand on to reach them: WindowCracks.
 ##
 ## Test hooks (after "--"): --spawn=X,Y  --walk=DX,DY[,run]  --capture=PATH
 ## --seconds=S  --burst=N  --gap=S  --arrive (play coming in through the door)  --exit (use the door)
+## --face=DX,DY  --equip (take the tool out)  --use (then hold F: works, or lifts, what is in reach)
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ## --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ## --repair=power|oxygen opens its current task (three demo scraps supplied for captures).
 ## --repair-done=power|oxygen|both marks both tasks for repaired-art captures.
 ## --repair-circuit=power|oxygen skips cracks only for circuit screenshots/tests.
 ## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
+## --cargo=burst|crescent|gash sets the cargo box down under that pane and stands you on it;
+## --cargo-mended=N mends the first N panes first (the box shows N cracks); --cargo-land lands on
+## the box (the next pane cracks it; after the other two, it gives way).
 ## --audio-debug (print every sound as it plays)
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
 ## --turn=N (start with the camera turned N quarter turns round; G / H turn it)
@@ -21,6 +26,7 @@ const PROPS_JSON := "res://assets/maps/base_interior/interior_props.json"
 var terrain: MapTerrain
 var door: AirlockDoor
 var repairs: MachineRepairs
+var cracks: WindowCracks
 var view_turn: ViewTurn
 var _repair_mask := 0
 
@@ -60,6 +66,9 @@ func _ready() -> void:
 	repairs.setup(meta, player, multitool)
 	for machine_id in ["power", "oxygen"]:
 		GameState.repair_for(machine_id).changed.connect(_repair_changed)
+	cracks = WindowCracks.new()
+	add_child(cracks)
+	cracks.setup(meta, player, multitool, terrain)
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
 	inventory_ui.setup(player, multitool)
@@ -68,7 +77,7 @@ func _ready() -> void:
 	survival_hud.setup(player, multitool)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
-	view_turn.setup(terrain, player, _apply_view)
+	view_turn.setup(terrain, player, _apply_view, _turn_boards)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -96,8 +105,18 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	fx.load_view(terrain.view_json)
 	multitool.set_view(terrain.depth_map)
 	repairs.set_view(meta)
+	cracks.set_view(meta)
 	door.queue_free()
 	_setup_door(meta)
+
+
+## The loose props (scrap, the cargo box, rations), for the camera's swing.
+func _turn_boards() -> Array:
+	var out := []
+	for n in $Actors.get_children():
+		if n is WorldProp and not (n as WorldProp).gone:
+			out.append(ViewTurn.prop_board(terrain, n))
+	return out
 
 
 func _completed_mask() -> int:
@@ -166,6 +185,23 @@ func _run_test_hooks(args: Dictionary) -> void:
 	if args.has("spawn"):
 		var xy: PackedStringArray = args["spawn"].split(",")
 		player.teleport(Vector2(float(xy[0]), float(xy[1])))
+	if args.has("cargo-mended"):
+		for i in mini(int(args["cargo-mended"]), cracks.panes.size()):
+			GameState.window_repair.crack_box(cracks.panes[i]["id"])
+			GameState.window_repair.fix(cracks.panes[i]["id"])
+		cracks.box.sprite.frame = GameState.window_repair.damage()
+	if args.has("cargo"):
+		player.teleport(cracks.place_box_under(args["cargo"]))
+	if args.has("cargo-land"):
+		get_tree().create_timer(0.5).timeout.connect(func() -> void: player.landed.emit(0.0))
+	if args.has("face"):
+		var f: PackedStringArray = args["face"].split(",")
+		var sd := Vector2(float(f[0]), float(f[1]))
+		player.facing = Player.DIRS[posmod(int(round(sd.angle() / (PI / 4.0))), 8)]
+	if args.has("equip"):
+		get_tree().create_timer(0.3).timeout.connect(player.toggle_tool)
+	if args.has("use"):
+		get_tree().create_timer(1.2).timeout.connect(func() -> void: multitool.forced_use = true)
 	if args.has("walk"):
 		var w: PackedStringArray = args["walk"].split(",")
 		player.forced_input = Vector2(float(w[0]), float(w[1]))

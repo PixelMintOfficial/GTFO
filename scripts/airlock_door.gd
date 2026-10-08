@@ -259,7 +259,7 @@ func _focus() -> Vector2:
 
 
 func _in_reach() -> bool:
-	if not player.controls_enabled or player.is_airborne():
+	if not player.controls_enabled or player.is_airborne() or player.height_above_floor() > 1.0:
 		return false
 	var to := player.world_pos - world
 	return to.dot(dir) > 4.0 and player.world_pos.distance_to(stand_point()) < reach

@@ -36,6 +36,9 @@ var removed_props := {}
 var spawned_props := {}
 ## Machine repairs share the same session lifetime as the backpack.
 var machine_repairs: Dictionary = {}
+## Storage's smashed panes and the cargo box used to reach them (WindowRepair). Reset with the
+## world ledger, which holds the rations the box spills.
+var window_repair := WindowRepair.new()
 var survival := SurvivalState.new()
 ## Initial developer vital overrides apply once, never on airlock transitions or rescue.
 var survival_debug_initialized := false
@@ -96,6 +99,7 @@ func reset_inventory() -> void:
 	selected_slot = 0
 	removed_props.clear()
 	spawned_props.clear()
+	window_repair = WindowRepair.new()
 	inventory_changed.emit()
 
 

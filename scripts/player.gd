@@ -16,9 +16,16 @@ extends Node2D
 ## Terrain: you walk on WALK ground and glide along anything in the way. STEEP ground
 ## (crater walls, cliffs, boulders) can't be walked but can be jumped over, onto or down;
 ## land on it and you skid down to the next safe footing. SOLID things always block.
+## Boxes (MapTerrain.platforms): their sides stop you, a held jump lands you on top, and walking
+## off the edge drops you back down. If one gives way under you, collapse() knocks you down.
+
+## Every landing from a jump or a fall, with how fast the feet came down (sprite units/s).
+signal landed(impact: float)
 
 ## Screen-space compass, clockwise from east (screen y points down).
 const DIRS: Array[String] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"]
+## A drop this big under the feet (world units), walking off the edge of a box, is a fall.
+const LEDGE := 1.5
 ## Directions tried, in order, when the way ahead is blocked: glide along the obstacle.
 const GLIDE_ANGLES: Array[float] = [0.0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2]
 
@@ -60,6 +67,8 @@ const SPRITE_JSON := "res://assets/characters/astronaut/astronaut.json"
 @export var apex_band := 40.0
 @export var crouch_time := 0.09
 @export var land_time := 0.16
+## How long it takes to get back up after collapse() (a box giving way under you).
+@export var collapse_time := 0.9
 ## Horizontal speed multiplier while crouching to jump or recovering from a landing.
 @export_range(0.0, 1.0) var squash_speed := 0.6
 
@@ -99,6 +108,8 @@ var _scale := 1.0
 var _dust: CPUParticles2D
 var _jump := Jump.GROUNDED
 var _jt := 0.0            # time in the current jump state
+var _land_for := 0.0      # how long this landing keeps you crouched
+var _downed := false      # knocked down (collapse): no control until back on your feet
 var _feet := 0.0          # height of the feet, world units (the ground when standing)
 var _vz := 0.0            # vertical speed, sprite units/s
 var _jump_buffer := 0.0
@@ -153,14 +164,30 @@ func setup(t: MapTerrain, depth_map: Texture2D) -> void:
 
 func teleport(p: Vector2) -> void:
 	world_pos = p
-	_feet = terrain.height_at(p)
+	_feet = _ground()
 	_jump = Jump.GROUNDED
+	_downed = false
 	_sync()
 	camera.snap()
 
 
 func is_airborne() -> bool:
 	return _jump == Jump.AIR
+
+
+## How high the feet are above the floor under them, world units (on a box: its height).
+func height_above_floor() -> float:
+	return _feet - terrain.height_at(world_pos)
+
+
+## Knocked off your feet (a box giving way under you): you drop, land hard, stay down a moment
+## (collapse_time) and get back up. The controls wait until you have.
+func collapse() -> void:
+	_downed = true
+	if _jump != Jump.AIR:
+		_jump = Jump.AIR
+		_jt = 0.07
+		_vz = 0.0
 
 
 ## Cutscenes: walk straight toward a world point (no collisions) at a fraction of walking
@@ -278,9 +305,9 @@ func _load_tool_tips() -> void:
 		_tips[anim] = t
 
 
-## What the camera follows: halfway between the ground and the astronaut in the air.
+## What the camera follows: halfway between the ground (or the box) and the astronaut in the air.
 func camera_focus() -> Vector2:
-	return global_position + sprite.position * 0.5
+	return global_position + (sprite.position + shadow.position) * 0.5
 
 
 func _physics_process(delta: float) -> void:
@@ -303,7 +330,7 @@ func _physics_process(delta: float) -> void:
 	var moved := false
 	var screen_dir := Vector2.ZERO
 	var anim_scale := 1.0
-	if tilt >= 0.25 and _jump != Jump.SLIDE:
+	if tilt >= 0.25 and _jump != Jump.SLIDE and not _downed:
 		var step := posmod(int(round(input.angle() / (PI / 4.0))), 8)
 		facing = DIRS[step]
 		screen_dir = Vector2.from_angle(step * PI / 4.0)
@@ -384,8 +411,8 @@ func _try_move(motion: Vector2) -> bool:
 	return true
 
 
-## On foot every sample around the feet must be walkable; in the air the ground there just
-## has to be below the feet (and not a building).
+## On foot every sample around the feet must be walkable and not up the side of a box; in the
+## air the ground (or box top) there just has to be below the feet (and not a building).
 func _can_be(p: Vector2, airborne: bool) -> bool:
 	for k in 5:
 		var q := p if k == 4 else p + Vector2.from_angle(k * PI / 2.0) * foot_radius * _scale
@@ -393,11 +420,22 @@ func _can_be(p: Vector2, airborne: bool) -> bool:
 		if s == MapTerrain.Surface.SOLID:
 			return false
 		if airborne:
-			if terrain.height_at(q) > _feet + 0.75:
+			if terrain.stand_height(q) > _feet + 0.75:
 				return false
-		elif s != MapTerrain.Surface.WALK:
+		elif s != MapTerrain.Surface.WALK or terrain.platform_top(q) > _feet + 1.0:
 			return false
 	return true
+
+
+## What the boots stand on: the ground, or the top of a box if either boot is over it.
+func _ground() -> float:
+	var g := terrain.height_at(world_pos)
+	if terrain.platforms.is_empty():
+		return g
+	for k in 5:
+		var q := world_pos if k == 4 else world_pos + Vector2.from_angle(k * PI / 2.0) * foot_radius * _scale
+		g = maxf(g, terrain.platform_top(q))
+	return g
 
 
 func _not_solid(p: Vector2) -> bool:
@@ -411,7 +449,7 @@ func _not_solid(p: Vector2) -> bool:
 # ---------------------------------------------------------------- jump, fall, skid
 func _read_jump_input(delta: float) -> void:
 	_jump_buffer = maxf(0.0, _jump_buffer - delta)
-	var pressed := controls_enabled and not turning and Input.is_action_just_pressed("jump") and work_target == null
+	var pressed := controls_enabled and not turning and not _downed and Input.is_action_just_pressed("jump") and work_target == null
 	if auto_jump_every > 0.0:
 		_auto_t += delta
 		if _auto_t >= auto_jump_every:
@@ -426,11 +464,16 @@ func _read_jump_input(delta: float) -> void:
 
 
 func _step_vertical(delta: float) -> void:
-	var ground := terrain.height_at(world_pos)
+	var ground := _ground()
 	if _jump != Jump.SLIDE and Audio.is_looping("slide"):
 		Audio.release("slide")           # however the skid ended, the scrape stops with it
 	match _jump:
 		Jump.GROUNDED:
+			if _feet - ground > LEDGE:   # walked off the edge of a box (or it went): fall
+				_jump = Jump.AIR
+				_jt = 0.07
+				_vz = 0.0
+				return
 			_feet = ground
 			if not _can_be(world_pos, false):
 				_start_slide()
@@ -457,15 +500,20 @@ func _step_vertical(delta: float) -> void:
 				if _can_be(world_pos, false):
 					_jump = Jump.LAND
 					_jt = 0.0
-					_burst(clampf(impact / jump_velocity, 0.45, 1.25), true)
+					_land_for = collapse_time if _downed else land_time
+					_burst(1.25 if _downed else clampf(impact / jump_velocity, 0.45, 1.25), true)
+					if _downed:
+						camera.shake(1.8, 0.3)
 				else:
 					_burst(0.5, true)
 					_start_slide()
+				landed.emit(impact)
 		Jump.LAND:
 			_feet = ground
 			_jt += delta
-			if _jt >= land_time:
+			if _jt >= _land_for:
 				_jump = Jump.GROUNDED
+				_downed = false
 		Jump.SLIDE:
 			_slide(delta)
 
@@ -489,10 +537,11 @@ func _slide(delta: float) -> void:
 			if _not_solid(world_pos + m):
 				world_pos += m
 				break
-	_feet = terrain.height_at(world_pos)
+	_feet = _ground()
 	if _can_be(world_pos, false):
 		_jump = Jump.LAND
 		_jt = 0.0
+		_land_for = collapse_time if _downed else land_time
 		_burst(0.35, true)
 		return
 	_stuck = _stuck + delta if world_pos.distance_squared_to(before) < 0.0001 else 0.0
@@ -507,9 +556,10 @@ func _rescue() -> void:
 			var p := world_pos + Vector2.from_angle(k * TAU / 16.0) * float(r) * _scale
 			if _can_be(p, false):
 				world_pos = p
-				_feet = terrain.height_at(p)
+				_feet = _ground()
 				_jump = Jump.LAND
 				_jt = 0.0
+				_land_for = collapse_time if _downed else land_time
 				return
 
 
@@ -533,7 +583,7 @@ func _show_jump_frame() -> void:
 			else:
 				f = 9                                   # legs reaching for the ground
 		Jump.LAND:
-			f = 10 if _jt < land_time * 0.5 else 11
+			f = 10 if _jt < _land_for * 0.5 else 11
 		Jump.SLIDE:
 			f = 10                                      # crouched, arms out: skidding
 	var anim := StringName(("jump_tool_" if tool_state == Tool.READY else "jump_") + facing)
@@ -572,7 +622,7 @@ func _burst(strength: float, landing: bool) -> void:
 	ring.scale_amount_max = 3.0
 	ring.color_ramp = _fade(Color(1, 1, 1, 0.95), Color(1, 1, 1, 0.0))
 	ring.color_initial_ramp = _fade(Color("#fff0dc"), Color("#a5664f"))  # reads on light and dark ground
-	ring.position = position
+	ring.position = position + shadow.position      # on whatever the feet are on (a box top)
 	ring.scale = Vector2(1.0, 0.5)  # iso ground plane
 	_spawn(root, ring)
 	if landing:
@@ -591,7 +641,7 @@ func _burst(strength: float, landing: bool) -> void:
 		debris.scale_amount_min = 1.0
 		debris.scale_amount_max = 2.0
 		debris.color_ramp = _fade(Color(0.42, 0.24, 0.24, 1.0), Color(0.42, 0.24, 0.24, 0.0))
-		debris.position = position
+		debris.position = position + shadow.position
 		_spawn(root, debris)
 
 
@@ -610,14 +660,21 @@ static func _fade(from: Color, to: Color) -> Gradient:
 
 
 # ---------------------------------------------------------------- drawing
+## Drawn at the floor under the feet (that is the y-sort key); the sprite is raised to the feet and
+## the shadow to what is under them. Over a box (or on it), drawn above the box.
 func _sync() -> void:
-	var ground := terrain.height_at(world_pos)
-	position = terrain.to_screen(world_pos, ground).round()
-	var above := maxf(0.0, _feet - ground) * terrain.px_per_unit
+	var base := terrain.height_at(world_pos)
+	var ground := maxf(base, _ground())
+	position = terrain.to_screen(world_pos, base).round()
+	var above := maxf(0.0, _feet - base) * terrain.px_per_unit
 	sprite.position.y = -roundf(above)
-	var lift := clampf(above / 70.0, 0.0, 1.0)
+	shadow.position.y = -roundf((ground - base) * terrain.px_per_unit)
+	_dust.position.y = shadow.position.y
+	var lift := clampf(maxf(0.0, _feet - ground) * terrain.px_per_unit / 70.0, 0.0, 1.0)
 	shadow.scale = Vector2.ONE * lerpf(1.0, 0.55, lift)
 	shadow.modulate.a = lerpf(1.0, 0.45, lift)
+	var top := terrain.platform_top(world_pos, foot_radius * _scale)
+	z_index = 1 if top > -INF and _feet >= top - 0.5 else 0
 	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_depth",
 			-1.0e6 if ignore_occlusion else terrain.view_depth(world_pos))
 
