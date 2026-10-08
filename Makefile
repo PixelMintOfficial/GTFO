@@ -99,6 +99,12 @@ check-interior:
 # thousand shuffled boards, and the camera's turn. They report their own pass/fail and exit nonzero.
 check-tests:
 	@echo "== tests"
+	@$(GODOT) --headless --path . res://tests/survival_test.tscn 2>&1 | tee /tmp/gtfo-survival.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-survival.log
+	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn 2>&1 | tee /tmp/gtfo-hud.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn -- --save-layout-probe 2>&1 | tee -a /tmp/gtfo-hud.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn -- --load-layout-probe 2>&1 | tee -a /tmp/gtfo-hud.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-hud.log
 	@$(GODOT) --headless --path . res://tests/inventory_test.tscn 2>&1 | tee /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/repair_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/view_turn_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true

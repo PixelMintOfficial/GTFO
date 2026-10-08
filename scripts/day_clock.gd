@@ -231,6 +231,7 @@ func _draw_toast() -> void:
 	var view := get_viewport().get_visible_rect().size
 	var w := PixelFont.width(_toast, 2)
 	var pos := Vector2(round((view.x - w) / 2.0), 30.0)
+	pos = SurvivalHUD.toast_position(_panel, pos, w)
 	_panel.draw_rect(Rect2(pos - Vector2(8, 5), Vector2(w + 16, 20)), Color(0.07, 0.06, 0.11, 0.7 * a))
 	_panel.draw_rect(Rect2(pos + Vector2(-8, 16), Vector2(w + 16, 1)), Color(DayNight.phase_color(), a))
 	PixelFont.draw(_panel, pos, _toast, Color(0.96, 0.95, 1.0, a), 2, Color(0.1, 0.08, 0.16, a))

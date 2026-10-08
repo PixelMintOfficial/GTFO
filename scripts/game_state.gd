@@ -16,7 +16,8 @@ var heading := 0
 var clock := 8.0
 
 ## Backpack: first six slots are the hotbar. Only the multitool can be equipped;
-## ore is stored; three scraps are consumed atomically on successful machine crack repair.
+## ore is stored; three scraps are consumed atomically on successful machine crack repair;
+## ration/water restore vitals through consume_slot().
 signal inventory_changed
 const HOTBAR_SIZE := 6
 const INVENTORY_SIZE := 24
@@ -25,6 +26,8 @@ const ITEMS := {
 	"multitool": {"name": "MULTITOOL", "detail": "T TO EQUIP - F TO WORK", "stack": 1},
 	"ore_chunk": {"name": "ORE", "detail": "COLLECTED FROM ORE ROCKS", "stack": STACK_LIMIT},
 	"scrap": {"name": "SCRAP", "detail": "SALVAGED MATERIAL", "stack": STACK_LIMIT},
+	"ration": {"name": "RATION", "detail": "C TO EAT", "stack": STACK_LIMIT},
+	"water": {"name": "WATER", "detail": "C TO DRINK", "stack": STACK_LIMIT},
 }
 var inventory: Array[Dictionary] = []
 var selected_slot := 0
@@ -33,6 +36,9 @@ var removed_props := {}
 var spawned_props := {}
 ## Machine repairs share the same session lifetime as the backpack.
 var machine_repairs: Dictionary = {}
+var survival := SurvivalState.new()
+## Initial developer vital overrides apply once, never on airlock transitions or rescue.
+var survival_debug_initialized := false
 
 
 func repair_for(machine_id: String) -> MachineRepair:
@@ -43,6 +49,43 @@ func repair_for(machine_id: String) -> MachineRepair:
 
 func _ready() -> void:
 	reset_inventory()
+	stock_supplies()
+
+
+func stock_supplies() -> void:
+	for kind in survival.config["consumables"]:
+		for i in int(survival.config["consumables"][kind]["starter_count"]):
+			store_item(kind)
+
+
+func consume_slot(index: int) -> bool:
+	if index < 0 or index >= inventory.size() or inventory[index].is_empty():
+		return false
+	var kind: String = inventory[index]["kind"]
+	if not survival.config["consumables"].has(kind):
+		return false
+	var item: Dictionary = survival.config["consumables"][kind]
+	if not survival.restore(item["stat"], float(item["restore"])):
+		return false
+	inventory[index]["count"] -= 1
+	if inventory[index]["count"] <= 0:
+		inventory[index] = {}
+	inventory_changed.emit()
+	return true
+
+
+## Rescue resets vitals/supplies at the overworld spawn, preserving session world progress.
+func rescue() -> void:
+	survival.reset()
+	arrive = ""
+	door_id = -1
+	tool_out = false
+	for slot in inventory:
+		if slot.get("kind", "") in ["ration", "water"]:
+			slot.clear()
+	stock_supplies()
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/overworld.tscn")
 
 
 func reset_inventory() -> void:
