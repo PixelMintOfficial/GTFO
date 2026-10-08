@@ -1,8 +1,12 @@
 # Circuit repair — implementation notes
 
-Approach either the power generator or O2 generator inside the base and press F/X. The
-world pauses, and a native maintenance panel asks the player to rotate wires to connect
-both terminals. Some wires are bolted in place and carry power without rotating.
+Approach either generator inside the base with three scraps and press F/X. The world pauses
+for full-screen Crack Repair first: place three scrap patches over holes/fractures and weld
+their perimeters on the owner's exact supplied Power/O2 panel images. The original PNGs are
+unchanged; the UI displays the wall crop with the existing holes. The teal frame, small red/gold
+torch and pale silver scrap palette follow the approved draft; scraps are enlarged 12%.
+Successful welding spends three scraps and unlocks this circuit panel.
+Rotate wires to connect both terminals; bolted wires carry power without rotating.
 
 ## Rules and timing
 
@@ -28,7 +32,7 @@ The counts are authoring information, never displayed in the panel.
 
 | Input | Action |
 | --- | --- |
-| F / gamepad X near a machine | Open circuit repair |
+| F / gamepad X near a machine | Open cracks first, then circuit repair |
 | Left click / Enter / Space / F / gamepad A | Turn clockwise |
 | Right click / Q / gamepad left shoulder | Turn counterclockwise |
 | Arrows / WASD / d-pad | Select movable modules, skipping bolts and plates |
@@ -38,19 +42,30 @@ The panel consumes input so inventory, hotbar, movement, map, camera and tool ac
 fire behind it. F/X must be released after closing. Machine proximity suppresses the tool
 independently of the airlock and inventory guards.
 
-## Progress and extension point
+## Progress and restoration
 
-GameState owns the session state independently for power and oxygen. Wiring accounts for
-50% of repair. The future cracks task can call:
+GameState owns independent session state for power and oxygen. Cracks account for 50% and
+wiring for the other 50%. The crack panel calls:
 
 ```gdscript
-GameState.repair_for("power").complete_task("cracks")
+GameState.repair_for("power").finish_cracks()
 ```
 
-This awards the other half once; unknown tasks and repeated credit are rejected. Overall
-repair bars remain at 50% after wiring until that task exists. Generated broken art and fault
-FX are unchanged; restored assets and their effects are future work. Scene transitions keep
-progress, orientations and remaining time; restarting the game resets session state.
+This requires three individually sealed perimeters (95% each) and consumes three scraps
+atomically. Placement covers the entire hole/fracture contour with a 2px margin. Welding is
+untimed, with fast-stroke gaps and local overheating after about three seconds of lingering.
+Lifting cools quickly; melt damage is confined to a smaller spot. Rounded raised filler and
+crescent ridges follow actual hand strokes, cooling from red to grey steel. Sealed scraps
+glow teal for one second.
+Failed/unfinished attempts and closes lose no resources. Circuit rotation and its countdown
+are blocked until cracks are complete. Progress, placements, welds, orientations and remaining
+time survive scene transitions; restarting resets the session.
+
+Completing both tasks replaces the broken machine with restored generator geometry, including
+its loose parts, depth map, walk grid, light masks and fault emitters. `interior_gen.py` writes
+all four headings into `repaired_power`, `repaired_oxygen` and `repaired_both`. The room keeps
+its shared MapTerrain instance when switching variants, so player/tool/camera references and
+world positions stay consistent. Six gatherable scraps inside the base use existing prop art.
 
 ## Code ownership
 
@@ -60,16 +75,24 @@ progress, orientations and remaining time; restarting the game resets session st
 | `scripts/repair/circuit_catalog.gd` | Catalog loading and orthogonal route expansion |
 | `scripts/repair/circuit_puzzle.gd` | Pure masks, rotations, shuffling and connection traversal |
 | `scripts/repair/machine_repair.gd` | Countdown, layout cycling and idempotent task progress |
+| `scripts/repair/crack_puzzle.gd` | Hole coverage, placement, welding, heat and transient seal state |
+| `scripts/repair/crack_repair_ui.gd` | Full-screen flat casing view, scrap tray, torch and sparks |
 | `scripts/repair/circuit_repair_ui.gd` | Native octagonal panel, detail, input and turn animation |
 | `scripts/repair/circuit_power_flow.gd` | View-only completion timeline and distance sampling through wire corners |
 | `scripts/repair/machine_repairs.gd` | World proximity, modal ownership and local machine bars |
 | `scripts/game_state.gd` | Cross-scene session lifetime |
-| `tools/interior_gen.py` | Machine interaction/bar anchors derived from actual model centres |
+| `tools/interior_gen.py` | Machine anchors, flat inspection walls and restored room variants |
 | `tools/wire_repair_preview.js` | Browser view, input and countdown companion |
 | `tools/wire_repair_core.js` | Browser pure model; consumes the shared catalog |
 
-`interior_gen.py --repair-metadata-only` refreshes anchors without rerendering the map.
-Regenerating the whole interior also exports them. No map pixel positions live in gameplay
+`interior_gen.py --repair-metadata-only` refreshes world anchors without rerendering the map.
+`--repair-panels-only` refreshes `repair_panel` metadata (`file`, logical `size`, local `sites`,
+`view`, `design`). `REPAIR_PANEL_DESIGN=reference` is the default: the owner-supplied originals
+under `machines/reference/` are never overwritten. `source_rect` selects the wall;
+`baked_damage` skips duplicate procedural holes; `damage_samples` measures the original
+holes/rims and `sha256` identifies each source. `equipment`, `detailed` and `simple` retain
+the earlier generated walls. Regenerating the whole
+interior exports both sets of data. No map pixel positions live in gameplay
 code. Native and browser shuffles may differ, but both use the same ten circuit definitions.
 
 ## Verification
@@ -82,7 +105,7 @@ godot --headless --path . res://scenes/overworld.tscn --quit-after 300 -- --no-i
 node tools/test_wire_repair.cjs
 ```
 
-Native repair tests passed 9,677 checks over 1,000 shuffled boards and actual keyboard,
+Native repair tests cover over 9,700 checks over 1,000 shuffled boards and actual keyboard,
 pointer and gamepad events. They verify immutability, completion, timeout/wrap, closed
 countdowns, independent state, reachable machine fronts, projected bar anchors, input
 ownership and scene persistence. Inventory regression passed 98 checks. Both scenes ran
@@ -95,7 +118,9 @@ no horizontal overflow, wires retain 44 px targets, and only the board pans side
 `tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY` captures all ten real native layouts
 and two solved panels. Screenshots were checked at logical pixel size and enlarged; all
 modules, terminals, bolts and text fit. Native screenshots below also show actual world bars.
-The gallery also records both native completion flights; `circuit-power-flow.gif` is a
+`tests/crack_gallery.tscn` records native pointer welding, cooling/glow frames and restored
+machines in all four headings by day and night. The circuit gallery also records both native
+completion flights; `circuit-power-flow.gif` is a
 looping preview of the one-time in-game effect.
 
 ![Native circuit panel](circuit-repair-native.png)

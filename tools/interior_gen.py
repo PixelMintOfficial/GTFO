@@ -24,6 +24,15 @@ Day and night: the light mask (_light.png) says how much of each pixel is its ow
 
 Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _light.png, _sun.png, .json, anim/,
 and machines/: the power room's reactor and the oxygen generator on their own, as transparent sprites.
+Also writes repaired_power/, repaired_oxygen/, repaired_both/: all four room views with
+restored machines, matching depth/walk/light data, and no fault effects for repaired equipment.
+machines.json retains three projected repair sites on each actual machine for reference.
+CrackRepairUI uses the owner's exact supplied panel PNGs, unchanged under machines/reference/.
+REPAIR_PANEL_DESIGN=reference (default) | equipment | detailed | simple retains earlier designs.
+The reference mode exports the wall crop and damage samples read from the original pixels;
+it never writes the owner-supplied PNGs. --repair-panels-only refreshes inspection metadata
+without rendering the room variants (legacy designs regenerate their inspection images).
+interior_props.json places six gatherable scraps using the existing generated prop sheets.
 --repair-metadata-only refreshes machine interaction anchors without rendering the art.
 
 Four views: like the overworld, the base is rendered from four sides (the camera turns in quarter
@@ -31,6 +40,7 @@ turns). Each view cuts away the walls nearest the camera. View 0 writes the usua
 the same set with a _rk suffix; the walk grid belongs to the base, so there is one. The sun shafts
 fall the same way in the world in every view; the furniture's key light stays put on screen.
 """
+import hashlib
 import json
 import math
 import os
@@ -1100,7 +1110,7 @@ def fill_poly_mask(poly, h, w):
 
 
 # ================================================================== build
-def build():
+def build(fixed=frozenset()):
     """The base's furniture once (so every view shows the same things), then each view of it."""
     t_start = time.time()
     os.makedirs(os.path.join(OUT, 'anim'), exist_ok=True)
@@ -1109,9 +1119,20 @@ def build():
     s_parts = storage_props(rs)
     p_parts, reactor_c, pfx = power_props(rs)
     o_parts, gen_c, tanks, ofx = oxygen_props(rs)
+    # Build the original models first so random environment detail stays identical.
+    if 'power' in fixed:
+        p_parts = restore_power(p_parts, reactor_c)
+        pfx['sparks'], pfx['leds'] = [], []
+    if 'oxygen' in fixed:
+        o_parts = restore_oxygen(o_parts, gen_c, tanks)
+        ofx['sparks'], ofx['vapor'] = [], []
+        ofx['leds'] = [(p, 'steady') for p, _ in ofx['leds']]
     M.VIEW, M.SFX = 0, ''
     set_frame()
     export_machines(p_parts + o_parts, dict(power_generator=reactor_c, oxygen_generator=gen_c))
+    if not fixed:
+        export_loose_scrap(reactor_c, gen_c)
+        export_repair_panels()
 
     # footprints for soft contact shadows on the floor and for the walk grid (the base's frame)
     foot = np.zeros((N, N), bool)
@@ -1137,7 +1158,7 @@ def build():
     foot = ndi.binary_fill_holes(foot)
     ao_grid = ndi.gaussian_filter(foot.astype(np.float32), 3.0)
     furniture = dict(parts=s_parts + p_parts + o_parts, reactor_c=reactor_c, gen_c=gen_c, pfx=pfx, ofx=ofx, tanks=tanks,
-                     foot=foot, ao_grid=ao_grid, Xg=Xg, Yg=Yg)
+                     foot=foot, ao_grid=ao_grid, Xg=Xg, Yg=Yg, fixed=fixed)
     for k in M.VIEWS:
         M.VIEW, M.SFX = k, M.view_sfx(k)
         render_view(k, furniture)
@@ -1250,7 +1271,9 @@ def render_view(k, fur):
         M.draw_text(final, int(x - M.text_width(txt) / 2), int(y), txt, A.hex2rgb(colr), shadow=tuple(int(v) for v in WHITE[3]))
     if label_visible(90.0):
         x, y = M.project(*M.to_view(room_pt('power', 90.0, r_in('power') - 1.2, 27.0)))
-        M.draw_text(final, int(x - M.text_width('OFFLINE') / 2), int(y - 2), 'OFFLINE', A.hex2rgb('#ff5a4a'), shadow=(20, 16, 30))
+        status = 'ONLINE' if 'power' in fur['fixed'] else 'OFFLINE'
+        M.draw_text(final, int(x - M.text_width(status) / 2), int(y - 2), status,
+                    A.hex2rgb('#7fe6cf' if 'power' in fur['fixed'] else '#ff5a4a'), shadow=(20, 16, 30))
     Image.fromarray(final).save(os.path.join(OUT, f'base_interior{sfx}.png'))
 
     # --- game data
@@ -1264,17 +1287,22 @@ def render_view(k, fur):
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
     meta['door'] = export_door()
     meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
+    meta['repair_variants'] = {str(mask): folder + '/base_interior.json' for mask, folder in
+                               [(1, 'repaired_power'), (2, 'repaired_oxygen'), (3, 'repaired_both')]}
+    meta['fixed_machines'] = sorted(fur['fixed'])
     meta['fx'] = dict(
         shafts=[dict(hull=[[round(float(x), 1), round(float(y), 1)] for x, y in s['hull']],
                      hole=pxl(s['hole'].mean(axis=0))) for s in sh],
-        leds=[dict(px=pxl(p), color='#ff5a4a', kind=k) for p, k in pfx['leds'] + ofx['leds']],
-        core=pxl(pfx['core']),
+        leds=[dict(px=pxl(p), color='#7fe6cf' if k == 'steady' else '#ff5a4a', kind=k) for p, k in pfx['leds'] + ofx['leds']],
+        core=[0, 0] if 'power' in fur['fixed'] else pxl(pfx['core']),
         sparks=[pxl(p) for p in pfx['sparks'] + ofx['sparks']],
         vapor=[dict(px=pxl(p), dir=[round(float(v), 3) for v in A.nz(np.array(M.project(*(p + d))) - np.array(M.project(*p)))])
                for p, d in ofx['vapor']],
         circuit_board=board_info(pfx['pcb']),
         tanks=[pxl(t + A.nz(gen_c - t) * 8.6 + np.array([0, 0, 17.0])) for t in tanks],
     )
+    if 'power' in fur['fixed']:
+        del meta['fx']['circuit_board']
     with open(os.path.join(OUT, f'base_interior{sfx}.json'), 'w') as fh:
         json.dump(meta, fh, indent=1)
     Image.fromarray(final).resize((W // 2, H // 2), Image.LANCZOS).save(os.path.join(OUT, f'preview_half{sfx}.png'))
@@ -1387,9 +1415,354 @@ def export_machines(parts, feet):
         ax, ay = M.project(*feet[name])
         info[name] = dict(file=f'machines/{name}.png', size=[int(w), int(h)],
                           anchor=[round(float(ax - box[0] - x0), 1), round(float(ay - box[1] - y0), 1)], note=what)
+        # Sites are authored in the machine model's world frame, never in UI/map pixels.
+        offsets = ([[-3, -8, 15.5], [4, -7.5, 21], [1, -5, 30.8]] if name == 'power_generator'
+                   else [[-6, -8.8, 8.6], [2, -8.4, 13], [-1.8, -3, 32.8]])
+        info[name]['repair_sites'] = [[round(float(v), 1) for v in
+                                      np.array(M.project(*(feet[name] + offset))) - [box[0] + x0, box[1] + y0]]
+                                     for offset in np.array(offsets)]
         print(f'machine: {name} {w}x{h} px')
     with open(os.path.join(out, 'machines.json'), 'w') as fh:
         json.dump(info, fh, indent=1)
+
+
+def restore_power(parts, c):
+    """Reassemble the approved reactor: sealed housing, three mounted coils and a level cap."""
+    pick = MACHINES['power_generator'][1]
+    out = [p for p in parts if not pick(p.group)]
+    out += [P_('plinth', A.Disc(c + [0, 0, 1.2], 15, 1.2, .5, M.UPAX), 'steel', 'reactor'),
+            P_('housing', A.Disc(c + [0, 0, 15], 9.5, 13, 2, M.UPAX), 'white', 'reactor', decal_reactor),
+            P_('cap', A.Ellipsoid(c + [0, 0, 30], (9.6, 9.6, 3)), 'white', 'cap'),
+            P_('capring', A.Torus(c + [0, 0, 29.6], 9.4, .8), 'coral', 'cap'),
+            P_('status', A.Sphere(c + [0, -9.5, 19], .7), 'ledcyan', 'reactor')]
+    for z in (7, 15.5, 24):
+        out.append(P_('coil', A.Torus(c + [0, 0, z], 10.6, 1.3), 'mustard', 'coil7'))
+    return out
+
+
+def export_repair_panels():
+    """Use the owner's original panel images; retain generated walls as legacy versions.
+    Read-only reference images supply the crop and exact hole-placement geometry."""
+    out = os.path.join(OUT, 'machines')
+    os.makedirs(os.path.join(out, 'preview'), exist_ok=True)
+    path = os.path.join(out, 'machines.json')
+    with open(path) as fh:
+        info = json.load(fh)
+    width, height = 336, 117
+    design = os.environ.get('REPAIR_PANEL_DESIGN', 'reference')
+    if design == 'reference':
+        source_rect = [43, 99, 642, 219]
+        for machine in ('power', 'oxygen'):
+            file = f'machines/reference/{machine}.png'
+            source_path = os.path.join(OUT, file)
+            with open(source_path, 'rb') as fh:
+                digest = hashlib.sha256(fh.read()).hexdigest()
+            with Image.open(source_path) as source:
+                x, y, w, h = source_rect
+                pixels = np.asarray(source.convert('RGB'))[y:y+h, x:x+w]
+            void = (pixels[..., 0] < 20) & (pixels[..., 1] < 18) & (pixels[..., 2] < 30)
+            labels, count = ndi.label(void)
+            components = sorted(range(1, count + 1), key=lambda k: np.count_nonzero(labels == k), reverse=True)[:3]
+            if len(components) != 3 or any(np.count_nonzero(labels == k) < 1000 for k in components):
+                raise ValueError(f'{file}: expected three original holes')
+            components.sort(key=lambda k: np.where(labels == k)[1].mean())
+            sites, samples = [], []
+            dark = (pixels[..., 0] <= 36) & (pixels[..., 1] <= 26) & (pixels[..., 2] <= 46)
+            for k in components:
+                ys, xs = np.where(labels == k)
+                site = np.round([(xs.mean() + .5) * width / w, (ys.mean() + .5) * height / h]).astype(int)
+                # Include the broken rim and short dark fracture branches around each aperture.
+                damage = (labels == k) | (ndi.binary_dilation(labels == k, iterations=10) & dark)
+                ys, xs = np.where(damage)
+                points = np.unique(np.round(np.column_stack(((xs + .5) * width / w, (ys + .5) * height / h)), 0), axis=0)
+                sites.append(site.tolist())
+                samples.append((points - site).astype(int).tolist())
+            info[machine + '_generator']['repair_panel'] = dict(file=file, size=[width, height],
+                source_rect=source_rect, sites=sites, damage_samples=samples, baked_damage=True,
+                view='flat', design=design, sha256=digest,
+                note='Owner-supplied original PNG, unchanged. Display only its wall region; holes are already in the image.')
+        with open(path, 'w') as fh:
+            json.dump(info, fh, indent=1)
+        print('Original machine panel crops and damage metadata exported; source PNGs unchanged.')
+        return
+    R = np.column_stack((M.CR, M.F, M.CU))
+    c = np.array([0., 0., 60.])
+    half = np.array([width * S / 2 - .5, .8, height * S / 2 - .5])
+    cx, cy = M.project(*c)
+    box = (round(cx - width / 2), round(cy - height / 2), width, height)
+    for machine, accent in [('power', 'coral'), ('oxygen', 'teal')]:
+        def decal(part, P, machine=machine, accent=accent):
+            q = part.sdf.local(P)
+            x, y = q[:, 0] / S + width / 2, height / 2 - q[:, 2] / S
+            if design == 'equipment':
+                material = np.full(len(P), OID['steel'])
+                if machine == 'power':
+                    material[(x > 137) & (x < 207) & (y > 50)] = OID['cable']
+                    material[(x > 257) & (y > 42)] = OID['dark']
+                    seams = [(136, 6, height - 6), (208, 6, height - 6), (258, 42, height - 6)]
+                else:
+                    material[(x > 69) & (x < 116)] = OID['white']
+                    material[(x > 116) & (x < 214) & (y < 55)] = OID['tglass']
+                    material[(x > 214) & (x < 258)] = OID['tglass']
+                    material[(x > 258) & (y > 44)] = OID['tglass']
+                    seams = [(69, 6, height - 6), (116, 6, height - 6), (214, 6, height - 6), (258, 6, height - 6)]
+                    material[(x > 116) & (x < 214) & (np.abs(y - 55) < .7)] = OID['cable']
+                    material[(x > 116) & (x < 214) & (np.abs(y - 56.3) < .5)] = OID['white']
+                    material[(x > 258) & (np.abs(y - 44) < .7)] = OID['cable']
+                for column, start, end in seams:
+                    length = (y > start) & (y < end)
+                    material[length & (np.abs(x - column) < .7)] = OID['cable']
+                    material[length & (np.abs(x - column - 1.4) < .5)] = OID['white']
+                # A restrained shared frame and hazard foot; no labels, graphs or surface noise.
+                material[(x < 3) | (x > width - 3) | (y < 3)] = OID['white']
+                material[(y > 3) & (y < 6)] = OID[accent]
+                material[y > height - 6] = OID['cable']
+                material[(y > height - 6) & (y < height - 3) & (np.mod(x + y, 14) < 5)] = OID['mustard']
+                return material
+            if design == 'detailed':
+                material = np.full(len(P), OID['steel'])
+                # Flat panel seams and beveled outer frame: hardware uses the actual machine ramps.
+                material[(x < 3) | (x > width - 3) | (y < 3)] = OID['white']
+                material[(y > 3) & (y < 6)] = OID[accent]
+                material[y > height - 6] = OID['cable']
+                if machine == 'power':
+                    # Unwrapped reactor shell: two broad gold coil collars around silver ribs.
+                    material[((y > 9) & (y < 23)) | ((y > 98) & (y < 110))] = OID['mustard']
+                    material[((y > 10) & (y < 12)) | ((y > 99) & (y < 101))] = OID['white']
+                    material[(y > 19) & (y < 22) & (np.mod(x, 16) < 2)] = OID['foil']
+                    material[(y > 106) & (y < 109) & (np.mod(x, 16) < 2)] = OID['foil']
+                    clamps = np.mod(x - 24, 48) < 2.5
+                    material[clamps & (((y > 14) & (y < 22)) | ((y > 101) & (y < 109)))] = OID['steel']
+                    for row in (26, 45, 70, 94):
+                        material[(np.abs(y - row) < .65) & (x > 22) & (x < width - 22)] = OID['white']
+                    # Open service leads sit outside the three welding fields.
+                    for column, ramp in ((8, 'coral'), (12, 'teal'), (16, 'mustard')):
+                        wire = np.abs(x - column - np.sin(y / 15) * 1.5) < .75
+                        material[wire & (y > 29) & (y < 90)] = OID[ramp]
+                    material[(x > width - 14) & (x < width - 7) & (y > 32) & (y < 88)] = OID['mustard']
+                    material[(x > width - 11) & (x < width - 9) & (y > 35) & (y < 85)] = OID['foil']
+                else:
+                    # Teal chamber face, pale mounting bands, silver ventilated base and hazard foot.
+                    field = (x > 19) & (x < width - 19) & (y > 25) & (y < 93)
+                    material[field] = OID['tglass']
+                    material[((y > 20) & (y < 26)) | ((y > 92) & (y < 97))] = OID['white']
+                    material[(y > 26) & (y < 29)] = OID['teal']
+                    vent = ((x > 27) & (x < 97) | (x > width - 74) & (x < width - 26)) & (y > 99) & (y < 110)
+                    material[vent & (np.mod(y, 3) < 1.1)] = OID['cable']
+                    material[(y > height - 7) & (y < height - 3)] = OID['cable']
+                    material[(y > height - 7) & (y < height - 3) & (np.mod(x + y, 9) < 4)] = OID['mustard']
+                for column in (112, 224):
+                    join = (y > 29) & (y < 93)
+                    material[join & (np.abs(x - column) < .65)] = OID['cable']
+                    material[join & (np.abs(x - column - 1.2) < .5)] = OID['white']
+                    for row in (33, 87):
+                        material[(np.abs(x - column) < 1.6) & (np.abs(y - row) < 1.1)] = OID['white']
+                # Small casing scuffs, kept clear of the intended damage sites.
+                for sx, sy in ((36, 31), (140, 37), (244, 30), (206, 90)):
+                    material[(x > sx) & (x < sx + 7) & (np.abs(y - sy - (x - sx) * .16) < .4)] = OID['white']
+                return material
+            material = np.full(len(P), OID['white'])
+            # Clean printed trim, identical material accents to the corresponding casing.
+            material[y < 5] = OID[accent]
+            material[(y > height - 5) & (y < height - 2)] = OID['steel']
+            if machine == 'power':
+                # The reactor's fine steel bands and gold coil channels, shown face-on.
+                material[(np.abs(y - 25) < .6) | (np.abs(y - 94) < .6)] = OID['steel']
+                material[(x > width - 33) & (x < width - 29) & (y > 18) & (y < height - 18)] = OID['mustard']
+                material[(x > width - 26) & (x < width - 24) & (y > 18) & (y < height - 18)] = OID['steel']
+            else:
+                # The oxygen housing's teal strip and recessed horizontal cooling grille.
+                material[(y > 22) & (y < 25)] = OID['teal']
+                grille = (x > width - 48) & (x < width - 18) & (y > height - 32) & (y < height - 14)
+                material[grille & (np.mod(y, 4) < 1.2)] = OID['dark']
+            return material
+        parts = [P_('inspection_wall', A.RoundBox(c, half, .3, R), 'white', 'wall', decal)]
+        def point(x, y, depth=1.15):
+            return c + R @ [(x - width / 2) * S, -depth, (height / 2 - y) * S]
+
+        if design == 'equipment':
+            def module_decal(part, P):
+                q = part.sdf.local(P) / S
+                hw, hh = part.sdf.half[0] / S, part.sdf.half[2] / S
+                x, y = q[:, 0] + hw, hh - q[:, 2]
+                material = np.full(len(P), OID['darkwin'])
+                inner = (np.abs(q[:, 0]) < hw - 2) & (np.abs(q[:, 2]) < hh - 2)
+                material[~inner] = OID['steel']
+                material[(q[:, 2] > hh - 1.2) | (q[:, 0] < -hw + 1)] = OID['white']
+                if part.name == 'core':
+                    core = (q[:, 0] / (hw - 5)) ** 2 + (q[:, 2] / (hh - 3)) ** 2 < 1
+                    material[core] = OID['redcore']
+                    material[core & (np.abs(q[:, 0]) < 4)] = OID['coral']
+                    material[core & (np.abs(q[:, 2]) < 2)] = OID['coral']
+                    material[core & (np.mod(x - 3, 10) < 1.5)] = OID['cable']
+                elif part.name == 'vent':
+                    slats = inner & (np.mod(y, 5) < 1.4)
+                    material[slats] = OID['teal' if machine == 'oxygen' else 'steel']
+                elif part.name == 'status':
+                    for index, ramp in enumerate(('mustard', 'coral', 'dark')):
+                        if machine == 'oxygen':
+                            led = np.hypot(x - hw * 1.5, y - (8 + index * 10)) < 2.2
+                            bar = (x > 5) & (x < hw + 1) & (np.abs(y - (8 + index * 10)) < 2.7)
+                            material[bar] = OID['white' if index == 0 else 'tglass']
+                        else:
+                            led = np.hypot(x - (9 + index * 14), y - hh) < 2.5
+                        material[led] = OID[ramp]
+                return material
+
+            def module(name, x, y, w, h):
+                parts.append(P_(name, A.RoundBox(point(x + w / 2, y + h / 2), (w * S / 2, .28, h * S / 2), .3, R),
+                                'steel', name, module_decal))
+
+            def pipe(x, y, w, h, ramp):
+                parts.append(P_('pipe', A.RoundBox(point(x + w / 2, y + h / 2, 1.6),
+                                (w * S / 2, .4, h * S / 2), .65 * S, R), ramp, f'pipe{x}:{y}'))
+
+            face = np.column_stack((-M.F, M.CR, M.CU))
+            def port_decal(part, P):
+                q = part.sdf.local(P) / S
+                radius = np.hypot(q[:, 1], q[:, 2])
+                edge = part.sdf.radius / S
+                material = np.full(len(P), OID['white'])
+                if machine == 'oxygen':
+                    material[radius < edge - 3] = OID['teal']
+                    material[radius < edge - 6] = OID['darkwin']
+                    material[(radius > edge - 4) & (radius < edge - 3)] = OID['steel']
+                    if part.name == 'fan':
+                        angle = np.arctan2(q[:, 2], q[:, 1])
+                        material[(radius > 2) & (radius < edge - 3) & (np.mod(angle + radius * .08, TAU / 3) < .65)] = OID['tglass']
+                        material[radius < 2] = OID['steel']
+                else:
+                    material[radius > edge - 1.5] = OID['steel']
+                    needle = (np.abs(q[:, 1] - q[:, 2] * .6) < .65) & (radius < edge - 3)
+                    material[needle] = OID['coral']
+                    material[radius < 1.8] = OID['steel']
+                return material
+
+            if machine == 'power':
+                # Pressure gauge, warm core, one status bay and two broad gold pipe runs.
+                parts.append(P_('gauge', A.Disc(point(28, 25), 12 * S, .28, .15, face), 'white', 'gauge', port_decal))
+                module('core', 143, 9, 58, 39)
+                module('vent', 143, 54, 59, 53)
+                module('status', 271, 9, 57, 25)
+                pipe(6, 87, 124, 5, 'mustard')
+                pipe(209, 25, 123, 5, 'mustard')
+                pipe(327, 25, 5, 44, 'mustard')
+                for column in (23, 63, 103):
+                    pipe(column, 84, 2, 11, 'steel')
+                for column in (227, 269, 310):
+                    pipe(column, 22, 2, 11, 'steel')
+            else:
+                # Three legible assemblies, kept broad and quiet around the welding holes.
+                parts.append(P_('chamber', A.Disc(point(165, 29), 20 * S, .3, .25, face), 'white', 'chamber', port_decal))
+                parts.append(P_('fan', A.Disc(point(299, 23), 12 * S, .3, .15, face), 'teal', 'fan', port_decal))
+                module('vent', 11, 12, 47, 27)
+                module('status', 218, 8, 36, 36)
+                for column in (82, 103):
+                    pipe(column, 44, 4, 63, 'teal')
+                    for row in (51, 76, 101):
+                        pipe(column - 2, row, 8, 2, 'steel')
+        if design == 'detailed':
+            if machine == 'power':
+                def relay_decal(part, P):
+                    q = part.sdf.local(P) / S
+                    material = np.full(len(P), OID['cable'])
+                    lens = (np.abs(q[:, 0]) < 9) & (np.abs(q[:, 2]) < 3)
+                    material[lens] = OID['redcore']
+                    material[lens & (np.abs(q[:, 2]) < .7) & (q[:, 0] < 4)] = OID['coral']
+                    material[(np.abs(q[:, 0]) > 11) & (np.abs(q[:, 2]) > 3)] = OID['white']
+                    return material
+                parts.append(P_('relay', A.RoundBox(point(168, 16), (14 * S, .28, 5 * S), .2, R), 'cable', 'relay', relay_decal))
+            else:
+                # A small front-facing cooling fan and the machine's paired glass coolant cells.
+                face = np.column_stack((-M.F, M.CR, M.CU))
+                def fan_decal(part, P):
+                    q = part.sdf.local(P) / S
+                    radius = np.hypot(q[:, 1], q[:, 2])
+                    angle = np.arctan2(q[:, 2], q[:, 1])
+                    material = np.full(len(P), OID['darkwin'])
+                    material[(radius > 3) & (radius < 9) & (np.mod(angle + radius * .06, TAU / 6) < .5)] = OID['steel']
+                    material[radius > 10] = OID['teal']
+                    material[radius < 2.5] = OID['white']
+                    return material
+                parts.append(P_('fan', A.Disc(point(168, 16, 1.35), 11 * S, .32, .1, face), 'steel', 'fan', fan_decal))
+                def coolant_decal(part, P):
+                    q = part.sdf.local(P) / S
+                    material = np.full(len(P), OID['teal'])
+                    glass = (np.abs(q[:, 0]) < 3) & (np.abs(q[:, 2]) < 25)
+                    material[glass] = OID['tglass']
+                    material[glass & (q[:, 0] < -1.5)] = OID['shard']
+                    material[np.abs(q[:, 2]) > 26] = OID['white']
+                    material[(np.abs(q[:, 0]) < 1.2) & (np.abs(q[:, 2]) < 18) & (np.mod(q[:, 2], 8) < 1)] = OID['white']
+                    return material
+                for column in (11, width - 11):
+                    parts.append(P_('coolant', A.RoundBox(point(column, 59), (5 * S, .32, 31 * S), 1.1 * S, R), 'teal', f'coolant{column}', coolant_decal))
+        for x in (-half[0] + 3 * S, half[0] - 3 * S):
+            for z in (-half[2] + 7 * S, half[2] - 7 * S):
+                bolt = c + R @ [x, -.95, z]
+                parts.append(P_('fastener', A.RoundBox(bolt, (.8, .25, .8), .12, R), 'steel', 'bolt'))
+        rgba = M.sprite_rgba(M.render_sprite(parts, box))
+        file = f'machines/{machine}_repair_panel.png'
+        Image.fromarray(rgba).save(os.path.join(OUT, file))
+        Image.fromarray(rgba).resize((width * 4, height * 4), Image.NEAREST).save(os.path.join(out, 'preview', f'{machine}_repair_panel_x4.png'))
+        info[machine + '_generator']['repair_panel'] = dict(file=file, size=[width, height],
+            sites=[[55, 65], [167, 73], [278, 58]], view='flat', design=design,
+            note='Flat front-facing machine casing, following the approved draft; three holes and fractures are drawn by the puzzle model.')
+    with open(path, 'w') as fh:
+        json.dump(info, fh, indent=1)
+    print('Flat machine repair panels generated.')
+
+
+def export_loose_scrap(reactor_c, gen_c):
+    """Enough salvage for both machines, in reachable front-of-room positions outside F priority."""
+    source = os.path.join(M.ROOT, 'assets', 'maps', 'red_planet', 'red_planet_props.json')
+    with open(source) as fh:
+        sheets = json.load(fh)
+    def relative(sprites):
+        return {name: dict(sprite, file='../red_planet/' + sprite['file']) for name, sprite in sprites.items()}
+    objects = []
+    for c in (reactor_c, gen_c):
+        for frame, offset in enumerate(([-16, -64, 0], [10, -65, 0], [34, -52, 0])):
+            p = c + offset
+            objects.append(dict(kind='scrap', frame=frame, job='gather',
+                                world=[float(p[0]), float(p[1])], radius=4.0, solid=False))
+    data = dict(sprites=relative(sheets['sprites']), sprites_views=[relative(s) for s in sheets['sprites_views']],
+                objects=objects, lamps=[], note='Six loose scraps for the two three-patch machine repairs. Session IDs persist through airlocks.')
+    with open(os.path.join(OUT, 'interior_props.json'), 'w') as fh:
+        json.dump(data, fh, indent=1)
+
+
+def restore_oxygen(parts, c, tanks):
+    """Rebuild the same O2 assembly: sealed panels/glass, straight fan, coolant and bottle pipe."""
+    remove = {'genpanel', 'fan', 'o2cap', 'cool1', 'pipe1', 'pipe1b'}
+    out = [p for p in parts if p.group not in remove and not p.group.startswith('o2wire')
+           and p.name not in ('o2housing', 'o2coil', 'cellglass', 'chamber', 'o2screen', 'o2led', 'fin')]
+    out.append(P_('o2housing', A.RoundBox(c + [0, 0, 8.6], (12.5, 8.4, 7.2), 1.6), 'white', 'gen', decal_o2))
+    tube = Cut(A.Disc(c + [0, 0, 22.5], 8, 7, 1, M.UPAX), A.Disc(c + [0, 0, 22.5], 7, 8, .5, M.UPAX))
+    out += [P_('chamber', tube, 'tglass', 'chamber'),
+            P_('hub', A.Disc(c + [0, 0, 22.5], 1.5, 6, .4, M.UPAX), 'steel', 'fan'),
+            P_('o2cap', A.Ellipsoid(c + [0, 0, 31.6], (8.8, 8.8, 2.4)), 'white', 'o2cap'),
+            P_('o2capring', A.Torus(c + [0, 0, 31.2], 8.6, .7), 'teal', 'o2cap'),
+            P_('o2vent', A.Disc(c + [0, 0, 33.7], 3, .6, .3, A.ry(-math.pi / 2)), 'steel', 'o2cap'),
+            P_('coolant', A.RoundCone(c + [17, -4, 6], c + [17, 6.5, 6], 3.2, 3.2), 'teal', 'cool1'),
+            P_('coolband', A.Torus(c + [17, 1.2, 6], 3.35, .5, A.rx(math.pi / 2)), 'white', 'cool1')]
+    for j in range(6):
+        a = j / 6 * TAU + .3
+        out.append(P_('blade', A.RoundBox(c + [math.cos(a)*3.7, math.sin(a)*3.7, 22.5],
+                                        (2.7, .32, 4.2), .2, A.rz(a) @ A.rx(.45)), 'steel', 'fan'))
+    for y in np.arange(-6.6, 6.7, 1.65):
+        out.append(P_('fin', A.RoundBox(c + [14, y, 8.2], (1.7, .22, 5.2), .12), 'steel', 'fins'))
+    for k, dx in enumerate((-10.2, 10.2)):
+        cc = c + [dx, -2.6, 0]
+        out.append(P_('cellglass', A.Disc(cc + [0, 0, 25.5], 2.7, 2.2, .3, M.UPAX), 'tglass', f'cell{k}'))
+        if k == 1:
+            out.append(P_('liquid', A.Disc(cc + [0, 0, 20.4], 2.7, 3, .3, M.UPAX), 'liquid', 'cell1'))
+    pc = c + [6.5, -9.4, 10.6]
+    out += [P_('o2screen', A.RoundBox(pc + [-.7, -1.1, .2], (2.3, .2, 1.7), .2, A.rx(.25)), 'screen', 'o2ctl'),
+            P_('o2led', A.Sphere(pc + [2.5, -1.3, 1.2], .55), 'ledcyan', 'o2ctl')]
+    t = tanks[1]
+    out.append(P_('pipe', A.RoundCone(c + [0, 0, 26] + A.nz(t-c)*8.4,
+                                    t + [0, 0, 24] + A.nz(c-t)*7.8, 1.1, 1.1), 'teal', 'pipe1'))
+    return out
 
 
 def export_door():
@@ -1411,5 +1784,15 @@ if __name__ == '__main__':
     np.seterr(all='ignore')
     if '--repair-metadata-only' in sys.argv:
         refresh_repair_metadata()
+    elif '--repair-panels-only' in sys.argv:
+        M.VIEW, M.SFX = 0, ''
+        M.SUN = SUN_IN
+        set_frame()
+        export_repair_panels()
     else:
         build()
+        root = OUT
+        for folder, fixed in [('repaired_power', {'power'}), ('repaired_oxygen', {'oxygen'}),
+                              ('repaired_both', {'power', 'oxygen'})]:
+            OUT = os.path.join(root, folder)
+            build(fixed)
