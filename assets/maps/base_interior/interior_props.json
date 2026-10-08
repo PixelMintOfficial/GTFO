@@ -59,6 +59,30 @@
     20.5,
     25.0
    ]
+  },
+  "cargo_box": {
+   "file": "props/cargo_box.png",
+   "frames": 5,
+   "frame_size": [
+    127,
+    99
+   ],
+   "anchor": [
+    64.0,
+    53.0
+   ]
+  },
+  "ration": {
+   "file": "props/ration.png",
+   "frames": 3,
+   "frame_size": [
+    20,
+    21
+   ],
+   "anchor": [
+    10.0,
+    12.0
+   ]
   }
  },
  "sprites_views": [
@@ -122,6 +146,30 @@
      20.5,
      25.0
     ]
+   },
+   "cargo_box": {
+    "file": "props/cargo_box.png",
+    "frames": 5,
+    "frame_size": [
+     127,
+     99
+    ],
+    "anchor": [
+     64.0,
+     53.0
+    ]
+   },
+   "ration": {
+    "file": "props/ration.png",
+    "frames": 3,
+    "frame_size": [
+     20,
+     21
+    ],
+    "anchor": [
+     10.0,
+     12.0
+    ]
    }
   },
   {
@@ -183,6 +231,30 @@
     "anchor": [
      18.5,
      28.0
+    ]
+   },
+   "cargo_box": {
+    "file": "props/cargo_box_r1.png",
+    "frames": 5,
+    "frame_size": [
+     130,
+     91
+    ],
+    "anchor": [
+     65.0,
+     53.0
+    ]
+   },
+   "ration": {
+    "file": "props/ration_r1.png",
+    "frames": 3,
+    "frame_size": [
+     20,
+     21
+    ],
+    "anchor": [
+     10.0,
+     12.0
     ]
    }
   },
@@ -246,6 +318,30 @@
      20.5,
      25.0
     ]
+   },
+   "cargo_box": {
+    "file": "props/cargo_box_r2.png",
+    "frames": 5,
+    "frame_size": [
+     127,
+     98
+    ],
+    "anchor": [
+     63.0,
+     53.0
+    ]
+   },
+   "ration": {
+    "file": "props/ration_r2.png",
+    "frames": 3,
+    "frame_size": [
+     20,
+     21
+    ],
+    "anchor": [
+     10.0,
+     12.0
+    ]
    }
   },
   {
@@ -307,6 +403,30 @@
     "anchor": [
      18.5,
      28.0
+    ]
+   },
+   "cargo_box": {
+    "file": "props/cargo_box_r3.png",
+    "frames": 5,
+    "frame_size": [
+     130,
+     95
+    ],
+    "anchor": [
+     65.0,
+     53.0
+    ]
+   },
+   "ration": {
+    "file": "props/ration_r3.png",
+    "frames": 3,
+    "frame_size": [
+     20,
+     21
+    ],
+    "anchor": [
+     10.0,
+     12.0
     ]
    }
   }
@@ -377,8 +497,30 @@
    ],
    "radius": 4.0,
    "solid": false
+  },
+  {
+   "kind": "cargo_box",
+   "frame": 0,
+   "job": "lift",
+   "world": [
+    52.0,
+    554.0
+   ],
+   "radius": 13.5,
+   "solid": false,
+   "top": 14.4,
+   "half": [
+    11.5,
+    7.0
+   ],
+   "yaw": -0.25,
+   "contents": {
+    "kind": "ration",
+    "count": 4
+   },
+   "drop_sound": "cargo_drop"
   }
  ],
  "lamps": [],
- "note": "Six loose scraps for the two three-patch machine repairs. Session IDs persist through airlocks."
+ "note": "Six loose scraps for the two three-patch machine repairs, and the cargo box (lift it, stand on it: top = its height, half = half its footprint turned by yaw, contents = what spills when it breaks). Session IDs persist through airlocks."
 }

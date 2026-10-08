@@ -530,6 +530,124 @@
    "note": "Synthesised: two struggling ticks, then warm light. The first thing in the game you actually fix.",
    "group": "The multitool"
   },
+  "cargo_land": {
+   "files": [
+    "cargo_land_0.wav",
+    "cargo_land_1.wav",
+    "cargo_land_2.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -10.0,
+   "loop": false,
+   "seconds": 0.69,
+   "pitch": [
+    0.94,
+    1.04
+   ],
+   "dist": 360.0,
+   "note": "Landing on the cargo box. It plays over the astronaut's landing thud, so it carries only the steel: Kenney impactMetal_heavy (centroid 507-741 Hz, flatness 0.002-0.06 - a tonal clank) for the boots on its lid, rubberduck metal_hit 03/04 (centroid 1.9-3.1 kHz) for the lid ringing, syn_box_boom for the hollow shell under it.",
+   "group": "Storage: the cargo box and the panes"
+  },
+  "cargo_crack": {
+   "files": [
+    "cargo_crack_0.wav",
+    "cargo_crack_1.wav",
+    "cargo_crack_2.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 0.525,
+   "pitch": [
+    0.93,
+    1.05
+   ],
+   "dist": 380.0,
+   "note": "The box cracking under you, once per pane: rubberduck metal_sheet 03/05/06 (centroid 1.4-2.0 kHz, 54-71% in the mids) - a steel wall buckling. wood_cracking (92-98% above 2 kHz), high-passed so no wood body is left, is the fracture running; impactMetal_heavy the weight on it; syn_steel_stress the ping of steel giving.",
+   "group": "Storage: the cargo box and the panes"
+  },
+  "cargo_groan": {
+   "files": [
+    "cargo_groan.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 1.2,
+   "pitch": [
+    0.96,
+    1.03
+   ],
+   "dist": 380.0,
+   "note": "The box about to give way (0.45 s before it bursts): syn_box_groan, a sagging tone with the seams slipping faster and faster. rubberduck wood_squeak_01 (8.4 onsets/s, centroid 2.8 kHz) pitched down to 0.45 becomes a slow metal creak; metal_sheet_04 (27.6% below 300 Hz) at 0.6 the shell bending.",
+   "group": "Storage: the cargo box and the panes"
+  },
+  "cargo_burst": {
+   "files": [
+    "cargo_burst_0.wav",
+    "cargo_burst_1.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -6.0,
+   "loop": false,
+   "seconds": 1.469,
+   "pitch": [
+    0.95,
+    1.04
+   ],
+   "dist": 480.0,
+   "note": "The box giving way and crushing flat: Kenney impactPlate_heavy (55-58 Hz) and a falling sub for the weight - the camera shakes 2.6 px - under rubberduck metal_slam_01 (53.5% below 300 Hz), the walls hitting the floor; bfh1_metal_falling 01/02 (centroid 2.4-2.7 kHz, 4-5 onsets/s), sheet steel coming down; metal_falling_01 (76% above 2 kHz) clattering just after. Layers levelled with rms_to: the raw falls differ by 7 dB.",
+   "group": "Storage: the cargo box and the panes"
+  },
+  "cargo_drop": {
+   "files": [
+    "cargo_drop_0.wav",
+    "cargo_drop_1.wav",
+    "cargo_drop_2.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 0.818,
+   "pitch": [
+    0.92,
+    1.03
+   ],
+   "dist": 360.0,
+   "note": "The tool setting the cargo box down (its drop_sound): Kenney impactMetal_heavy (centroid 507-741 Hz) for its steel base meeting the floor, impactPlate_heavy (55-78 Hz) under it for the mass, rubberduck bfh1_metal_hit_05 (289 Hz, a dull heavy steel hit), and metal_hit_04 (3.1 kHz) a moment later: the rations inside shifting. lift_drop is wood - right for crates, wrong for this.",
+   "group": "Storage: the cargo box and the panes"
+  },
+  "ration_land": {
+   "files": [
+    "ration_land_0.wav",
+    "ration_land_1.wav",
+    "ration_land_2.wav",
+    "ration_land_3.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.16,
+   "pitch": [
+    0.94,
+    1.1
+   ],
+   "dist": 280.0,
+   "note": "A ration pack landing after the box bursts: Kenney impactGeneric_light (centroid 300-511 Hz, 38-54% in the mids) for the pouch slapping the floor, impactSoft_medium (60-87 Hz) under it for a full pouch's weight, rubberduck items 01/02 (76-97% above 2 kHz) cut to 160 ms for the foil. Four land one after another, so four variants.",
+   "group": "Storage: the cargo box and the panes"
+  },
+  "pane_mend": {
+   "files": [
+    "pane_mend.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -10.0,
+   "loop": false,
+   "seconds": 1.25,
+   "dist": 420.0,
+   "note": "A smashed pane mended: syn_pane_mend draws air across the gap, then the new glass sets with an inharmonic ring. Kenney impactGlass_light_001 (centroid 1.3 kHz, flatness 0.006 - a clean tonal tap) lands with the ring, so it is a real pane. Played where the pane is mended (for now, landing on the box under it).",
+   "group": "Storage: the cargo box and the panes"
+  },
   "door_prompt": {
    "files": [
     "door_prompt.wav"

@@ -183,12 +183,23 @@ def _sha256(path):
     return h.hexdigest()
 
 
+def _bsdtar():
+    """bsdtar by name, or the system tar where that is bsdtar (Windows 10+ and macOS ship it so)."""
+    if shutil.which('bsdtar'):
+        return 'bsdtar'
+    tar = shutil.which('tar')
+    if tar and 'bsdtar' in subprocess.run([tar, '--version'], capture_output=True, text=True).stdout:
+        return tar
+    return None
+
+
 def _unpack(blob, into, strip):
     if not blob.endswith(('.zip', '.7z', '.tar', '.tar.gz', '.tgz')):
         shutil.copy2(blob, os.path.join(into, os.path.basename(blob).replace('%20', '_')))
         return
-    if shutil.which('bsdtar'):
-        subprocess.run(['bsdtar', '-xf', blob, '-C', into] +
+    tar = _bsdtar()
+    if tar:
+        subprocess.run([tar, '-xf', blob, '-C', into] +
                        ([f'--strip-components={strip}'] if strip else []), check=True)
     elif blob.endswith('.zip'):
         import zipfile
@@ -318,6 +329,11 @@ def cut(start, dur):
 
 def head(dur):
     return lambda x: x[:_ns(dur)]
+
+
+def delay(sec):
+    """Start later: silence in front, so a layer lands at its moment inside the sound."""
+    return lambda x: np.concatenate([np.zeros(_ns(sec)), x])
 
 
 def pitch(ratio):
@@ -902,6 +918,66 @@ def syn_repair_done(name):
     return run(out, [hp(80), lp(6500), norm(-8.0)])
 
 
+# ---------------------------------------------------------------- the cargo box and the panes
+def syn_box_boom(name):
+    """The cargo box struck: a big steel shell ringing round the air inside it. Low
+    inharmonic modes - a hollow body, not a note - detuned a little per variant."""
+    rng = seeded(name)
+    sec = 0.7
+    out = modes(sec, [71.0, 109.0, 163.0, 238.0, 351.0, 517.0], [0.3, 0.24, 0.15, 0.1, 0.06, 0.035],
+                [1.0, 0.8, 0.55, 0.4, 0.25, 0.15], detune=0.04, rng=rng)
+    out += 0.6 * sine(sec, 48.0) * dec(sec, 0.07)
+    return run(out, [hp(40), lp(2400), norm(-6.0)])
+
+
+def syn_steel_stress(name):
+    """Steel giving under a boot: the panel buckles in with a dull pop, a crack runs through
+    it in a few dry ticks, and the metal pings - short, inharmonic, over a bright tear."""
+    rng = seeded(name)
+    sec = 0.45
+    out = 0.7 * sweep(sec, 640.0, 210.0, 0.4) * dec(sec, 0.045)
+    _add(out, 0.55 * run(noise(0.12, rng), [bp(1800, 8500)]) * ramp(0.12, [(0, 0), (0.08, 1.0), (0.4, 0.5), (1, 0)]), 0.02)
+    at = 0.03
+    for k in range(int(rng.integers(3, 6))):
+        _add(out, 0.45 * run(noise(0.008, rng), [bp(2500, 9500), fade(0.0005, 0.005)]), at)
+        at += rng.uniform(0.012, 0.03)
+    ping = modes(0.4, [1170.0, 1810.0, 2630.0, 3570.0], [0.09, 0.06, 0.04, 0.025], [1.0, 0.7, 0.45, 0.3],
+                 detune=0.03, rng=rng)
+    _add(out, 0.45 * ping, 0.01)
+    return run(out, [hp(120), lp(9500), norm(-5.0)])
+
+
+def syn_box_groan(name):
+    """The box about to go: its shell bending under the weight. A low tone sags while the
+    seams stick and slip faster and faster; it peaks as it gives (0.45 s in, WindowCracks.GROAN)
+    and the burst takes over."""
+    rng = seeded(name)
+    sec = 0.85
+    t = np.linspace(0.0, sec, _ns(sec))
+    bend = np.sin(TAU * np.cumsum(152.0 - 52.0 * (t / sec) ** 1.3) / SR)
+    slip = np.abs(np.sin(TAU * np.cumsum(7.0 + 26.0 * (t / sec) ** 1.5) / SR)) ** 6
+    creak = run(noise(sec, rng), [bp(420, 2600)]) * slip
+    body = 0.5 * bend * (0.6 + 0.4 * slip) + 0.7 * creak + 0.25 * sine(sec, 233.0) * slip
+    shape = ramp(sec, [(0, 0), (0.1, 0.45), (0.53, 1.0), (0.7, 0.5), (1, 0.0)])
+    return run(body * shape, [hp(45), lp(3200), space(0.2, 0.35, 0.023), norm(-5.0)])
+
+
+def syn_pane_mend(name):
+    """A smashed pane sealed: a breath of air drawn across the gap, then the new glass
+    setting with a clear ring that never resolves - inharmonic, like real glass, not a chime."""
+    rng = seeded(name)
+    sec = 1.25
+    out = np.zeros(_ns(sec))
+    seal = run(noise(0.3, rng), [bp(1500, 7000)]) * ramp(0.3, [(0, 0), (0.75, 1.0), (1, 0.0)])
+    _add(out, 0.35 * seal, 0.0)
+    ring = modes(0.95, [1297.0, 2083.0, 2931.0, 4012.0, 5410.0], [0.32, 0.22, 0.15, 0.1, 0.07],
+                 [1.0, 0.7, 0.5, 0.35, 0.2], detune=0.01, rng=rng)
+    ring *= 1.0 - 0.25 * (0.5 + 0.5 * np.sin(TAU * 11.0 * sig(0.95)))
+    _add(out, 0.6 * ring, 0.22)
+    _add(out, 0.3 * sine(0.5, 310.0) * dec(0.5, 0.16), 0.22)        # the frame taking it
+    return run(out, [hp(200), lp(9500), norm(-6.0)])
+
+
 def _add(dst, src, at_sec):
     """Mix src into dst starting at at_sec (clipped to dst)."""
     i = _ns(at_sec) if at_sec > 0 else 0
@@ -1116,6 +1192,86 @@ RECIPES = {
                     note='Synthesised: two struggling ticks, then warm light. The first thing '
                          'in the game you actually fix.'),
 
+    # ---------------------------------------------------------------- storage's panes and the cargo box
+    'cargo_land': dict(
+        bus='sfx', gain_db=-10.0, dist=360.0, pitch=(0.94, 1.04),
+        take=('kenney_impacts', 'impactMetal_heavy_00[0-2].ogg'),
+        layer=[('oga_rubberduck_metalwood', 'metal_hit_0[34].ogg', -7.0, [trim(), lp(6000), rms_to(-20.0)]),
+               (syn_box_boom, -9.0, [hp(90)])],
+        chain=[trim(), hp(80), lp(8000), fade(0.001, 0.2), rms_to(-18.0), limit(), declick()],
+        note='Landing on the cargo box. It plays over the astronaut\'s landing thud, so it carries '
+             'only the steel: Kenney impactMetal_heavy (centroid 507-741 Hz, flatness 0.002-0.06 - a '
+             'tonal clank) for the boots on its lid, rubberduck metal_hit 03/04 (centroid 1.9-3.1 kHz) '
+             'for the lid ringing, syn_box_boom for the hollow shell under it.'),
+    'cargo_crack': dict(
+        bus='sfx', gain_db=-9.0, dist=380.0, pitch=(0.93, 1.05),
+        take=('oga_rubberduck_metalwood', 'metal_sheet_0[356].ogg'),
+        layer=[('oga_rubberduck_metalwood', 'wood_cracking_0[2-4].ogg', -4.0, [trim(), pitch(0.85), hp(1600)]),
+               ('kenney_impacts', 'impactMetal_heavy_003.ogg', -6.0, [trim(), lp(1200)]),
+               (syn_steel_stress, -3.0, [])],
+        chain=[trim(), hp(70), lp(9500), fade(0.001, 0.15), rms_to(-16.0), limit(), declick()],
+        note='The box cracking under you, once per pane: rubberduck metal_sheet 03/05/06 (centroid '
+             '1.4-2.0 kHz, 54-71% in the mids) - a steel wall buckling. wood_cracking (92-98% above '
+             '2 kHz), high-passed so no wood body is left, is the fracture running; impactMetal_heavy '
+             'the weight on it; syn_steel_stress the ping of steel giving.'),
+    'cargo_groan': dict(
+        bus='sfx', gain_db=-9.0, dist=380.0, pitch=(0.96, 1.03),
+        synth=syn_box_groan,
+        layer=[('oga_rubberduck_metalwood', 'wood_squeak_01.ogg', -1.0,
+                [trim(), pitch(0.5), bp(300, 3200), rms_to(-20.0)]),
+               ('oga_rubberduck_metalwood', 'metal_sheet_04.ogg', -5.0, [trim(), pitch(0.6), lp(2800), rms_to(-20.0)])],
+        chain=[hp(70), lp(7000), fade(0.002, 0.2), rms_to(-18.0), limit(), declick()],
+        note='The box about to give way (0.45 s before it bursts): syn_box_groan, a sagging tone '
+             'with the seams slipping faster and faster. rubberduck wood_squeak_01 (8.4 onsets/s, '
+             'centroid 2.8 kHz) pitched down to 0.45 becomes a slow metal creak; metal_sheet_04 '
+             '(27.6% below 300 Hz) at 0.6 the shell bending.'),
+    'cargo_burst': dict(
+        bus='sfx', gain_db=-6.0, dist=480.0, pitch=(0.95, 1.04),
+        take=('kenney_impacts', 'impactPlate_heavy_00[13].ogg'),
+        layer=[('oga_rubberduck_metalwood', 'metal_slam_01.ogg', 2.0, [trim(), lp(6000), rms_to(-20.0)]),
+               ('oga_rubberduck_breaking', 'bfh1_metal_falling_0[12].ogg', -2.0, [trim(), rms_to(-20.0)]),
+               ('oga_rubberduck_metalwood', 'metal_falling_01.ogg', -9.0, [trim(), hp(400), rms_to(-20.0), delay(0.1)]),
+               (lambda n: run(sweep(0.7, 64.0, 30.0, 0.6) * dec(0.7, 0.2), [norm(-5.0)]), -4.0, [])],
+        chain=[trim(), hp(35), lp(9500), fade(0.001, 0.35), rms_to(-13.0), limit(), declick()],
+        note='The box giving way and crushing flat: Kenney impactPlate_heavy (55-58 Hz) and a falling '
+             'sub for the weight - the camera shakes 2.6 px - under rubberduck metal_slam_01 (53.5% '
+             'below 300 Hz), the walls hitting the floor; bfh1_metal_falling 01/02 (centroid 2.4-2.7 '
+             'kHz, 4-5 onsets/s), sheet steel coming down; metal_falling_01 (76% above 2 kHz) '
+             'clattering just after. Layers levelled with rms_to: the raw falls differ by 7 dB.'),
+    'cargo_drop': dict(
+        bus='sfx', gain_db=-9.0, dist=360.0, pitch=(0.92, 1.03),
+        take=('kenney_impacts', 'impactMetal_heavy_00[0-2].ogg'),
+        layer=[('kenney_impacts', 'impactPlate_heavy_00[234].ogg', -5.0, [trim(), lp(900), rms_to(-20.0)]),
+               ('oga_rubberduck_breaking', 'bfh1_metal_hit_05.ogg', -4.0, [trim(), lp(2000), rms_to(-20.0)]),
+               ('oga_rubberduck_metalwood', 'metal_hit_04.ogg', -9.0, [trim(), hp(1500), rms_to(-22.0), delay(0.06)]),
+               (syn_box_boom, -10.0, [pitch(0.85), hp(70)])],
+        chain=[trim(), hp(50), lp(7500), fade(0.001, 0.2), rms_to(-16.0), limit(), declick()],
+        note='The tool setting the cargo box down (its drop_sound): Kenney impactMetal_heavy (centroid '
+             '507-741 Hz) for its steel base meeting the floor, impactPlate_heavy (55-78 Hz) under it '
+             'for the mass, rubberduck bfh1_metal_hit_05 (289 Hz, a dull heavy steel hit), and '
+             'metal_hit_04 (3.1 kHz) a moment later: the rations inside shifting. lift_drop is wood - '
+             'right for crates, wrong for this.'),
+    'ration_land': dict(
+        bus='sfx', gain_db=-13.0, dist=280.0, pitch=(0.94, 1.1),
+        take=('kenney_impacts', 'impactGeneric_light_00[0-3].ogg'),
+        layer=[('kenney_impacts', 'impactSoft_medium_00[0-3].ogg', -6.0, [trim(), lp(400), rms_to(-20.0)]),
+               ('oga_rubberduck_sfx100v2', 'sfx100v2_items_0[12].ogg', -4.0,
+                [trim(), head(0.16), hp(1800), fade(0.001, 0.06), rms_to(-22.0)])],
+        chain=[trim(), hp(70), lp(8000), fade(0.001, 0.08), rms_to(-21.0), declick()],
+        note='A ration pack landing after the box bursts: Kenney impactGeneric_light (centroid '
+             '300-511 Hz, 38-54% in the mids) for the pouch slapping the floor, impactSoft_medium '
+             '(60-87 Hz) under it for a full pouch\'s weight, rubberduck items 01/02 (76-97% above '
+             '2 kHz) cut to 160 ms for the foil. Four land one after another, so four variants.'),
+    'pane_mend': dict(
+        bus='sfx', gain_db=-10.0, dist=420.0,
+        synth=syn_pane_mend,
+        layer=[('kenney_impacts', 'impactGlass_light_001.ogg', -9.0, [trim(), hp(600), delay(0.22)])],
+        chain=[hp(150), lp(9800), fade(0.002, 0.3), rms_to(-20.0), declick()],
+        note='A smashed pane mended: syn_pane_mend draws air across the gap, then the new glass sets '
+             'with an inharmonic ring. Kenney impactGlass_light_001 (centroid 1.3 kHz, flatness 0.006 '
+             '- a clean tonal tap) lands with the ring, so it is a real pane. Played where the pane '
+             'is mended (for now, landing on the box under it).'),
+
     # ---------------------------------------------------------------- the airlock
     'door_prompt': dict(bus='ui', gain_db=-18.0, synth=syn_prompt,
                         note='[E] ENTER appearing.'),
@@ -1312,6 +1468,8 @@ GROUPS = [
     ('ui_panel', 'The circuit panel'), ('wire_', 'The circuit panel'),
     ('power_pulse', 'The circuit panel'), ('repair_done', 'The circuit panel'),
     ('door_', 'The airlock'),
+    ('cargo_', 'Storage: the cargo box and the panes'), ('ration_', 'Storage: the cargo box and the panes'),
+    ('pane_', 'Storage: the cargo box and the panes'),
     ('crash_', 'The satellite crash'), ('debris', 'The satellite crash'),
     ('beacon', 'Lights and beacons'),
     ('ui_', 'Interface'),

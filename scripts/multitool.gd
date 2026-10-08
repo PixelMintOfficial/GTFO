@@ -6,13 +6,17 @@ extends Node2D
 ## (gamepad X) works on whatever is in reach, and the tool picks the job from the target:
 ##   mine    orange  ore rocks: a pulsing cutting beam, sparks and chips flying, cracks
 ##                   spreading through the rock until it bursts into ore chunks
-##   gather  teal    ore chunks and scrap: a spiral stream pulls the thing into the lens
-##   lift    violet  crates: a wavy tether floats it up and it follows you until E sets it down
+##   gather  teal    ore chunks, scrap, ration packs: a spiral stream pulls the thing into the lens
+##   lift    violet  crates, the cargo box: a wavy tether floats it up and it follows you until F
+##                   sets it down (never the box you are standing on)
 ##   fix     cyan    dead lamps: scan lines sweep it, sparks gather, and it flickers back on
 ## Hold F to mine, gather and fix; tap F to pick a crate up and again to set it down.
-## A small icon over the nearest thing in reach shows which job the tool will do.
+## A small icon over the nearest thing in reach shows which job the tool will do; a prop with no
+## job (a wreck) is left alone.
 ## Gather commits to GameState before the zip animation. A full bag leaves the prop intact.
-## Loose chunks reload only in the scene whose props JSON owns their session ID.
+## Loose things spilled into the world (ore chunks, rations: spill()) are kept in
+## GameState.spawned_props with their kind, and reload only in the scene whose props JSON owns
+## their session ID.
 
 signal inventory_full
 
@@ -65,7 +69,7 @@ var _lift_t := 0.0
 var _forced_pressed := false
 var _dropping: Array = []            # [prop, start height, t]
 var _zips: Array = []                # [prop, start position, t]
-var _hops: Array = []                # [prop, from world, to world, t, duration]
+var _hops: Array = []                # [prop, from world, to world, t, duration, landing sound, pitch, dB]
 var _parts: Array = []               # [pos, vel, age, life, color, size, gravity, kind]
 var _stream: Array = []              # [s, phase, speed, from px] gather stream dots
 var _homing: Array = []              # [from, to, age, life, color] sparkles converging
@@ -122,12 +126,20 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 		var prop := _spawn_prop(o["kind"], Vector2(o["world"][0], o["world"][1]), int(o["frame"]), o["job"],
 				float(o["radius"]), bool(o["solid"]))
 		prop.set_meta("inventory_id", id)
+		if o.has("top"):                                 # something to stand on (the cargo box)
+			prop.half = Vector2(o["half"][0], o["half"][1])
+			prop.yaw = float(o["yaw"])
+			prop.set_top(float(o["top"]))
+		if o.has("contents"):                            # what spills out of it when it breaks
+			prop.set_meta("contents", o["contents"])
+		if o.has("drop_sound"):                          # what it sounds like set down (else a crate's)
+			prop.set_meta("drop_sound", o["drop_sound"])
 	for id in GameState.spawned_props:
 		if not str(id).begins_with(props_json + ":"):
 			continue
 		if not GameState.removed_props.has(id):
 			var o: Dictionary = GameState.spawned_props[id]
-			var prop := _spawn_prop("ore_chunk", o["world"], o["frame"], "gather", 2.5, false)
+			var prop := _spawn_prop(o.get("kind", "ore_chunk"), o["world"], o["frame"], "gather", o.get("radius", 2.5), false)
 			prop.set_meta("inventory_id", id)
 	for l in data["lamps"]:
 		var w := Vector2(l["world"][0], l["world"][1])
@@ -175,6 +187,26 @@ func set_view(depth_map: Texture2D) -> void:
 		l["base"] = _terrain.to_screen(l["world"], _terrain.height_at(l["world"])).round()
 		_lamp_glows[i].position = Vector2(0, l["base"].y + 1.0)
 		_lamp_glows[i].queue_redraw()
+
+
+## The first prop of a kind still in the world (or null).
+func find_prop(kind: String) -> WorldProp:
+	for p in _props:
+		if is_instance_valid(p) and not p.gone and p.kind == kind:
+			return p
+	return null
+
+
+## Something loose comes out into the world at `from` and hops to `to` (ore out of a burst rock,
+## rations out of a broken box), to be gathered; kept in the session ledger under `id`. It lands
+## with `sound` (ore chunks: debris, small and high, 1.15x and -9 dB).
+func spill(kind: String, from: Vector2, to: Vector2, frame: int, id: String, radius: float, delay: float,
+		sound := "debris", pitch := 1.15, db := -9.0) -> WorldProp:
+	var p := _spawn_prop(kind, from, frame, "gather", radius, false)
+	p.set_meta("inventory_id", id)
+	GameState.spawned_props[id] = {"world": to, "frame": frame, "kind": kind, "radius": radius}
+	_hops.append([p, from, to, 0.0, 0.5 + delay, sound, pitch, db])
+	return p
 
 
 func _spawn_prop(kind: String, world: Vector2, frame: int, job: String, radius: float, solid: bool) -> WorldProp:
@@ -289,8 +321,11 @@ func _find_target() -> Variant:
 	var best_score := INF
 	var cands: Array = []
 	for p in _props:
-		if not p.gone and p.lift < 0.5 and not _busy(p):
-			cands.append(p)
+		if p.gone or p.job == "" or p.lift >= 0.5 or _busy(p):
+			continue
+		if p.top > 0.0 and _player.height_above_floor() > 1.0 and p.covers(_player.world_pos, 2.0):
+			continue                                     # the box under your own feet
+		cands.append(p)
 	for l in _lamps:
 		if not l["lit"]:
 			cands.append(l)
@@ -420,11 +455,7 @@ func _burst_rock(rock: WorldProp) -> void:
 		var to := rock.world + Vector2(cos(a3), sin(a3)) * (rock.radius + randf_range(5, 11))
 		if _terrain.surface(to) != MapTerrain.Surface.WALK:
 			to = rock.world + Vector2(cos(a3), sin(a3)) * (rock.radius * 0.5)
-		var chunk := _spawn_prop("ore_chunk", rock.world, i, "gather", 2.5, false)
-		var id: String = rock.get_meta("inventory_id", "rock") + "/chunk/" + str(i)
-		chunk.set_meta("inventory_id", id)
-		GameState.spawned_props[id] = {"world": to, "frame": i}
-		_hops.append([chunk, rock.world, to, 0.0, 0.5 + i * 0.08])
+		spill("ore_chunk", rock.world, to, i, rock.get_meta("inventory_id", "rock") + "/chunk/" + str(i), 2.5, i * 0.08)
 	GameState.removed_props[rock.get_meta("inventory_id")] = true
 	_props.erase(rock)
 	rock.remove()
@@ -447,7 +478,7 @@ func _carry(delta: float) -> void:
 	k = 1.0 - (1.0 - k) * (1.0 - k)
 	var want := _player.world_pos + _player.facing_dir() * (CARRY + _lifted.radius)
 	var w := _lifted.world.lerp(want, 1.0 - exp(-7.0 * delta))
-	if _terrain.surface(w) != MapTerrain.Surface.SOLID:
+	if _lifted.fits(w):
 		_lifted.place(w)
 	_lifted.set_lift(LIFT_PX * k + sin(_t * 3.2) * 1.4 * k)
 	Audio.loop("lift_loop", "lift", _lifted.center_px())
@@ -462,8 +493,10 @@ func _drop() -> void:
 	Audio.release("lift")
 	var to := c.world - _player.world_pos
 	if to.length() < c.radius + 4.0:                     # never on top of the astronaut
-		c.place(_player.world_pos + to.normalized() * (c.radius + 4.0) if to.length() > 0.01
+		var at := (_player.world_pos + to.normalized() * (c.radius + 4.0) if to.length() > 0.01
 				else _player.world_pos + _player.facing_dir() * (c.radius + 4.0))
+		if c.half == Vector2.ZERO or c.fits(at):         # a box never into a wall
+			c.place(at)
 	_dropping.append([c, c.lift, 0.0])
 
 
@@ -507,7 +540,7 @@ func _step_effects(delta: float) -> void:
 		p.set_lift(sin(PI * t) * 16.0 * (1.0 - 0.3 * t))
 		if h[3] >= 1.0:
 			p.set_lift(0.0)
-			Audio.play("debris", p.global_position, 1.15, -9.0)
+			Audio.play(h[5], p.global_position, h[6], h[7])
 			_puff(p.global_position, 4)
 			_hops.remove_at(i)
 			continue
@@ -521,7 +554,7 @@ func _step_effects(delta: float) -> void:
 		c.set_lift(dr[1] * (1.0 - t2 * t2))
 		if dr[2] >= 1.0:
 			c.set_lift(0.0)
-			Audio.play("lift_drop", c.global_position)
+			Audio.play(c.get_meta("drop_sound", "lift_drop"), c.global_position)
 			_puff(c.global_position, 8)
 			_player.camera.shake(1.0, 0.15)
 			_dropping.remove_at(i)
