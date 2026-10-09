@@ -141,6 +141,10 @@ static func toast_position(canvas: CanvasItem, desired: Vector2, width: int) -> 
 	return desired
 
 
+var _shell_drawn := Vector2i(-1, -1)
+var _hud_drawn := Vector4i(-1, -1, -1, -1)
+
+
 func _process(delta: float) -> void:
 	var view := _canvas.get_viewport_rect().size
 	var factor := minf(view.x / 384.0, view.y / 216.0)
@@ -154,7 +158,10 @@ func _process(delta: float) -> void:
 		_dragging = false
 		_save_position()
 	_hover_grip = HANDLE.has_point(_canvas.get_local_mouse_position() - _panel.position)
-	_panel.queue_redraw()
+	var shell := Vector2i(1 if _dragging else 0, 1 if _hover_grip else 0)
+	if shell != _shell_drawn:                             # the panel only changes when you grab it
+		_shell_drawn = shell
+		_panel.queue_redraw()
 	if not get_tree().paused and _player.controls_enabled and not _player.puppet and not _player.turning:
 		GameState.survival.advance(delta * speed, _player.can_breathe(), _player.sprinting)
 	if GameState.survival.dead:
@@ -168,7 +175,11 @@ func _process(delta: float) -> void:
 	for meter in meters:
 		meter.pulse = _pulse
 		meter.refresh()
-	_canvas.queue_redraw()
+	var hud := Vector4i(1 if _player.controls_enabled else 0, 1 if _player.can_breathe() else 0,
+			1 if GameState.survival.dead else 0, 1 if debug_enabled else 0)
+	if hud != _hud_drawn:                                 # a few lines of text, and only on a change
+		_hud_drawn = hud
+		_canvas.queue_redraw()
 
 
 func _notification(what: int) -> void:
