@@ -25,6 +25,7 @@ const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
 const PROPS_JSON := "res://assets/maps/base_interior/interior_props.json"
 
 var terrain: MapTerrain
+var stream: MapStream
 var door: AirlockDoor
 var repairs: MachineRepairs
 var cracks: WindowCracks
@@ -46,10 +47,14 @@ func _ready() -> void:
 	_repair_mask = _completed_mask()
 	terrain = MapTerrain.new(_repair_map(_repair_mask), GameState.heading)
 	$Map.texture = terrain.map_texture
-	player.setup(terrain, terrain.depth_map)
+	player.setup(terrain)
 	player.camera.zoom_locked = true                     # no zooming out indoors
-	player.camera.setup(player, $Map, terrain.max_view_px)
-	multitool.setup(PROPS_JSON, player, terrain, $Actors, terrain.depth_map)
+	player.camera.setup(player, $Map, terrain.max_view_px, terrain.streaming)
+	stream = MapStream.new()
+	add_child(stream)
+	stream.setup(terrain, $Map, player.camera, player)
+	stream.published.connect(_window_moved)
+	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	fx.setup(terrain.view_json, player)
 	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
@@ -78,7 +83,7 @@ func _ready() -> void:
 	survival_hud.setup(player, multitool)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
-	view_turn.setup(terrain, player, _apply_view, _turn_boards)
+	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -98,17 +103,24 @@ func _setup_door(meta: Dictionary) -> void:
 ## The camera turned round the base: switch everything to that view.
 func _apply_view(k: int, world_facing: Vector2) -> void:
 	terrain.load_view(k)
-	$Map.texture = terrain.map_texture
 	var meta := ViewData.get_json(terrain.view_json)
 	player.refresh_view(world_facing)
 	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
+	stream.refresh(true)                                 # the window, once the camera has moved
+	$Map.texture = terrain.map_texture
 	day_night.set_masks(terrain.light_mask, terrain.sun_mask)
 	fx.load_view(terrain.view_json)
-	multitool.set_view(terrain.depth_map)
+	multitool.set_view()
 	repairs.set_view(meta)
 	cracks.set_view(meta)
 	door.queue_free()
 	_setup_door(meta)
+
+
+## The depth window has moved: point everything that samples it at where it is now.
+func _window_moved(_heading: int) -> void:
+	player.refresh_window()
+	multitool.refresh_window()
 
 
 ## The loose props (scrap, the cargo box, rations), for the camera's swing.

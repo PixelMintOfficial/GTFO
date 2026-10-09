@@ -18,7 +18,9 @@ uniform sampler2D map_tex : filter_nearest;
 uniform sampler2D depth_tex : filter_nearest;
 uniform sampler2D light_tex : filter_nearest, hint_default_black;
 uniform sampler2D sun_tex : filter_nearest, hint_default_black;
-uniform vec2 map_size = vec2(1.0);
+// This view's textures hold only the window MapStream has in memory, not the whole picture:
+// x, y where it starts in map pixels, z, w how big it is. Outside it there is nothing to draw.
+uniform vec4 win = vec4(0.0, 0.0, 1.0, 1.0);
 uniform vec2 origin = vec2(0.0);       // the view's origin_px
 uniform float upp = 0.433;             // world units per map px
 uniform float dtp = 0.577;             // depth_to_px
@@ -52,7 +54,10 @@ vec2 to_world(vec2 v) {
 }
 
 float raw_depth(vec2 p) {
-	ivec2 ip = ivec2(clamp(floor(p), vec2(0.0), map_size - 1.0));
+	ivec2 ip = ivec2(floor(p) - win.xy);
+	if (any(lessThan(ip, ivec2(0))) || any(greaterThanEqual(ip, ivec2(win.zw)))) {
+		return 65535.0;                        // past the window: the same as sky, so it is cut away
+	}
 	vec4 d = texelFetch(depth_tex, ip, 0);
 	return round(d.r * 255.0) * 256.0 + round(d.g * 255.0);
 }
@@ -86,7 +91,10 @@ void fragment() {
 	if (raw > 65534.5 || abs(raw / depth_scale - yv) > (front ? 4.0 : 14.0)) {   // the back copy fills generously
 		discard;                               // a stretched curtain across a gap
 	}
-	ivec2 ip = ivec2(clamp(floor(px), vec2(0.0), map_size - 1.0));
+	ivec2 ip = ivec2(floor(px) - win.xy);
+	if (any(lessThan(ip, ivec2(0))) || any(greaterThanEqual(ip, ivec2(win.zw)))) {
+		discard;                               // never clamp: that smears the window's edge pixels
+	}
 	vec3 c = texelFetch(map_tex, ip, 0).rgb;
 	float own = texelFetch(light_tex, ip, 0).r;
 	float sun = texelFetch(sun_tex, ip, 0).r;

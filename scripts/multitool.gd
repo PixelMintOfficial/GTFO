@@ -53,7 +53,6 @@ var repair_suppressed := false
 var _player: Player
 var _terrain: MapTerrain
 var _actors: Node2D
-var _depth_map: Texture2D
 var _sheets := {}
 var _props: Array = []
 var _lamps: Array = []
@@ -85,11 +84,10 @@ var _props_dir := ""
 var _halos := {}
 
 
-func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node2D, depth_map: Texture2D) -> void:
+func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node2D) -> void:
 	_player = player
 	_terrain = terrain
 	_actors = actors
-	_depth_map = depth_map
 	_ensure_actions()
 	_fx = Node2D.new()
 	_fx.z_index = 30
@@ -170,15 +168,21 @@ static func _lamp_head(l: Dictionary, k: int) -> Vector2:
 	return Vector2(h[0], h[1])
 
 
+## The window the props hide behind has moved: point every prop's shader at it again.
+func refresh_window() -> void:
+	for p in _props:
+		if is_instance_valid(p) and not p.gone:
+			p.refresh_window()
+
+
 ## The camera turned: redraw the props as this view sees them, and move the lamps' light.
-func set_view(depth_map: Texture2D) -> void:
-	_depth_map = depth_map
+func set_view() -> void:
 	if _props_data.is_empty():
 		return
 	_load_sheets(_terrain.heading)
 	for p in _props:
 		if is_instance_valid(p) and not p.gone and _sheets.has(p.kind):
-			p.set_view(_sheets[p.kind], depth_map)
+			p.set_view(_sheets[p.kind])
 	for i in _lamps.size():
 		var l: Dictionary = _lamps[i]
 		var heads: Array = l["heads"]
@@ -215,7 +219,7 @@ func _spawn_prop(kind: String, world: Vector2, frame: int, job: String, radius: 
 	p.job = job
 	p.radius = radius
 	p.solid = solid
-	p.setup(_sheets[kind], frame, _terrain, _depth_map)
+	p.setup(_sheets[kind], frame, _terrain)
 	_actors.add_child(p)
 	p.place(world)
 	_props.append(p)

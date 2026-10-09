@@ -8,7 +8,6 @@
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_occlusion"]
 shader = ExtResource("2_occlusion")
-shader_parameter/map_size = Vector2(3100, 1880)
 shader_parameter/depth_scale = 25.0
 shader_parameter/sprite_depth = 0.0
 shader_parameter/tolerance = 6.0

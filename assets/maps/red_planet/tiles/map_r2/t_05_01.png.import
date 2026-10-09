@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://cxverger2d1c3"
+path="res://.godot/imported/t_05_01.png-3f26b706ac8d8f4b7bd844d0c962a32b.image"
+
+[deps]
+
+source_file="res://assets/maps/red_planet/tiles/map_r2/t_05_01.png"
+dest_files=["res://.godot/imported/t_05_01.png-3f26b706ac8d8f4b7bd844d0c962a32b.image"]
+
+[params]
+

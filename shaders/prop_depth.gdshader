@@ -7,7 +7,10 @@ shader_type canvas_item;
 #include "res://shaders/day_night.gdshaderinc"
 
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
-uniform vec2 map_size = vec2(1.0);
+// The depth map only holds the part of the view that is in memory (MapStream): x, y where that
+// window starts in map pixels, z, w how big it is. A pixel outside it is treated as sky, so a
+// sprite there draws whole rather than being wrongly hidden.
+uniform vec4 map_win = vec4(0.0, 0.0, 1.0, 1.0);
 uniform float depth_scale = 25.0;
 uniform float sprite_depth = 0.0;   // world Y of the thing's foot
 uniform float tolerance = 6.0;      // its own depth, world units
@@ -22,10 +25,12 @@ void vertex() {
 void fragment() {
 	vec4 c = texture(TEXTURE, UV) * COLOR;
 	c.rgb = day_night(c.rgb, map_pos);
-	vec4 d = texture(depth_map, (floor(map_pos) + 0.5) / map_size);
+	ivec2 dp = ivec2(floor(map_pos) - map_win.xy);
+	bool inside = all(greaterThanEqual(dp, ivec2(0))) && all(lessThan(dp, ivec2(map_win.zw)));
+	vec4 d = inside ? texelFetch(depth_map, dp, 0) : vec4(1.0, 1.0, 0.0, 1.0);
 	float depth = (round(d.r * 255.0) * 256.0 + round(d.g * 255.0)) / depth_scale;
 	bool plant = abs(d.b * 255.0 - 96.0) < 12.0;
-	if (!plant && depth < sprite_depth - tolerance) {
+	if (inside && !plant && depth < sprite_depth - tolerance) {
 		if (d.b > 0.5) {
 			c.rgb = mix(c.rgb, glass_tint.rgb, 0.35);
 		} else {

@@ -47,6 +47,16 @@ var map_texture: Texture2D
 var depth_map: Texture2D
 ## Every view of this map (meta JSON paths, by heading); just one if it has no others.
 var views: Array[String] = []
+## True when this map's layers are stored as tiles and MapStream keeps only a window of them
+## in memory. False for small maps (the interior), which are simply kept whole.
+var streaming := false
+## The part of the map that is actually in memory, in map pixels. The whole map when this map
+## is not streamed. Shaders that sample the depth map need it: the texture holds this rect,
+## not the whole picture.
+var window := Rect2i()
+## Per view, straight from its meta JSON: the views differ in size and in what their furthest
+## zoom frames, and a window has to be worked out for views that are not the current one.
+var geometry: Array[Dictionary] = []
 
 var _grid_size := 0
 var _height_offset := 100.0
@@ -85,6 +95,17 @@ func _init(json_path: String, view := 0) -> void:
 		_biome = bimg.get_data()
 		_biome_size = int(b["grid_size"])
 		_biome_cell = float(b["cell"])
+	for path in views:
+		var m := ViewData.get_json(path)
+		var frames: Array[Rect2] = []
+		var zoom: Dictionary = m.get("zoom", {})
+		for f in zoom.get("frames", {}).values():
+			frames.append(Rect2(f[0], f[1], f[2], f[3]))
+		var mv: Array = zoom.get("max_view_px", [1920, 1080])
+		geometry.append({"size": Vector2(m["size"][0], m["size"][1]),
+				"origin": Vector2(m["origin_px"][0], m["origin_px"][1]),
+				"centre": Vector2(m["game"].get("view_center", [0.0, 0.0])[0], m["game"].get("view_center", [0.0, 0.0])[1]),
+				"max_view_px": Vector2(mv[0], mv[1]), "frames": frames, "tiles": m.get("tiles", {})})
 	load_view(view if view < views.size() else 0)
 
 
@@ -104,10 +125,14 @@ func load_view(k: int) -> void:
 		max_view_px = Vector2(meta["zoom"]["max_view_px"][0], meta["zoom"]["max_view_px"][1])
 		for f in meta["zoom"].get("frames", {}).values():
 			frames.append(Rect2(f[0], f[1], f[2], f[3]))
+	streaming = not tiles_in(heading).is_empty()
+	sun_mask = load(dir.path_join(game["sun_png"])) if game.has("sun_png") else null
+	if streaming:
+		return                               # MapStream stitches the picture, depth and light
+	window = Rect2i(Vector2i.ZERO, Vector2i(map_size))
 	map_texture = load(dir.path_join(meta["image"]))
 	depth_map = load(dir.path_join(game["depth_png"]))
 	light_mask = load(dir.path_join(game["light_png"])) if game.has("light_png") else null
-	sun_mask = load(dir.path_join(game["sun_png"])) if game.has("sun_png") else null
 
 
 func replace_variant(json_path: String) -> void:
@@ -120,6 +145,53 @@ func replace_variant(json_path: String) -> void:
 	image.convert(Image.FORMAT_RGBA8)
 	_walk = image.get_data()
 	load_view(heading)
+
+
+## The window MapStream has stitched for the current view, and the layers it holds.
+func set_window(rect: Rect2i, picture: Texture2D, depth: Texture2D, light: Texture2D) -> void:
+	window = rect
+	map_texture = picture
+	depth_map = depth
+	light_mask = light
+
+
+## View k's tile layout, origin, size and zoom frames. Views differ: each is rendered from its
+## own side, so they are not the same shape.
+func tiles_in(k: int) -> Dictionary:
+	return geometry[posmod(k, geometry.size())]["tiles"] if not geometry.is_empty() else {}
+
+
+func size_in(k: int) -> Vector2i:
+	return Vector2i(geometry[posmod(k, geometry.size())]["size"]) if not geometry.is_empty() else Vector2i(map_size)
+
+
+func origin_in(k: int) -> Vector2:
+	return geometry[posmod(k, geometry.size())]["origin"] if not geometry.is_empty() else origin
+
+
+func frames_in(k: int) -> Array[Rect2]:
+	return geometry[posmod(k, geometry.size())]["frames"] if not geometry.is_empty() else frames
+
+
+func max_view_in(k: int) -> Vector2:
+	return geometry[posmod(k, geometry.size())]["max_view_px"] if not geometry.is_empty() else max_view_px
+
+
+## Where view k draws a world point standing at height z - to_screen() for a view that is not
+## the current one, which is what a neighbour's window has to be built around.
+func to_screen_in(k: int, p: Vector2, z: float) -> Vector2:
+	var d := p - view_center
+	var v := d
+	match posmod(k, 4):
+		1:
+			v = Vector2(d.y, -d.x)
+		2:
+			v = -d
+		3:
+			v = Vector2(-d.y, d.x)
+	v += view_center
+	var o := origin_in(k)
+	return Vector2(o.x + v.x / units_per_px, o.y - (depth_to_px * v.y + z) * px_per_unit)
 
 
 ## A world point (or the point under it) as the current view lays it out.

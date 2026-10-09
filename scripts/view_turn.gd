@@ -20,6 +20,8 @@ signal turned(heading: int)
 @export var turn_time := 0.42
 
 var terrain: MapTerrain
+## The window the view is stitched into; a turn waits for the view it is turning to.
+var stream: MapStream
 var player: Player
 var camera: GameCamera
 ## (heading: int, world_facing: Vector2) -> void: switch the scene to that view.
@@ -43,8 +45,10 @@ var _wish := 0                   # a press waiting for its view's pictures to lo
 var _wish_left := 0.0
 
 
-func setup(t: MapTerrain, p: Player, apply_view: Callable, board_source := Callable()) -> void:
+func setup(t: MapTerrain, p: Player, apply_view: Callable, board_source := Callable(),
+		map_stream: MapStream = null) -> void:
 	terrain = t
+	stream = map_stream
 	player = p
 	camera = p.camera
 	apply = apply_view
@@ -162,12 +166,18 @@ func _paths(k: int) -> Array[String]:
 	if meta.is_empty():
 		return out
 	var dir := path.get_base_dir()
-	if meta.has("image"):
-		out.append(dir.path_join(meta["image"]))
 	var game: Dictionary = meta["game"]
-	for key in ["depth_png", "light_png", "sun_png"]:
-		if game.has(key):
-			out.append(dir.path_join(game[key]))
+	if not terrain.streaming:
+		# A streamed map's picture, depth and light are stitched from tiles by MapStream, which
+		# keeps only a window of them. Loading the whole ones here would put back the gigabyte
+		# the streaming is there to remove.
+		if meta.has("image"):
+			out.append(dir.path_join(meta["image"]))
+		for key in ["depth_png", "light_png"]:
+			if game.has(key):
+				out.append(dir.path_join(game[key]))
+	if game.has("sun_png"):
+		out.append(dir.path_join(game["sun_png"]))
 	if meta.has("minimap"):
 		out.append(dir.path_join(meta["minimap"]["file"]))
 	for s in meta.get("animated", {}).get("sprites", []):
@@ -245,6 +255,8 @@ func _collect(path: String) -> void:
 ## Is every picture this view needs in memory? Never waits: a background load that has not
 ## finished means "not yet", and the press that wanted it is kept (see request()).
 func _loaded(k: int) -> bool:
+	if stream != null and not stream.ready_for(k):
+		return false
 	for path in _paths(k):
 		if _keep.get(path) != null:
 			continue

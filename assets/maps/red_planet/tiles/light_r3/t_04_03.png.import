@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://d3d8a42vt03x7"
+path="res://.godot/imported/t_04_03.png-2ec7bb1761d9d01540df399c7a10628b.image"
+
+[deps]
+
+source_file="res://assets/maps/red_planet/tiles/light_r3/t_04_03.png"
+dest_files=["res://.godot/imported/t_04_03.png-2ec7bb1761d9d01540df399c7a10628b.image"]
+
+[params]
+

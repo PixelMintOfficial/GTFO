@@ -16,14 +16,25 @@ enum Kind { PLANT, POOL, EMBER, GLINT, SPIRE }
 ## Forest light waves: how fast they roll (radians/s) and how far apart they are (map px).
 @export var wave_speed := 1.3
 @export var wave_length := 520.0
+## The wind through the plants. Their sheets are drawn as one full sway over their frames, so
+## `sway_rate` is how much of the speed they were drawn for they actually move at, and the gust
+## is a slow swell rolling across the land that decides how far each of them leans right now:
+## `gust_calm` between gusts, up to a full lean as one passes. Together these are what keeps the
+## forest breathing instead of thrashing - a grove leans as the wind reaches it, not all at once.
+@export var sway_rate := 0.3
+@export var gust_speed := 0.5
+@export var gust_length := 900.0
+@export var gust_calm := 0.15
 ## How strongly the wreck's embers glow (the crash scene fades them in).
 var embers := 1.0
 
 var _camera: Camera2D
+var _terrain: MapTerrain
 var _sheets: Array = []          # {tex, frames, fps, size, glows}
 var _plants: Dictionary = {}     # Vector2i cell -> Array of [draw order, sheet, position, phase, depth colour, lit]
 var _points: Dictionary = {}     # Vector2i cell -> PackedInt32Array, 7 ints per point
 var _visible: Array = []
+var _visible_rect := Rect2()     # the view _visible was gathered for
 var _colors: Array[Color] = []
 var _halo: Texture2D
 var _halo_cell := 0
@@ -33,12 +44,12 @@ var _glow_layer: Node2D
 var _player: Node2D
 
 
-## depth_map / map_size: the map's depth image, so plants hide behind cliffs and props.
+## terrain: for the depth window, so plants hide behind cliffs and props.
 ## player: plants in front of it thin out so the astronaut never gets lost in the forest.
-func setup(meta_path: String, camera: Camera2D, depth_map: Texture2D, map_size: Vector2,
-		player: Player = null) -> void:
+func setup(meta_path: String, camera: Camera2D, terrain: MapTerrain, player: Player = null) -> void:
 	_camera = camera
 	_player = player
+	_terrain = terrain
 	_plant_layer = Node2D.new()
 	var fmat := ShaderMaterial.new()
 	fmat.shader = FLORA_SHADER
@@ -51,19 +62,24 @@ func setup(meta_path: String, camera: Camera2D, depth_map: Texture2D, map_size: 
 	_glow_layer.material = mat
 	_glow_layer.draw.connect(_draw_glows)
 	add_child(_glow_layer)
-	load_view(meta_path, depth_map, map_size)
+	load_view(meta_path)
+
+
+## The depth window has moved: point the flora shader at it again.
+func refresh_window() -> void:
+	MapStream.bind(_plant_layer.material as ShaderMaterial, _terrain)
 
 
 ## The camera turned: this view's plant sprites, where they stand, and its lights.
-func load_view(meta_path: String, depth_map: Texture2D, map_size: Vector2) -> void:
+func load_view(meta_path: String) -> void:
 	_sheets.clear()
 	_plants.clear()
 	_points.clear()
 	_visible.clear()
+	_visible_rect = Rect2()
 	_colors.clear()
 	var fmat := _plant_layer.material as ShaderMaterial
-	fmat.set_shader_parameter("depth_map", depth_map)
-	fmat.set_shader_parameter("map_size", map_size)
+	MapStream.bind(fmat, _terrain)
 	var dir := meta_path.get_base_dir()
 	var meta := ViewData.get_json(meta_path)
 	fmat.set_shader_parameter("depth_scale", float(meta["game"]["depth_scale"]))
@@ -122,7 +138,10 @@ func _process(delta: float) -> void:
 
 # ---------------------------------------------------------------- plants
 func _draw_plants() -> void:
-	_visible = _in_view(_view_rect())
+	var view := _view_rect()
+	if view != _visible_rect:                 # plants don't move; only the camera does
+		_visible_rect = view
+		_visible = _in_view(view)
 	for p in _visible:
 		var sh: Dictionary = _sheets[p[1]]
 		var size: Vector2 = sh["size"]
@@ -136,12 +155,34 @@ func _in_view(view: Rect2) -> Array:
 		for p in _plants.get(key, []):
 			if Rect2(p[2], _sheets[p[1]]["size"]).intersects(view):
 				out.append(p)
-	out.sort_custom(func(a, b): return a[0] < b[0])
+	out.sort_custom(_by_draw_order)
 	return out
 
 
+## Far ones first. Held as a member so the sort does not allocate a new Callable every frame.
+static func _by_draw_order(a: Array, b: Array) -> bool:
+	return a[0] < b[0]
+
+
+## Which frame of its sway a plant is on. The frames are one full lean and back, so frame f is
+## the sway at sin(2*PI*f/n): picking the frame nearest `lean * sin(angle)` leans the plant by
+## that much, and `lean` near zero simply holds it upright. A plant whose sheet has one frame
+## (the ice crystals) never moves.
 func _frame(sh: Dictionary, p: Array) -> int:
-	return int(floor(_t * sh["fps"] + float(p[3]) * sh["frames"])) % int(sh["frames"])
+	var n := int(sh["frames"])
+	if n <= 1:
+		return 0
+	var pos: Vector2 = p[2]
+	var phase := float(p[3])
+	var angle := _t * (float(sh["fps"]) / n) * sway_rate * TAU + phase * TAU
+	return posmod(int(round(n * 0.25 * _gust(pos, phase) * sin(angle))), n)
+
+
+## How hard the wind is leaning on a plant: a swell rolling across the land, the same shape as
+## the bioluminescence's waves but slower and longer, so gusts and glow never beat together.
+func _gust(pos: Vector2, phase: float) -> float:
+	var s := sin(_t * gust_speed - (pos.x * 0.6 + pos.y) / gust_length * TAU + phase * 0.7)
+	return gust_calm + (1.0 - gust_calm) * maxf(s, 0.0)
 
 
 # ---------------------------------------------------------------- lights (additive layer)

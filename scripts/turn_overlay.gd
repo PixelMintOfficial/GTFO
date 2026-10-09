@@ -89,7 +89,7 @@ static func view_info(terrain: MapTerrain, camera: Camera2D, player: Player) -> 
 	var centre := camera.get_screen_center_position()       # with the camera's offset (it looks above the feet)
 	var rect := Rect2(centre - view * (0.5 + MARGIN), view * (1.0 + 2.0 * MARGIN))
 	return {"map": terrain.map_texture, "depth": terrain.depth_map, "light": terrain.light_mask,
-			"sun": terrain.sun_mask, "size": terrain.map_size, "origin": terrain.origin,
+			"sun": terrain.sun_mask, "win": MapStream.win_vec(terrain), "origin": terrain.origin,
 			"upp": terrain.units_per_px, "dtp": terrain.depth_to_px, "ppu": terrain.px_per_unit,
 			"depth_scale": terrain.depth_scale, "heading": terrain.heading, "center": terrain.view_center,
 			"rect": rect, "view": view, "player_px": player.global_position,
@@ -250,7 +250,7 @@ func _set_view_params(m: ShaderMaterial, v: Dictionary) -> void:
 	m.set_shader_parameter("depth_tex", v["depth"])
 	m.set_shader_parameter("light_tex", v["light"])
 	m.set_shader_parameter("sun_tex", v["sun"])
-	m.set_shader_parameter("map_size", v["size"])
+	m.set_shader_parameter("win", v["win"])
 	m.set_shader_parameter("origin", v["origin"])
 	m.set_shader_parameter("upp", v["upp"])
 	m.set_shader_parameter("dtp", v["dtp"])

@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://b8t5352aesikd"
+path="res://.godot/imported/t_13_01.png-2560b8972d0a19441d8e35ed7482d80b.image"
+
+[deps]
+
+source_file="res://assets/maps/red_planet/tiles/map_r3/t_13_01.png"
+dest_files=["res://.godot/imported/t_13_01.png-2560b8972d0a19441d8e35ed7482d80b.image"]
+
+[params]
+

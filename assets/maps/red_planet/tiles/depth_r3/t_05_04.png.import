@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://cmtx2ghroorre"
+path="res://.godot/imported/t_05_04.png-d424d08373c62dddfd97a728c8689126.image"
+
+[deps]
+
+source_file="res://assets/maps/red_planet/tiles/depth_r3/t_05_04.png"
+dest_files=["res://.godot/imported/t_05_04.png-d424d08373c62dddfd97a728c8689126.image"]
+
+[params]
+

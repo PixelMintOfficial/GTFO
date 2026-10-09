@@ -9,7 +9,8 @@
 #   make props          regenerate the test props (fast, needs the map's data)
 #   make interior       regenerate the base interior (seconds)
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
-#   make map            regenerate the overworld (~3 min, several GB of RAM)
+#   make map            regenerate the overworld (~35 min for four views, several GB of RAM)
+#   make tiles          re-cut the map's tiles from the pictures on disk (fast)
 #   make import         re-import assets into Godot (always after a regeneration)
 #   make check          both scenes + the test suites; fails on any error or warning
 #   make shot           screenshot a scene: make shot ARGS="--spawn=-827,1440"
@@ -25,7 +26,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props interior astronaut astronaut-quick map all import check \
+.PHONY: help env sources sfx props interior astronaut astronaut-quick map tiles all import check \
         check-overworld check-interior check-tests shot sounds verify clean-shots
 
 help:
@@ -68,6 +69,10 @@ map: $(PY)
 	$(PY) tools/mars_map_gen.py
 	$(PY) tools/props_gen.py
 
+# Tiling is a pure function of the pictures, so it does not need the planet rendered again.
+tiles: $(PY)
+	$(PY) tools/mars_map_gen.py --tiles-only
+
 all: astronaut map interior sfx import
 
 # ---------------------------------------------------------------- Godot
@@ -109,6 +114,7 @@ check-tests:
 	@$(GODOT) --headless --path . res://tests/inventory_test.tscn 2>&1 | tee /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/repair_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/view_turn_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/map_stream_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_crack_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error|[1-9][0-9]* failures' /tmp/gtfo-tests.log \
 		|| { echo "tests: failures above" >&2; exit 1; }

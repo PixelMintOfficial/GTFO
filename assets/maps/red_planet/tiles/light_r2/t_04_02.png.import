@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://c32tiseslydbp"
+path="res://.godot/imported/t_04_02.png-de6f560243f63d604b4f12d0765c884f.image"
+
+[deps]
+
+source_file="res://assets/maps/red_planet/tiles/light_r2/t_04_02.png"
+dest_files=["res://.godot/imported/t_04_02.png-de6f560243f63d604b4f12d0765c884f.image"]
+
+[params]
+
