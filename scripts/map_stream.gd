@@ -75,7 +75,9 @@ func ready_for(k: int) -> bool:
 func refresh(force := false) -> void:
 	if not terrain.streaming:
 		return
-	if _collect() and not force:
+	if force:
+		_drop_job()                          # whatever was coming, this pass overtakes it
+	elif _collect():
 		return                               # a stitch landed this frame; one is enough
 	var want := {}
 	for d in [0, -1, 1]:
@@ -278,6 +280,21 @@ func _publish() -> void:
 
 
 func _exit_tree() -> void:
+	_drop_job()
+	# Let the windows go here rather than leave it to the order the scene happens to be torn
+	# down in: the shaders and the Map sprite hold the same textures, and whichever outlives
+	# the other keeps them alive past the end of the scene.
+	_windows.clear()
+	if terrain != null:
+		terrain.set_window(Rect2i(), null, null, null)
+	if _map != null:
+		_map.texture = null
+
+
+## Let go of a background load without using it. Every path asked for has to be taken, even
+## when its window is no longer wanted: a threaded request nobody collects is reported as a
+## leak when the engine shuts down.
+func _drop_job() -> void:
 	for path in _job_paths:
 		_take(path)
 	_job_paths = []

@@ -81,6 +81,17 @@ func _ready() -> void:
 	add_child(_rect)
 
 
+func _exit_tree() -> void:
+	# The TextureRect holds the SubViewport's own texture. Which of the two is freed first when
+	# the scene goes away is not fixed, and if the rect outlives the viewport the texture's RID
+	# is reported as leaked at shutdown. Letting go of it here settles the order.
+	if _rect != null:
+		_rect.texture = null
+	for mi in _reliefs:
+		mi.material_override = null
+	_grids.clear()
+
+
 ## What a relief needs from one view: its textures and projection, the part of its picture to lay
 ## out (round the camera), and where the astronaut and the camera are in it.
 static func view_info(terrain: MapTerrain, camera: Camera2D, player: Player) -> Dictionary:
