@@ -25,6 +25,7 @@ var _vp: SubViewport
 var _cam: Camera3D
 var _rect: TextureRect
 var _reliefs: Array[MeshInstance3D] = []   # [left, arrived at] front copies, then their back copies
+var _grids := {}                 # (subdivide_width, subdivide_depth) -> PlaneMesh, kept and reused
 var _boards: Node3D
 var _player_board: Sprite3D
 var _player: Player
@@ -213,15 +214,27 @@ func _face_player(psi: float) -> void:
 	_player_board.modulate = DayNight.light_mul
 
 
+## The relief's grid of vertices. Building one is tens of milliseconds at the sizes used here
+## (up to 600x600 subdivisions), and a turn lays out three of them, so they are kept: only the
+## subdivision counts vary, and there are only a handful of those (one per zoom level).
+func _grid(sw: int, sh: int) -> PlaneMesh:
+	var key := Vector2i(sw, sh)
+	if _grids.has(key):
+		return _grids[key]
+	var pm := PlaneMesh.new()
+	pm.size = Vector2.ONE
+	pm.subdivide_width = sw
+	pm.subdivide_depth = sh
+	_grids[key] = pm
+	return pm
+
+
 ## Lay view i (0 the view left, 1 the view arrived at) out on its two reliefs, front and back.
 func _setup_view(i: int) -> void:
 	var v: Dictionary = _views[i]
 	var rect: Rect2 = v["rect"]
 	var spacing: float = GRID_PX * v["view"].y / 216.0
-	var pm := PlaneMesh.new()
-	pm.size = Vector2.ONE
-	pm.subdivide_width = clampi(int(rect.size.x / spacing), 8, 600)
-	pm.subdivide_depth = clampi(int(rect.size.y / spacing), 8, 600)
+	var pm := _grid(clampi(int(rect.size.x / spacing), 8, 600), clampi(int(rect.size.y / spacing), 8, 600))
 	for front in [true, false]:
 		var mi := _reliefs[i if front else i + 2]
 		mi.mesh = pm

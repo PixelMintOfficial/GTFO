@@ -41,7 +41,7 @@ func load_view(meta_path: String) -> void:
 	_rim.clear()
 	_doors.clear()
 	_beacon = Vector2.ZERO
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	var anim: Dictionary = meta.get("animated", {})
 	var dir := meta_path.get_base_dir()
 	for s in anim.get("sprites", []):

@@ -54,7 +54,7 @@ func setup(meta_path: String, camera: Camera2D, player: Player, biome_source: Ca
 func load_view(meta_path: String) -> void:
 	_emitters.clear()
 	var dir := meta_path.get_base_dir()
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	if meta.has("fx"):
 		_cluster_glows(dir.path_join(meta["fx"]))
 	for name in meta.get("domes", {}):
@@ -68,7 +68,7 @@ func load_view(meta_path: String) -> void:
 ## Turn the generator's glow points into a handful of things you can hear. One pool is one
 ## pool; a cluster of twenty is a loud one.
 func _cluster_glows(fx_path: String) -> void:
-	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fx_path))
+	var fx := ViewData.get_json(fx_path)
 	var groups := {}                      # kind -> cell -> [sum x, sum y, count]
 	for g in fx.get("glows", []):
 		var kind := int(g[5])

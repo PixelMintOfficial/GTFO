@@ -53,7 +53,7 @@ func _ready() -> void:
 	fx.setup(terrain.view_json, player)
 	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	var meta := ViewData.get_json(terrain.view_json)
 	# Damaged O2 room has unsafe air; the suit spends its reserve until wiring is restored.
 	# Room coordinates are world metadata and remain valid through camera turns.
 	var room: Dictionary = meta["rooms"]["oxygen"]
@@ -99,7 +99,7 @@ func _setup_door(meta: Dictionary) -> void:
 func _apply_view(k: int, world_facing: Vector2) -> void:
 	terrain.load_view(k)
 	$Map.texture = terrain.map_texture
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	var meta := ViewData.get_json(terrain.view_json)
 	player.refresh_view(world_facing)
 	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
 	day_night.set_masks(terrain.light_mask, terrain.sun_mask)
@@ -127,7 +127,7 @@ func _completed_mask() -> int:
 func _repair_map(mask: int) -> String:
 	if mask == 0:
 		return MAP_JSON
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
+	var meta := ViewData.get_json(MAP_JSON)
 	return MAP_JSON.get_base_dir().path_join(meta["repair_variants"][str(mask)])
 
 

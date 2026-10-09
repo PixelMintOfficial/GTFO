@@ -65,11 +65,11 @@ func load_view(meta_path: String, depth_map: Texture2D, map_size: Vector2) -> vo
 	fmat.set_shader_parameter("depth_map", depth_map)
 	fmat.set_shader_parameter("map_size", map_size)
 	var dir := meta_path.get_base_dir()
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	fmat.set_shader_parameter("depth_scale", float(meta["game"]["depth_scale"]))
 	if not meta.has("fx"):
 		return
-	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join(meta["fx"])))
+	var fx := ViewData.fx_of(meta_path, meta)
 	for s in fx["flora"]["sheets"]:
 		var size := Vector2(s["frame_size"][0], s["frame_size"][1])
 		var anchor: Array = s.get("anchor", [size.x * 0.5, size.y])

@@ -40,7 +40,7 @@ func setup(meta_path: String, player: Player) -> void:
 
 ## The camera turned: the map screen turns with it.
 func load_view(meta_path: String) -> void:
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	var mm: Dictionary = meta["minimap"]
 	_tex = load(meta_path.get_base_dir().path_join(mm["file"]))
 	_origin = Vector2(mm["origin"][0], mm["origin"][1])

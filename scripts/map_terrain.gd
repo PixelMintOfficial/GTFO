@@ -59,7 +59,7 @@ var _biome_cell := 4.0
 
 ## json_path: the map's meta JSON (view 0). It opens on view `view` if the map has it.
 func _init(json_path: String, view := 0) -> void:
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(json_path))
+	var meta := ViewData.get_json(json_path)
 	var game: Dictionary = meta["game"]
 	var dir := json_path.get_base_dir()
 	for v in meta.get("views", []):
@@ -91,7 +91,7 @@ func _init(json_path: String, view := 0) -> void:
 ## Switch to another view of the map: its picture, depth, light, frame and zoom boxes.
 func load_view(k: int) -> void:
 	view_json = views[posmod(k, views.size())]
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(view_json))
+	var meta := ViewData.get_json(view_json)
 	var game: Dictionary = meta["game"]
 	var dir := view_json.get_base_dir()
 	heading = int(game.get("heading", 0))
@@ -111,7 +111,7 @@ func load_view(k: int) -> void:
 
 
 func replace_variant(json_path: String) -> void:
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(json_path))
+	var meta := ViewData.get_json(json_path)
 	var dir := json_path.get_base_dir()
 	views.clear()
 	for path in meta["views"]:

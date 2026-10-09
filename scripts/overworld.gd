@@ -149,11 +149,11 @@ func _turn_boards() -> Array:
 
 ## The base's airlock doors: F to go inside.
 func _setup_doors() -> void:
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	var meta := ViewData.get_json(terrain.view_json)
 	if not meta.has("fx"):
 		return
 	var fx_path := terrain.view_json.get_base_dir().path_join(meta["fx"])
-	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fx_path))
+	var fx := ViewData.get_json(fx_path)
 	for info in fx.get("doors", []):
 		var d := AirlockDoor.new()
 		$Actors.add_child(d)
