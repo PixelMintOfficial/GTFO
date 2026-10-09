@@ -16,6 +16,8 @@ extends Node2D
 ## a ring of light where a pane is mended.
 ## window_restorations supplies the exact combined room colours and lighting masks for sealed
 ## panes. Completing a scan also removes that hole's live shaft/dust from InteriorFX.
+## With every pane mended, the dome outside (rooms.storage.dome) is mended too:
+## GameState.window_repair.dome_mended, drawn on the overworld by DomeFX.
 
 ## How near the spot under a pane you must be, standing on the box (world units).
 const NEAR := 20.0
@@ -55,6 +57,7 @@ var _sun_source := ""
 var _light_source := ""
 var _restorations: Array = []
 var _prompt: Node2D
+var _dome := ""                                        # the base room outside, on the overworld
 
 
 func setup(meta: Dictionary, player: Player, tool: Multitool, terrain: MapTerrain) -> void:
@@ -79,7 +82,9 @@ func setup(meta: Dictionary, player: Player, tool: Multitool, terrain: MapTerrai
 	_glow.material = add
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
+	_dome = meta["rooms"]["storage"].get("dome", "")
 	set_view(meta)
+	_mend_dome()
 	box = tool.find_prop("cargo_box")
 	if box == null:
 		return
@@ -164,6 +169,13 @@ func fix(id: String) -> void:
 	if _patches.has(id):
 		_patches[id].queue_free()
 		_patches.erase(id)
+	_mend_dome()
+
+
+## Every pane mended: the storage room's dome outside has whole glass again (DomeFX draws it).
+func _mend_dome() -> void:
+	if _dome != "" and repair.all_fixed(_pane_ids()):
+		repair.dome_mended = _dome
 
 
 ## Compose the complete sealed room state, including its colour, sun and light replacements,

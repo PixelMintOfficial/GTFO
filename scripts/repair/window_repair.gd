@@ -18,6 +18,9 @@ var box_cracks := {}
 var box_world: Variant = null
 var box_broken := false
 var puzzles: Dictionary = {}
+## The base room on the overworld whose dome glass is whole again (storage's, once every pane is
+## mended: base_interior.json rooms.storage.dome), or "". DomeFX lays its holes' glass back.
+var dome_mended := ""
 
 
 func puzzle_for(id: String, definition: Dictionary) -> GlassPuzzle:

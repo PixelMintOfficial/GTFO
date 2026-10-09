@@ -180,6 +180,11 @@ footprint), `yaw` (its turn) and `contents` (what spills when it breaks). Glass 
 `animation.variant_frames` / `fps` and `shadow_alpha`: three small single-chip variants with
 brief reflection sweeps, staggered in the world and retained through camera turns.
 
+`base_interior.json → rooms.storage.dome` names the overworld base room storage sits in
+(`command`: the airlocks are cut into it). When all three panes are mended, that room's dome
+holes outside get their glass back: `DomeFX` lays each hole's `red_planet_fx.json → cracks →
+patch` (the band's glass as it was, glare and trim shade included) over the map at `patch_pos`.
+
 `base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
 `interior_gen.py` derives these from the actual machine model centres; its
@@ -288,7 +293,8 @@ WASD/arrows/left stick/d-pad moves the selected fragment, Enter/Space/F/A/X plac
     taken (one per pane), where it was last set down, and whether it broke. Its `puzzles` keep
     independent `GlassPuzzle` placements/rotations and unfinished scan progress through closes,
     views and airlocks. Six glass are consumed atomically only when that pane's scan completes.
-    Reset with the
+    `dome_mended` names the overworld room whose dome glass is whole again (set when every
+    pane is mended; read by `DomeFX`). Reset with the
     world ledger (`reset_inventory`), which holds its spilled rations.
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
     Each stores its crack placements/seams, circuit puzzle/countdown/index and completed tasks.
@@ -489,6 +495,9 @@ consts in the named files.
     white reflections, matching the owner's floor-glass reference. The three storage barrels
     and their collision are removed to leave room for carrying the cargo box.
   - State survives the airlock (`GameState.window_repair`). No `[F] EXIT` prompt while up on a box.
+  - With all three mended, the dome outside is mended too: the `command` room's two holes (the
+    same burst and crescent) show whole glass in every view, by day and night and through the
+    camera's swing. The far pane has no hole outside. The other rooms keep theirs.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -783,7 +792,8 @@ godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
 - `--quit=SECONDS`, `--audio-debug`, `--equip`, `--use`, `--face=DX,DY` (both scenes)
-- overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`
+- overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`,
+  `--dome-mended=ROOM` (that room's dome glass whole again; `command` = storage's)
 - interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
   `--cargo-mended=N` (the first N panes mended first), `--cargo-land` (land on the box),
   `--window=burst|crescent|gash` (six demo glass and native inspection), `--window-fit=N`,
@@ -941,7 +951,9 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
   - **Storage's three smashed panes**: native glass jigsaws, collected glass and resumable
     multitool scans are built (§5). The box breaks only after all three repairs complete.
-  - The overworld dome still shows two holes in the storage room; the interior has three.
+  - The overworld's `command` room (storage, inside) has two holes; the interior has three.
+    Mending all three inside mends both outside. Habitat's and garage's holes stay open until
+    their own rooms get interiors and repairs.
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
 - **Inventory is implemented:** session backpack, resource stacks, quick access and slot
@@ -1099,3 +1111,9 @@ Write one line per decision: date — decision (who approved it).
   Sealing a window now restores its entire appearance and removes its hole's baked shaft,
   floor light, halo and live beam/dust. Exact combined restoration states and matching masks
   preserve other holes' lighting across all views, machine variants and airlocks.
+- 2026-10-09 — When all three storage panes are mended, the dome outside is mended too (owner,
+  requested): the `command` room - storage's room on the overworld, where the airlocks are -
+  shows whole glass over its burst and crescent holes in every view. DomeFX lays the patches the
+  map generator already exported for mending (`cracks → patch`), lit like the map; no new art.
+  The generator's patches now carry the glass band's glare and trim shade through the hole, so
+  the mend has no seam. Habitat and garage keep their holes.
