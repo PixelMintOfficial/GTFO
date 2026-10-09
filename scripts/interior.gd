@@ -16,6 +16,7 @@ extends Node2D
 ## --cargo-mended=N mends the first N panes first (the box shows N cracks); --cargo-land lands on
 ## the box (the next pane cracks it; after the other two, it gives way).
 ## --audio-debug (print every sound as it plays)
+## --perf / --perf-every=SECONDS (print texture memory, draw calls and frame times)
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
 ## --turn=N (start with the camera turned N quarter turns round; G / H turn it)
 ## --turn-left / --turn-right (turn the camera once after a second, see ViewTurn)
@@ -166,6 +167,7 @@ func _quit_after(seconds: float) -> void:
 
 
 func _run_test_hooks(args: Dictionary) -> void:
+	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
 	if args.has("repair-bars"):

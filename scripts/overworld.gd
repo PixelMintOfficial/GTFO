@@ -20,6 +20,8 @@ extends Node2D
 ##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
+##   --perf                 print texture memory, draw calls and frame times once a second
+##   --perf-every=SECONDS   how often --perf prints (default 1.0)
 ##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
 ##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
 ##   --turn-left / --turn-right   turn the camera once after a second (see ViewTurn)
@@ -185,6 +187,7 @@ func _quit_after(seconds: float) -> void:
 
 
 func _run_test_hooks(args: Dictionary) -> void:
+	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
 	if args.has("spawn"):
