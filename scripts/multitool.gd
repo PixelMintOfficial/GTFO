@@ -6,7 +6,7 @@ extends Node2D
 ## (gamepad X) works on whatever is in reach, and the tool picks the job from the target:
 ##   mine    orange  ore rocks: a pulsing cutting beam, sparks and chips flying, cracks
 ##                   spreading through the rock until it bursts into ore chunks
-##   gather  teal    ore chunks, scrap, ration packs: a spiral stream pulls the thing into the lens
+##   gather  teal    ore chunks, scrap, glass, ration packs: a spiral pulls the thing into the lens
 ##   lift    violet  crates, the cargo box: a wavy tether floats it up and it follows you until F
 ##                   sets it down (never the box you are standing on)
 ##   fix     cyan    dead lamps: scan lines sweep it, sparks gather, and it flickers back on
@@ -49,6 +49,10 @@ var suppressed := false
 var inventory_suppressed := false
 ## Machine proximity and the repair modal own F independently of door/inventory input.
 var repair_suppressed := false
+## Window proximity and the live glass panel own F separately; physics continues during it.
+var window_suppressed := false
+## A live window modal blocks controls but keeps survival and world simulation running.
+var window_panel_open := false
 
 var _player: Player
 var _terrain: MapTerrain
@@ -161,7 +165,8 @@ func _load_sheets(k: int) -> void:
 	for name in sprites:
 		var s: Dictionary = sprites[name]
 		_sheets[name] = {"tex": load(_props_dir.path_join(s["file"])), "frames": int(s["frames"]),
-				"anchor": Vector2(s["anchor"][0], s["anchor"][1])}
+				"anchor": Vector2(s["anchor"][0], s["anchor"][1]), "animation": s.get("animation", {}),
+				"shadow_alpha": s.get("shadow_alpha", 1.0)}
 
 
 static func _lamp_head(l: Dictionary, k: int) -> Vector2:
@@ -239,7 +244,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed
+	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed and not window_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()

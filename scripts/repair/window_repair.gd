@@ -6,6 +6,7 @@ extends RefCounted
 ## The box takes one crack per pane: standing on it under a pane cracks it once, and it will not
 ## crack again until that pane is mended. Once every pane is mended with you standing on it, it
 ## gives way (broken).
+## Each window also retains its own glass placements, quarter turns and unfinished scan.
 
 signal changed
 
@@ -16,6 +17,13 @@ var box_cracks := {}
 ## Where the box was last set down (world), or null while it stands where it starts.
 var box_world: Variant = null
 var box_broken := false
+var puzzles: Dictionary = {}
+
+
+func puzzle_for(id: String, definition: Dictionary) -> GlassPuzzle:
+	if not puzzles.has(id):
+		puzzles[id] = GlassPuzzle.new(definition)
+	return puzzles[id]
 
 
 ## How many cracks the box has taken (its sprite frame until it breaks).
