@@ -23,6 +23,7 @@ extends Node2D
 ##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
 ##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
 ##   --turn-left / --turn-right   turn the camera once after a second (see ViewTurn)
+##   --dome-mended=ROOM     that base room's dome glass is whole again (command: storage's windows mended)
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
 const PROPS_JSON := "res://assets/maps/red_planet/red_planet_props.json"
@@ -187,6 +188,9 @@ func _quit_after(seconds: float) -> void:
 func _run_test_hooks(args: Dictionary) -> void:
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
+	if args.has("dome-mended"):
+		GameState.window_repair.dome_mended = args["dome-mended"]
+		dome_fx.load_view(terrain.view_json)
 	if args.has("spawn"):
 		var xy: PackedStringArray = args["spawn"].split(",")
 		player.teleport(Vector2(float(xy[0]), float(xy[1])))

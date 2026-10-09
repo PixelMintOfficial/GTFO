@@ -73,8 +73,8 @@ TAU = 2 * math.pi
 # ================================================================== layout (world units)
 OY = 520.0                        # the interior lives here in its own little world
 N = 760                           # walk grid size
-ROOMS = {
-    'storage': dict(X=0.0, Y=OY, R=94.0, label='STORAGE'),
+ROOMS = {   # dome: the base room outside it on the overworld (mars_map_gen BASE_ROOMS); the airlocks are in it
+    'storage': dict(X=0.0, Y=OY, R=94.0, label='STORAGE', dome='command'),
     'power':   dict(X=236.0, Y=OY + 10.0, R=76.0, label='POWER ROOM'),
     'oxygen':  dict(X=-236.0, Y=OY + 10.0, R=76.0, label='OXYGEN ROOM'),
 }
@@ -1413,7 +1413,8 @@ def render_view(k, fur):
                         view_center=[float(M.VIEW_C[0]), float(M.VIEW_C[1])])
     meta.update(name='base_interior', image=f'base_interior{sfx}.png', size=[W, H], origin_px=[M.AX, M.AY], view=M.VIEW,
                 views=[f'base_interior{M.view_sfx(i)}.json' for i in range(4)])
-    meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R']) for name, rm in ROOMS.items()}
+    meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R'],
+                                **({'dome': rm['dome']} if 'dome' in rm else {})) for name, rm in ROOMS.items()}
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
     meta['door'] = export_door()
     meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)

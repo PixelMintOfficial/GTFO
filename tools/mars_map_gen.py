@@ -3741,6 +3741,11 @@ def band_dome(img, D, kind, gid, d, gid_val):
             k = np.clip(np.floor(0.6 + envh.mean(axis=1) / 255.0 * 5.0 + fres * 2.4 + by[ho] * 0.8 + 0.4 * _h(qi, ri, 5)), 0, 7).astype(int)
             idx = np.nonzero(ho)[0]
             was = TINT[k] * 0.68 + envh * 0.32
+            was[L['y'][ho] > g['h'] - 1.6] *= 0.75               # as the glass round it: trim shade, glare
+            sw = np.mod(sxp[ho] * 1.0 + syp[ho] * 1.6, 150.0)
+            was[sw < 6.0] = was[sw < 6.0] * 0.5 + SHINE * 0.5
+            b2 = (sw > 10.0) & (sw < 12.5)
+            was[b2] = was[b2] * 0.66 + SHINE * 0.34
             for h_i in range(len(holes)):
                 mine = wh[ho] == h_i
                 if mine.any():

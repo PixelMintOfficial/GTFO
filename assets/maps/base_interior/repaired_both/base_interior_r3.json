@@ -46,7 +46,8 @@
     0.0,
     520.0
    ],
-   "radius": 94.0
+   "radius": 94.0,
+   "dome": "command"
   },
   "power": {
    "label": "POWER ROOM",
