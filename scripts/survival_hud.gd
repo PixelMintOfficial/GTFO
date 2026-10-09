@@ -3,7 +3,8 @@ extends CanvasLayer
 ## One draggable parent panel with four SurvivalMeter children; top right by default.
 ## Grip only: left-drag moves, right-click resets; Home/left-stick click also resets.
 ## SurvivalHUDLayout persists normalized UI placement in user://survival_hud.cfg.
-## Owns scene ticking/input only; vitals remain in GameState. Pauses in modals/cutscenes.
+## Owns scene ticking/input only; vitals remain in GameState. Pauses in ordinary modals and
+## cutscenes; the live window inspection keeps survival ticking along with world physics.
 ## Explicit development mode: --survival-debug enables F6 damage, F7 air, F8 empty needs,
 ## F9 refill, F10 60x time. --vitals=H,O,F,W and --survival-speed=N require that flag.
 ## --hud-preview=H,O,F,W is UI-only; F11 cycles 0/25/50/75/100, F12 restores live display.
@@ -155,7 +156,7 @@ func _process(delta: float) -> void:
 		_save_position()
 	_hover_grip = HANDLE.has_point(_canvas.get_local_mouse_position() - _panel.position)
 	_panel.queue_redraw()
-	if not get_tree().paused and _player.controls_enabled and not _player.puppet and not _player.turning:
+	if not get_tree().paused and (_player.controls_enabled or _tool.window_panel_open) and not _player.puppet and not _player.turning:
 		GameState.survival.advance(delta * speed, _player.can_breathe(), _player.sprinting)
 	if GameState.survival.dead:
 		layer = 20

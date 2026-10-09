@@ -14,7 +14,10 @@ extends Node2D
 ## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
 ## --cargo=burst|crescent|gash sets the cargo box down under that pane and stands you on it;
 ## --cargo-mended=N mends the first N panes first (the box shows N cracks); --cargo-land lands on
-## the box (the next pane cracks it; after the other two, it gives way).
+## the box (wear only; collapse waits until all three scans have sealed their windows).
+## --window=burst|crescent|gash opens a reachable window with six demo glass for captures;
+## --window-fit=N fits N pieces; --window-scan=P starts the complete board's scan at fraction P.
+## --window-close=S closes that live panel after S seconds for world scan/persistence captures.
 ## --audio-debug (print every sound as it plays)
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
 ## --turn=N (start with the camera turned N quarter turns round; G / H turn it)
@@ -188,12 +191,29 @@ func _run_test_hooks(args: Dictionary) -> void:
 	if args.has("cargo-mended"):
 		for i in mini(int(args["cargo-mended"]), cracks.panes.size()):
 			GameState.window_repair.crack_box(cracks.panes[i]["id"])
-			GameState.window_repair.fix(cracks.panes[i]["id"])
+			cracks.fix(cracks.panes[i]["id"])
 		cracks.box.sprite.frame = GameState.window_repair.damage()
+		cracks.set_view(JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json)))
 	if args.has("cargo"):
 		player.teleport(cracks.place_box_under(args["cargo"]))
 	if args.has("cargo-land"):
 		get_tree().create_timer(0.5).timeout.connect(func() -> void: player.landed.emit(0.0))
+	if args.has("window"):
+		var id: String = args["window"]
+		player.teleport(cracks.place_box_under(id))
+		player.set_tool_out(true)
+		while GameState.item_count("glass") < 6:
+			GameState.store_item("glass")
+		get_tree().create_timer(.25).timeout.connect(func() -> void:
+			if cracks.open_window(id):
+				var puzzle := cracks.panel.puzzle
+				for i in mini(int(args.get("window-fit", "0")), 6):
+					puzzle.rotations[i] = 0
+					puzzle.place(i, puzzle.target(i))
+				if args.has("window-scan"):
+					puzzle.scan = clampf(float(args["window-scan"]), 0, 1))
+		if args.has("window-close"):
+			get_tree().create_timer(float(args["window-close"])).timeout.connect(cracks.panel.close)
 	if args.has("face"):
 		var f: PackedStringArray = args["face"].split(",")
 		var sd := Vector2(float(f[0]), float(f[1]))

@@ -89,6 +89,7 @@ scripts/
   interior.gd          builds the interior, exit door, test hooks
   repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter;
                        window_repair.gd / window_cracks.gd: storage's smashed panes and the cargo box
+                       glass_puzzle.gd / glass_repair_ui.gd: live glass jigsaw and sealing scan
   crash_site.gd        the satellite crash intro and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
@@ -112,6 +113,7 @@ tools/                 the pipeline (Python): generates everything in assets/
   mars_map_gen.py           the overworld: terrain, biomes, domes, props, plants, all map data
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
+  window_repair_gen.py      source-matched window inspections, connected glass pieces and working tool
   sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
   requirements.txt          what make env installs
   *_viewer.html             browser previews of the sprites and the map
@@ -164,9 +166,19 @@ spawn, every `world` position in the data - exists once, in view 0's frame.
 
 `base_interior.json → window_cracks` lists storage's three smashed panes: `id` (its hole shape),
 `world` (where to stand under it: the middle of the box pushed to the wall), `hole` (the hole's
-middle, with height), `px` (where this view draws it) and `seen` (this view leaves its wall
-standing). `interior_props.json`'s `cargo_box` object adds `top` (its height), `half` (half its
-footprint), `yaw` (its turn) and `contents` (what spills when it breaks).
+middle, with height), `px` (where this view draws it), `seen` (this view leaves its wall
+standing), `reach_min_height` (feet height needed to interact) and `patch` (`file`, `height`,
+`sun`, `light`, `position`: restored glass, world-height and local lighting masks for the scan).
+`window_restorations` lists the seven completed-pane combinations (`panes`, plus `file`, `sun`,
+`light`, `position` when this view changes). These exact re-shaded replacements remove the
+aperture, rim, bloom, baked beam and floor light together, while retaining other panes' beams.
+Each `fx.shafts` entry has a `pane` ID; sealing it removes that shaft and its floating dust.
+`windows/inspection/catalog.json` owns each silhouette, six fragment targets/anchors and initial
+quarter turns, cost and scan duration. `interior_props.json` adds eighteen gatherable glass
+pickups; its `cargo_box` object adds `top` (its height), `half` (half its
+footprint), `yaw` (its turn) and `contents` (what spills when it breaks). Glass sheets use
+`animation.variant_frames` / `fps` and `shadow_alpha`: three small single-chip variants with
+brief reflection sweeps, staggered in the world and retained through camera turns.
 
 `base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
@@ -250,6 +262,11 @@ Machine repairs use `multitool.repair_suppressed` independently, pause the world
 modal input. F/X must be released after closing. On the board, arrows/WASD/d-pad select
 movable modules; Enter/Space/F/A turns clockwise, Q/left shoulder turns back, Esc/B closes.
 Mouse left/right click turns clockwise/back. Bolted modules and plates are skipped.
+Window repairs use independent `window_suppressed` and `window_panel_open` ownership. They
+disable movement input while keeping physics, the clock and survival running; leaving reach
+closes the panel. F/X must be released before world interactions resume. Drag/click places glass;
+R/right-click/left shoulder rotates clockwise, Tab/right shoulder cycles pieces, Q cycles back,
+WASD/arrows/left stick/d-pad moves the selected fragment, Enter/Space/F/A/X places, Esc/B closes.
 
 ### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
@@ -260,7 +277,7 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
     the day).
   - `heading`: which way the camera faces (quarter turns, 0..3), the same indoors and out.
   - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
-    quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
+    quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`, `glass`, `ration`, `water`;
     resources/rations/water stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
     `inventory_changed`. A full bag leaves gathered props in the world.
   - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
@@ -268,7 +285,10 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
     chunks and `/spill/N` for the cargo box's rations; `spawned_props` entries keep their `kind`
     and `radius`. Generated JSON is unchanged. Saving to disk is not implemented.
   - `window_repair`: `WindowRepair`: storage's mended panes, the cracks the cargo box has
-    taken (one per pane), where it was last set down, and whether it broke. Reset with the
+    taken (one per pane), where it was last set down, and whether it broke. Its `puzzles` keep
+    independent `GlassPuzzle` placements/rotations and unfinished scan progress through closes,
+    views and airlocks. Six glass are consumed atomically only when that pane's scan completes.
+    Reset with the
     world ledger (`reset_inventory`), which holds its spilled rations.
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
     Each stores its crack placements/seams, circuit puzzle/countdown/index and completed tasks.
@@ -451,9 +471,23 @@ consts in the named files.
   - When the last pane is mended with you standing on it, it groans (0.45 s), gives way and
     crushes flat: you go down with it (`collapse`), and its 4 ration packs (MREs) spill clear
     of the wreck, to be gathered with the tool. The wreck stays; nothing to lift or stand on.
-  - **Mending a pane is not built yet.** `STAND_IN_FIX` stands in for it: landing on the box
-    under a pane (within 20 units of its `world`) counts as mending it. The real job calls
-    `WindowCracks.fix(id)`; cracks, the break and the saved state stay as they are.
+  - F/X within 20 units of an unrepaired visible pane opens **Window Repair** with the tool
+    equipped and six collected glass. The set-down box supports the player; levitated boxes
+    cannot be ridden. A floor jump can open it briefly but gravity closes it when out of reach.
+  - Six connected fragments need placement and quarter-turn rotation. Inside-facing crescent,
+    star (`burst`) and gash silhouettes stay constant; SKYWIN colours, honeycomb, dithering and
+    reflections reuse the actual window shader. Fractures remain clipped to the pane.
+  - After all pieces fit, the actual working gauntlet scans top to bottom for 2.4 seconds,
+    progressively restoring continuous glass in the panel and world. Closing pauses the scan;
+    reopening resumes it. Completion spends six glass once and calls `WindowCracks.fix(id)`.
+    The final panel closes before the box's groan snapshots controls. Landing or moving the
+    box never repairs a pane or triggers collapse; all three completed repairs are required.
+  - Completed panes replace their entire damaged appearance and lighting; their hole beams,
+    floor light and illuminated dust stop. Camera turns, machine repairs and airlocks retain this.
+    Partial scans use generated world-height masks and pristine local day/night shading.
+  - Glass pickups are small individual teal shards with sharp pale edges and brief animated
+    white reflections, matching the owner's floor-glass reference. The three storage barrels
+    and their collision are removed to leave room for carrying the cargo box.
   - State survives the airlock (`GameState.window_repair`). No `[F] EXIT` prompt while up on a box.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
@@ -545,6 +579,10 @@ repaired variants; read by `WindowCracks`), and `top` / `half` / `yaw` / `conten
 `drop_sound` on props objects (read by `Multitool.setup`; any prop with `top` is something to
 stand on; `drop_sound` names the `audio.json` sound it makes when the tool sets it down, else
 `lift_drop`).
+`make interior` also runs `window_repair_gen.py`; `make windows` refreshes only inspection
+assets. `interior_gen.py --props-only` refreshes prop sprites and ensures glass pickups have
+clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced by real pickups.
+`windowglass` and `glassedge` register the existing SKYWIN and WHITE colours for those SDF props.
 
 ### 6.4 Recipes
 - **A new prop or machine:**
@@ -734,7 +772,8 @@ godot --headless --path . res://tests/inventory_test.tscn             # inventor
 godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
 godot --headless --path . res://tests/view_turn_test.tscn             # turning the camera, in both scenes
 godot --headless --path . res://tests/window_crack_test.tscn          # the cargo box: jump on, lift, crack, break, rations
-godot --path . res://scenes/interior.tscn -- --cargo=gash --turn=2 --cargo-mended=2 --cargo-land --capture=break.png --seconds=0.5 --burst=6 --gap=0.3
+godot --headless --path . res://tests/window_glass_test.tscn          # live reach, real input, scans, cost, final collapse
+godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
 node tools/test_wire_repair.cjs                                     # browser circuit model checks
@@ -747,6 +786,8 @@ Useful hooks:
 - overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`
 - interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
   `--cargo-mended=N` (the first N panes mended first), `--cargo-land` (land on the box),
+  `--window=burst|crescent|gash` (six demo glass and native inspection), `--window-fit=N`,
+  `--window-scan=P`, `--window-close=S` (scan/close capture hooks; normal games get no demo glass),
   `--arrive`, `--exit`, `--repair=power|oxygen`,
   `--repair-done=power|oxygen|both` (both tasks for screenshots),
   `--repair-circuit=power|oxygen` (circuit-only preview), `--repair-bars`
@@ -898,10 +939,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
     3 both) to generated room variants; `fixed_machines` declares their restored equipment.
     `interior_props.json` exports six gatherable scraps using existing prop sprites in four views.
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
-  - **Storage's three smashed panes**: reaching them with the cargo box is built (§5); mending
-    them is not. `WindowCracks.STAND_IN_FIX` mends a pane when you land on the box under it;
-    the fix job should call `WindowCracks.fix(id)` and remove the stand-in. `window_cracks`
-    gives each pane's hole (world, with height) and its pixels per view for that job.
+  - **Storage's three smashed panes**: native glass jigsaws, collected glass and resumable
+    multitool scans are built (§5). The box breaks only after all three repairs complete.
   - The overworld dome still shows two holes in the storage room; the interior has three.
 - **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
   spawn, from `props_gen.py`). Real ore deposits are not placed yet.
@@ -1045,3 +1084,18 @@ Write one line per decision: date — decision (who approved it).
   Recorded steel, cracking, squeak, impact and glass from the existing CC0 packs, with small
   synthesised layers (hollow shell, steel stress, groan, glass seal); no new packs. Baked with
   --only, so every existing sound is unchanged.
+- 2026-10-09 — Approved compact window draft integrated for crescent, star and third gash
+  (owner). Six world-collected glass per pane; placement and quarter turns; source SKYWIN/WHITE
+  material with honeycomb and inside-facing orientation; damage clipped to the pane. Physics,
+  clock and survival continue; falling out of reach closes it and retains progress. Stand only
+  on the set-down box. The existing gauntlet scans top to bottom and restores glass progressively;
+  all three completed scans, rather than three landings/placements, unlock box collapse and the
+  existing four-ration spill. Modal ownership releases before collapse to preserve controls.
+- 2026-10-09 — Owner requested small single glass chips like the original floor debris,
+  with moving white glints instead of opaque outlined piles. They use the existing SDF renderer
+  and teal/glass/WHITE ramps; only these thin fragments omit the heavy outer silhouette.
+  Reflection sheets retain their selected variant across views and fade with the daylight.
+  Remove storage's three teal/mustard barrels, including their baked collision, for the cargo route.
+  Sealing a window now restores its entire appearance and removes its hole's baked shaft,
+  floor light, halo and live beam/dust. Exact combined restoration states and matching masks
+  preserve other holes' lighting across all views, machine variants and airlocks.

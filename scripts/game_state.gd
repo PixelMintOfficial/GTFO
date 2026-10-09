@@ -16,7 +16,7 @@ var heading := 0
 var clock := 8.0
 
 ## Backpack: first six slots are the hotbar. Only the multitool can be equipped;
-## ore is stored; three scraps are consumed atomically on successful machine crack repair;
+## ore is stored; three scraps per machine and six glass per window are spent on completion;
 ## ration/water restore vitals through consume_slot().
 signal inventory_changed
 const HOTBAR_SIZE := 6
@@ -26,6 +26,7 @@ const ITEMS := {
 	"multitool": {"name": "MULTITOOL", "detail": "T TO EQUIP - F TO WORK", "stack": 1},
 	"ore_chunk": {"name": "ORE", "detail": "COLLECTED FROM ORE ROCKS", "stack": STACK_LIMIT},
 	"scrap": {"name": "SCRAP", "detail": "SALVAGED MATERIAL", "stack": STACK_LIMIT},
+	"glass": {"name": "GLASS", "detail": "6 FRAGMENTS TO SEAL A WINDOW", "stack": STACK_LIMIT},
 	"ration": {"name": "RATION", "detail": "C TO EAT", "stack": STACK_LIMIT},
 	"water": {"name": "WATER", "detail": "C TO DRINK", "stack": STACK_LIMIT},
 }

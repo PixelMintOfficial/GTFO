@@ -2,7 +2,7 @@ extends Node
 ## Checks for storage's smashed panes and the cargo box (WindowCracks, WindowRepair), against the
 ## real interior and real jumps: the box blocks you from the floor, a held jump lands you on top,
 ## walking off the edge drops you, the tool lifts it but never from under your own feet; standing
-## on it under a pane cracks it once and (for now) mends the pane; after the third, it gives way,
+## on it under a pane only cracks it once; only finishing all three repairs makes it give way,
 ## you go down with it, and its rations spill to be gathered; all of it survives a scene reload.
 ## Run: godot --headless --path . res://tests/window_crack_test.tscn  (failures exit nonzero)
 
@@ -139,18 +139,20 @@ func _scene() -> void:
 	_check(tool._lifted == null and terrain.platforms.size() == 1 and box.lift == 0.0, "set down, you can stand on it again")
 	_check(GameState.window_repair.box_world == box.world, "where it was set down is kept")
 
-	# under each pane: one crack, the pane mended (the stand-in), no more cracks
+	# under each pane: wear alone never repairs the glass or collapses the box
 	cracks.place_box_under("burst")
 	player.teleport(box.world)
 	await _hop(player)
 	_check(GameState.window_repair.damage() == 1 and box.sprite.frame == 1, "under the first pane the box cracks")
-	_check(GameState.window_repair.fixed.has("burst"), "and (for now) that mends the pane")
+	_check(not GameState.window_repair.fixed.has("burst"), "landing never mends the pane")
 	await _hop(player)
 	_check(GameState.window_repair.damage() == 1, "jumping on it again there cracks nothing more")
+	cracks.fix("burst")
 	cracks.place_box_under("crescent")
 	player.teleport(box.world)
 	await _hop(player)
 	_check(GameState.window_repair.damage() == 2 and box.sprite.frame == 2, "the second pane: the second crack")
+	cracks.fix("crescent")
 
 	# leave and come back: the box is where you left it, as cracked as it was
 	var kept := box.world
@@ -171,7 +173,11 @@ func _scene() -> void:
 	cracks.place_box_under("gash")
 	player.teleport(box.world)
 	await _hop(player)
-	_check(GameState.window_repair.damage() == 3 and GameState.window_repair.all_fixed(cracks._pane_ids()), "the third pane cracks it a third time")
+	_check(GameState.window_repair.damage() == 3 and not GameState.window_repair.all_fixed(cracks._pane_ids()), "the third landing leaves its window open")
+	await _wait(WindowCracks.GROAN + .2)
+	_check(not GameState.window_repair.box_broken and box.top > 0 and player.controls_enabled, "the box stays usable at third wear until the final repair")
+	cracks.fix("gash")
+	await _wait(.05)
 	_check(not player.controls_enabled, "it groans under you")
 	await _wait(WindowCracks.GROAN + 0.2)
 	_check(GameState.window_repair.box_broken and box.job == "" and box.sprite.frame == box.sprite.hframes - 1, "it gives way")
@@ -186,7 +192,7 @@ func _scene() -> void:
 	_check(tool._find_target() != box, "the wreck is nothing for the tool")
 	for p in spilled:
 		_check(not box.covers(p.world, 4.0), "a ration lands clear of the wreck")
-	for attempt in 8:                                   # the tool may take a neighbour first: go round till none are left
+	for attempt in 20:                                  # nearby glass is also legitimate salvage; gather until rations are gone
 		var left := spilled.filter(func(p: Variant) -> bool: return is_instance_valid(p) and not p.gone)
 		if left.is_empty():
 			break

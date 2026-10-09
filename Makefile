@@ -8,6 +8,7 @@
 #   make sfx            regenerate all sound     (fast; needs make sources first)
 #   make props          regenerate the test props (fast, needs the map's data)
 #   make interior       regenerate the base interior (seconds)
+#   make windows        regenerate only glass inspection assets
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
 #   make map            regenerate the overworld (~3 min, several GB of RAM)
 #   make import         re-import assets into Godot (always after a regeneration)
@@ -25,7 +26,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props interior astronaut astronaut-quick map all import check \
+.PHONY: help env sources sfx props interior windows astronaut astronaut-quick map all import check \
         check-overworld check-interior check-tests shot sounds verify clean-shots
 
 help:
@@ -55,6 +56,10 @@ props: $(PY)
 
 interior: $(PY)
 	$(PY) tools/interior_gen.py
+	$(PY) tools/window_repair_gen.py
+
+windows: $(PY)
+	$(PY) tools/window_repair_gen.py
 
 astronaut: $(PY)
 	$(PY) tools/astronaut_sprite_gen.py
@@ -110,6 +115,8 @@ check-tests:
 	@$(GODOT) --headless --path . res://tests/repair_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/view_turn_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_crack_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/window_glass_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/window_restore_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error|[1-9][0-9]* failures' /tmp/gtfo-tests.log \
 		|| { echo "tests: failures above" >&2; exit 1; }
 
