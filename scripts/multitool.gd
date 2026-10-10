@@ -51,6 +51,8 @@ var inventory_suppressed := false
 var repair_suppressed := false
 ## Window proximity and the live glass panel own F separately; physics continues during it.
 var window_suppressed := false
+## Solar equipment owns F independently while in reach, including its release guard.
+var solar_suppressed := false
 ## A live window modal blocks controls but keeps survival and world simulation running.
 var window_panel_open := false
 
@@ -244,7 +246,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed and not window_suppressed
+	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()

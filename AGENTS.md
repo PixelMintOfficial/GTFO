@@ -84,6 +84,7 @@ scripts/
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
   multitool.gd         Multitool: equip, job picking (mine/gather/lift/fix) and their effects
   world_prop.gd        WorldProp: a loose thing the tool works on (rock, chunk, scrap, crate)
+  solar/               stateless optics, session field state, world equipment/controls and engine inlet
   airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
@@ -114,6 +115,7 @@ tools/                 the pipeline (Python): generates everything in assets/
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
   window_repair_gen.py      source-matched window inspections, connected glass pieces and working tool
+  solar_field_gen.py        solar mirror/feed sheets and four-view indicator metadata (shared SDF renderer)
   sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
   requirements.txt          what make env installs
   *_viewer.html             browser previews of the sprites and the map
@@ -272,6 +274,10 @@ disable movement input while keeping physics, the clock and survival running; le
 closes the panel. F/X must be released before world interactions resume. Drag/click places glass;
 R/right-click/left shoulder rotates clockwise, Tab/right shoulder cycles pieces, Q cycles back,
 WASD/arrows/left stick/d-pad moves the selected fragment, Enter/Space/F/A/X places, Esc/B closes.
+Solar equipment uses independent `solar_suppressed` proximity/release ownership. F/X
+opens/closes a nearby sun feed or turns a mirror clockwise 22.5 degrees. Q has no solar
+action; left shoulder retains hotbar cycling. No modal/pause;
+camera turns reproject equipment and rays without changing the optical puzzle.
 
 ### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
@@ -304,6 +310,10 @@ WASD/arrows/left stick/d-pad moves the selected fragment, Enter/Space/F/A/X plac
     clamped mutation APIs. `data/survival.json` owns balance, starter supplies and consumable
     restoration. `consume_slot` uses the existing inventory. `rescue` restores vitals and
     supplies at overworld spawn while preserving session progress. See docs/survival.md.
+  - `solar_field`: `SolarFieldState`: thirteen world mirror orientations, three closed/open
+    feeds and cached optical routes. All three complete 4/5/4 routes supply the base reactor;
+    `base_powered()` also requires its existing machine repair. State survives turns, airlocks
+    and rescue. See docs/solar-field.md for optics, generated art, ownership and test hooks.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -498,6 +508,21 @@ consts in the named files.
   - With all three mended, the dome outside is mended too: the `command` room's two holes (the
     same burst and crescent) show whole glass in every view, by day and night and through the
     camera's swing. The far pane has no hole outside. The other rooms keep theirs.
+- **Solar field** (`scripts/solar/`, `data/solar_field.json`):
+  - Three closed sun feeds and 4/5/4 Amber/Jade/Coral reflectors surround one conical receiver.
+    F/X opens a feed or turns a nearby mirror clockwise 22.5 degrees. No Q reverse action.
+    Movement, survival and the clock continue. Every assigned reflector is required.
+    Local solar prompts and bars avoid the movable survival HUD using its canvas-aware
+    `plate_position`; prompts sit beside the equipment's feet to stay readable at close zoom.
+  - The receiver's local bar has three channel segments. Its cable goes into the base's
+    power conduit; all three complete paths plus the repaired reactor run the engine.
+    Routes persist through views and airlocks. Time of day fades beams without losing progress.
+  - The field occupies the original array clearing/red-dust ground; only equipment pads
+    are levelled after the unchanged flora placement stream. The forest is preserved.
+  - Mirrors have silver sweeps/pivots; feeds deploy crystals and gather sunlight. Completing
+    all routes sends a charge wave through receiver cells, lights its crown and pulses outward.
+  - Canonical `SolarOptics` and session `SolarFieldState` are separate from `SolarField`
+    input, `SolarFieldFX` animation and `SolarPowerInput` wall lenses. No prototype navigation box.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -549,6 +574,7 @@ the existing renderer (`render_groups` / `render_sprite`).
 | `python tools/astronaut_sprite_gen.py` then `python tools/godot_spriteframes.py` | `assets/characters/astronaut/*` | you change the astronaut, the multitool or any animation | slow (about 1,000 frames); `--quick` writes only the contact sheet |
 | `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 8 minutes for the four views (~1.5 per view), several GB of RAM |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
+| `python tools/solar_field_gen.py` | `assets/maps/red_planet/solar/*`, `solar_field.json` | after every map regeneration or equipment change; `make map` includes it | seconds |
 | `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about 25 seconds (four views) |
 | `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
 
@@ -561,6 +587,7 @@ If you change shared code (a ramp, the renderer, `hole_shape`, the outline) you 
 designs can be compared or restored:
 - `BASE_DESIGN` = `v1` | `hex` | `v2` | `v3` (default **v3**) — the main base.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
+- `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
 - `MAP_OUT=<folder>` writes the map somewhere else, so you can preview a design without
   replacing the game's map.
 - `MAP_VIEWS=0` (or `013`...) renders only those views (map and interior) - quick to check a
@@ -582,6 +609,30 @@ field in it exists because something in the game asks for it (§4.8).
 The views add: `views`, `view`, `game.heading`, `game.view_center` in every meta JSON;
 `sprites_views` and `lamps[].head_px_views` in `red_planet_props.json`; `anchor` on every plant
 sheet; `anchor` and `world` on every animated dome sprite (the turn stands them up).
+
+`data/solar_field.json` owns canonical `bounds`, `collector`, `cable`, `beam_height`,
+`mirror_span`, `reach`, `engine_room` and three `routes` (ID/label/color/ramp, source/direction/mirrors).
+Optional `access_paths` contain canonical `points` and `half_width` for narrow level approaches.
+Generated `solar_field.json` adds `sheets` (file/size/frames/anchor, mirror `shine_frames`,
+feed `deploy_frames`) and four `views` with receiver `indicator_px` and `receiver_mask`
+(file/position/size; RGBA = normalized height/cell interior/local view depth/surface).
+`feed_visual` owns `crystal_offset`, `tip_closed`, `tip_open` and `emerge` for the sunlight
+funnel's endpoint as a beacon opens. Closed beacons conceal the crystal under metal lids.
+Its `stands` map contains reachable canonical approach points for captures and placement
+checks, clear of the receiver's footprint; normal play can approach from any side.
+The map generator owns small level equipment pads and solid footprints, preserving the
+original landscape/plant random stream. `check_solar_field.py` verifies reachability,
+original forest fingerprints, equipment clearance and view anchors.
+Elevated routes add `source_elevation`; these feeds keep their natural terrain instead of
+getting a level pad. `mirror_half_height` defines finite vertical mirror extent. `SolarOptics`
+intersects three-dimensional rays with mirror rectangles and the capped frustum. The first
+mirror's fixed pitch is derived from descending input and horizontal output. Every mirror's
+fixed yaw offset follows its authored route, allowing free placement around terrain;
+`special_mirrors` exports four view-specific sheets for nonzero mounting offsets.
+F continues to control yaw only, in eight 22.5-degree steps.
+Every interior/repair variant exports `solar_input`: a physical diagonal-wall inlet's
+world/anchor/panel_id, housing/lights sprite paths, position/size and eight connection frames.
+`interior_gen.py --solar-input-only` regenerates these without changing existing room art.
 
 The panes and the box add (§4.1): `window_cracks` in every interior meta JSON (incl. the
 repaired variants; read by `WindowCracks`), and `top` / `half` / `yaw` / `contents` /
@@ -1117,3 +1168,33 @@ Write one line per decision: date — decision (who approved it).
   map generator already exported for mending (`cracks → patch`), lit like the map; no new art.
   The generator's patches now carry the glass band's glare and trim shade through the hole, so
   the mend has no seam. Habitat and garage keep their holes.
+- 2026-10-10 — Owner approved the Sunthread web prototype for complete main-game integration
+  on latest main: one large triangular-cell conical collector, 4/5/4 Amber/Jade/Coral mirror
+  routes, distributed closed-by-default sun feeds, nearby F/X activation/rotation and Q/left
+  shoulder reverse, a local three-channel bar and a ground cable into the base power conduit.
+  Every assigned reflector is required; B4's 157.5-degree early ray misses the actual cone.
+  No outdoor generator or prototype objective/navigation box. Canonical optics/session state
+  are separate from generated four-view equipment/world adapters. Repaired reactor plus all
+  three channels runs the engine; closing a feed removes its output. Existing DayNight shading,
+  WorldProp depth/collision, PixelFont, sound palette and relief camera swing are reused.
+- 2026-10-10 — Owner requested moving the complete solar field into the marked original
+  array/red-dust clearing and restoring the removed forest/cliffs. Original terrain and flora
+  placement rules are retained; only small hardware pads are levelled after scattering.
+  Reflectors gain silver sweeps and pivots; sun feeds raise crystals through split lids,
+  collecting daylight into beams. Three completed channels energize the receiver cells/crown
+  with a rising wave and outward pulse. F/X alone rotates reflectors; Q reverse is removed
+  and left shoulder again cycles inventory. Three colored lenses on physical power-room
+  walls replace the intrusive floating solar bar, with generated art/anchors in all four views.
+- 2026-10-10 — Owner encouraged a varied layout with a sun feed on a mountain sending light
+  down to a reflector. Coral's feed uses the existing reachable 58.28-unit mountain ledge;
+  its first mirror has fixed tilt. Optics now use actual 3D finite mirror planes and the
+  capped receiver, while player controls remain F/X yaw rotation and source activation.
+  Elevated feed terrain is preserved; the remaining mirrors use small level ground pads.
+- 2026-10-10 — Owner requested a smaller receiver and an uncluttered, interleaved layout:
+  receiver radius/height become 40/54 units; all three reflector colors span the field,
+  including behind the receiver, with wide hardware clearance. Amber moves onto open ground
+  with a narrow level access path. Feeds become sealed cylindrical beacons; split lids open
+  before a short faceted crystal emerges and conceal it again on shutdown. The plate version
+  is retained as `SOLAR_FEED_DESIGN=shield`. Fixed mirror mounting offsets permit routes to
+  follow the landscape; finite optics and generated orientations share the same geometry.
+  F/X controls, 4/5/4 counts, mountain feed, original forest and wall inlet lenses are retained.

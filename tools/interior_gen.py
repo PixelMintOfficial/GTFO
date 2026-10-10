@@ -43,6 +43,9 @@ including the sun/light masks with sealed holes' shafts removed. window_repair_g
 the inspection assets. Storage's barrel cluster is omitted so the cargo box has a clear route.
 --props-only refreshes loose-prop sprites, keeping placements and session IDs unchanged.
 --repair-metadata-only refreshes machine interaction anchors without rendering the art.
+--solar-input-only renders the small wall inlet repeaters and refreshes their four-view
+anchors in every machine-repair variant. The panels occupy opposite diagonal walls;
+only the one on a standing wall is drawn, so camera cutaways never leave floating lights.
 
 Four views: like the overworld, the base is rendered from four sides (the camera turns in quarter
 turns). Each view cuts away the walls nearest the camera. View 0 writes the usual files, view k
@@ -1418,6 +1421,7 @@ def render_view(k, fur):
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
     meta['door'] = export_door()
     meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
+    meta['solar_input'] = solar_input_info()
     meta['repair_variants'] = {str(mask): folder + '/base_interior.json' for mask, folder in
                                [(1, 'repaired_power'), (2, 'repaired_oxygen'), (3, 'repaired_both')]}
     meta['fixed_machines'] = sorted(fur['fixed'])
@@ -1482,6 +1486,61 @@ def refresh_repair_metadata():
             fh.write('\n')
     M.VIEW = 0
     print('Machine repair anchors refreshed; existing art preserved.')
+
+
+def solar_input_info():
+    """A physical inlet repeater on the standing diagonal wall, clear of the reactor."""
+    angle = 45.0 if label_visible(45.0) else 225.0
+    center = room_pt('power', angle, r_in('power') - 1.0, 21.0)
+    return dict(anchor=pxl(center), world=center.tolist(), panel_id='ne' if angle == 45 else 'sw',
+                housing=f'solar_input/housing{M.view_sfx(M.VIEW)}.png',
+                lights=f'solar_input/lights{M.view_sfx(M.VIEW)}.png')
+
+
+def export_solar_input():
+    """SDF housing plus eight three-channel lens states, shared by all repair variants."""
+    root = os.path.join(M.ROOT, 'assets', 'maps', 'base_interior')
+    folder = os.path.join(root, 'solar_input')
+    os.makedirs(folder, exist_ok=True)
+    for k in range(4):
+        path = os.path.join(root, f'base_interior{M.view_sfx(k)}.json')
+        with open(path) as stream:
+            meta = json.load(stream)
+        M.VIEW = k
+        M.AX, M.AY = meta['origin_px']
+        info = solar_input_info()
+        c = np.array(info['world'])
+        angle = math.radians(45 if info['panel_id'] == 'ne' else 225)
+        R = A.rz(angle - math.pi / 2)
+        normal = np.array([math.cos(angle), math.sin(angle), 0])
+        parts = [P_('inletframe', A.RoundBox(c, [9.3, .6, 4], .45, R), 'steel', 'inlet'),
+                 P_('inletface', A.RoundBox(c - normal * .7, [8.5, .35, 3.25], .25, R), 'darkwin', 'inlet'),
+                 P_('inletstripe', A.RoundBox(c + [0, 0, 3.5] - normal * .8, [8, .35, .35], .1, R), 'teal', 'inlet')]
+        lamps = []
+        for x, ramp in [(-5, 'mustard'), (0, 'teal'), (5, 'coral')]:
+            parts.append(P_('lensrim', A.Torus(c - normal * 1.0 + R @ np.array([x, 0, 0]), 1.9, .35,
+                                              M.yaw_to(-normal) @ A.ry(math.pi / 2)), ramp, 'inlet'))
+        for state in range(8):
+            lamps.append([P_('lens', A.Disc(c - normal * 1.2 + R @ np.array([x, 0, 0]), 1.75, .35, .25,
+                                           M.yaw_to(-normal)), ramp if state & (1 << group) else 'darkwin', f'lens{group}')
+                          for group, (x, ramp) in enumerate([(-5, 'mustard'), (0, 'teal'), (5, 'coral')])])
+        parts = M.turned(parts)
+        lamps = [M.turned(frame) for frame in lamps]
+        box = M.sprite_box([parts] + lamps, pad=2)
+        Image.fromarray(M.sprite_rgba(M.render_sprite(parts, box))).save(os.path.join(root, info['housing']))
+        strip = np.concatenate([M.sprite_rgba(M.render_sprite(frame, box)) for frame in lamps], axis=1)
+        Image.fromarray(strip).save(os.path.join(root, info['lights']))
+        info.update(position=list(box[:2]), size=list(box[2:]), frames=8)
+        for variant in ['', 'repaired_power', 'repaired_oxygen', 'repaired_both']:
+            target = os.path.join(root, variant, f'base_interior{M.view_sfx(k)}.json')
+            with open(target) as stream:
+                data = json.load(stream)
+            data['solar_input'] = info
+            with open(target, 'w') as stream:
+                json.dump(data, stream, indent=1)
+                stream.write('\n')
+    M.VIEW = 0
+    print('Solar wall inlet: three lenses, four views, all repair variants.')
 
 
 def board_info(b):
@@ -2092,7 +2151,10 @@ def export_door():
 
 if __name__ == '__main__':
     np.seterr(all='ignore')
-    if '--repair-metadata-only' in sys.argv:
+    if '--solar-input-only' in sys.argv:
+        M.SUN = SUN_IN
+        export_solar_input()
+    elif '--repair-metadata-only' in sys.argv:
         refresh_repair_metadata()
     elif '--repair-panels-only' in sys.argv:
         M.VIEW, M.SFX = 0, ''
@@ -2122,3 +2184,4 @@ if __name__ == '__main__':
                               ('repaired_both', {'power', 'oxygen'})]:
             OUT = os.path.join(root, folder)
             build(fixed)
+        export_solar_input()

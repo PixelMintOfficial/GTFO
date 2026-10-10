@@ -1,0 +1,1039 @@
+{
+  "beam_height": 34.0,
+  "mirror_span": 12.15,
+  "mirror_half_height": 9.8,
+  "reach": 25.0,
+  "bounds": [
+    -1260.0,
+    1780.0,
+    700.0,
+    530.0
+  ],
+  "collector": {
+    "world": [
+      -880.0,
+      2070.0
+    ],
+    "radius": 40.0,
+    "top_radius": 12.0,
+    "height": 54.0
+  },
+  "cable": [
+    [
+      -837.0,
+      2070.0
+    ],
+    [
+      -800.0,
+      2070.0
+    ],
+    [
+      -800.0,
+      1810.0
+    ],
+    [
+      -840.0,
+      1710.0
+    ]
+  ],
+  "engine_room": "power",
+  "routes": [
+    {
+      "id": "A",
+      "label": "AMBER",
+      "color": "#efb950",
+      "ramp": "mustard",
+      "source": [
+        -1040.0,
+        1850.0
+      ],
+      "direction": [
+        0.0,
+        1.0
+      ],
+      "mirrors": [
+        [
+          -1040.0,
+          2010.0
+        ],
+        [
+          -860.0,
+          2190.0
+        ],
+        [
+          -720.0,
+          1870.0
+        ],
+        [
+          -940.0,
+          1990.0
+        ]
+      ]
+    },
+    {
+      "id": "B",
+      "label": "JADE",
+      "color": "#4fc6b4",
+      "ramp": "teal",
+      "source": [
+        -620.0,
+        1930.0
+      ],
+      "direction": [
+        -1.0,
+        0.0
+      ],
+      "mirrors": [
+        [
+          -1080.0,
+          1930.0
+        ],
+        [
+          -820.0,
+          1850.0
+        ],
+        [
+          -800.0,
+          2110.0
+        ],
+        [
+          -740.0,
+          1990.0
+        ],
+        [
+          -940.0,
+          1830.0
+        ]
+      ]
+    },
+    {
+      "id": "C",
+      "label": "CORAL",
+      "color": "#ec7a5a",
+      "ramp": "coral",
+      "source": [
+        -640.0,
+        2180.0
+      ],
+      "source_elevation": 58.28,
+      "direction": [
+        0.0,
+        -1.0
+      ],
+      "mirrors": [
+        [
+          -640.0,
+          2030.0
+        ],
+        [
+          -840.0,
+          1990.0
+        ],
+        [
+          -1180.0,
+          1870.0
+        ],
+        [
+          -1000.0,
+          2090.0
+        ]
+      ]
+    }
+  ],
+  "access_paths": [
+    {
+      "points": [
+        [
+          -1020.0,
+          1780.0
+        ],
+        [
+          -1022.0,
+          1838.0
+        ]
+      ],
+      "half_width": 10.0
+    }
+  ],
+  "feed_visual": {
+    "crystal_offset": [
+      0,
+      0
+    ],
+    "tip_closed": 39,
+    "tip_open": 53.3,
+    "emerge": 0.25
+  },
+  "stands": {
+    "A SUN": [
+      -1022.0,
+      1838.0
+    ],
+    "A1": [
+      -1022.0,
+      1998.0
+    ],
+    "A2": [
+      -842.0,
+      2178.0
+    ],
+    "A3": [
+      -702.0,
+      1858.0
+    ],
+    "A4": [
+      -922.0,
+      1978.0
+    ],
+    "B SUN": [
+      -602.0,
+      1918.0
+    ],
+    "B1": [
+      -1062.0,
+      1918.0
+    ],
+    "B2": [
+      -802.0,
+      1838.0
+    ],
+    "B3": [
+      -782.0,
+      2098.0
+    ],
+    "B4": [
+      -722.0,
+      1978.0
+    ],
+    "B5": [
+      -922.0,
+      1818.0
+    ],
+    "C SUN": [
+      -622.0,
+      2168.0
+    ],
+    "C1": [
+      -622.0,
+      2018.0
+    ],
+    "C2": [
+      -822.0,
+      1978.0
+    ],
+    "C3": [
+      -1162.0,
+      1858.0
+    ],
+    "C4": [
+      -982.0,
+      2078.0
+    ]
+  },
+  "sheets": {
+    "A": {
+      "mirror": {
+        "file": "solar/mirror_a.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      "source": {
+        "file": "solar/source_a.png",
+        "frames": 36,
+        "size": [
+          81,
+          131
+        ],
+        "anchor": [
+          40,
+          112
+        ],
+        "deploy_frames": 9
+      }
+    },
+    "B": {
+      "mirror": {
+        "file": "solar/mirror_b.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      "source": {
+        "file": "solar/source_b.png",
+        "frames": 36,
+        "size": [
+          81,
+          131
+        ],
+        "anchor": [
+          40,
+          112
+        ],
+        "deploy_frames": 9
+      }
+    },
+    "C": {
+      "mirror": {
+        "file": "solar/mirror_c.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      "source": {
+        "file": "solar/source_c.png",
+        "frames": 36,
+        "size": [
+          81,
+          131
+        ],
+        "anchor": [
+          40,
+          112
+        ],
+        "deploy_frames": 9
+      }
+    }
+  },
+  "special_mirrors": {
+    "A2": [
+      {
+        "file": "solar/mirror_a2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a2_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a2_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a2_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "A3": [
+      {
+        "file": "solar/mirror_a3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a3_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a3_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a3_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "A4": [
+      {
+        "file": "solar/mirror_a4.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a4_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a4_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_a4_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "B1": [
+      {
+        "file": "solar/mirror_b1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b1_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b1_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b1_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "B2": [
+      {
+        "file": "solar/mirror_b2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b2_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b2_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b2_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "B3": [
+      {
+        "file": "solar/mirror_b3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b3_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b3_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b3_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "B4": [
+      {
+        "file": "solar/mirror_b4.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b4_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b4_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b4_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "B5": [
+      {
+        "file": "solar/mirror_b5.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b5_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b5_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_b5_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "C1": [
+      {
+        "file": "solar/mirror_c1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c1_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c1_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c1_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "C2": [
+      {
+        "file": "solar/mirror_c2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c2_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c2_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c2_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "C3": [
+      {
+        "file": "solar/mirror_c3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c3_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c3_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c3_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ],
+    "C4": [
+      {
+        "file": "solar/mirror_c4.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c4_r1.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c4_r2.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      },
+      {
+        "file": "solar/mirror_c4_r3.png",
+        "frames": 32,
+        "size": [
+          89,
+          128
+        ],
+        "anchor": [
+          44,
+          113
+        ],
+        "shine_frames": 4
+      }
+    ]
+  },
+  "views": [
+    {
+      "indicator_px": [
+        1843,
+        1528
+      ],
+      "receiver_mask": {
+        "file": "solar/receiver_mask.png",
+        "position": [
+          1421,
+          1238
+        ],
+        "size": [
+          844,
+          844
+        ]
+      }
+    },
+    {
+      "indicator_px": [
+        4900,
+        921
+      ],
+      "receiver_mask": {
+        "file": "solar/receiver_mask_r1.png",
+        "position": [
+          4478,
+          631
+        ],
+        "size": [
+          844,
+          844
+        ]
+      }
+    },
+    {
+      "indicator_px": [
+        5908,
+        2436
+      ],
+      "receiver_mask": {
+        "file": "solar/receiver_mask_r2.png",
+        "position": [
+          5486,
+          2147
+        ],
+        "size": [
+          844,
+          843
+        ]
+      }
+    },
+    {
+      "indicator_px": [
+        2851,
+        3462
+      ],
+      "receiver_mask": {
+        "file": "solar/receiver_mask_r3.png",
+        "position": [
+          2429,
+          3172
+        ],
+        "size": [
+          844,
+          844
+        ]
+      }
+    }
+  ]
+}

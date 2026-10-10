@@ -130,16 +130,23 @@ func _save_position() -> void:
 		push_warning("Could not save survival HUD position")
 
 
-## Existing room/day toasts can avoid the moved panel without changing their timers/state.
-static func toast_position(canvas: CanvasItem, desired: Vector2, width: int) -> Vector2:
+## Labels in a UI canvas or the world can avoid the moved panel in their own coordinates.
+## Including the canvas transform handles the world's camera/zoom as well as UI scaling.
+static func plate_position(canvas: CanvasItem, desired: Rect2) -> Vector2:
 	var hud := canvas.get_tree().get_first_node_in_group("survival_hud") as SurvivalHUD
 	if hud == null or not hud._panel.visible:
-		return desired
-	var transform := canvas.get_global_transform().affine_inverse() * hud._panel.get_global_transform()
+		return desired.position
+	var transform := canvas.get_global_transform_with_canvas().affine_inverse() * hud._panel.get_global_transform_with_canvas()
 	var panel_rect := Rect2(transform.origin, PANEL_SIZE * transform.get_scale())
-	if panel_rect.intersects(Rect2(desired - Vector2(8, 5), Vector2(width + 16, 22))):
-		return Vector2(desired.x, panel_rect.end.y + 10).round()
-	return desired
+	if panel_rect.intersects(desired):
+		return Vector2(desired.position.x, panel_rect.end.y + 5).round()
+	return desired.position
+
+
+## Existing room/day toasts retain their margins and timers.
+static func toast_position(canvas: CanvasItem, desired: Vector2, width: int) -> Vector2:
+	var plate := Rect2(desired - Vector2(8, 5), Vector2(width + 16, 22))
+	return plate_position(canvas, plate) + Vector2(8, 5)
 
 
 func _process(delta: float) -> void:
