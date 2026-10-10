@@ -136,7 +136,7 @@ func set_arrival(to: Dictionary, boards: Array = []) -> void:
 
 func _add_boards(boards: Array, first: bool) -> void:
 	for b in boards:
-		var s := _board(b)
+		var s: Node3D = _beam(b) if b.has("beam") else _board(b)
 		s.set_meta("first", first)
 		_boards.add_child(s)
 
@@ -178,11 +178,11 @@ func _apply(k: float) -> void:
 		m.set_shader_parameter("dissolve", mix)
 		m.set_shader_parameter("toward", basis.z)
 	for b in _boards.get_children():
-		var s := b as Sprite3D
-		s.modulate = DayNight.light_mul
-		s.position = s.get_meta("at") + basis.z * 16.0                     # in front of both views
-		if s.has_meta("first"):
-			s.visible = s.get_meta("first") == (mix < 0.5)                 # each view's own drawing of it
+		if b is Sprite3D:
+			b.modulate = DayNight.light_mul
+			b.position = b.get_meta("at") + basis.z * 16.0               # in front of both views
+		if b.has_meta("first"):
+			b.visible = b.get_meta("first") == (mix < 0.5)               # each view's own drawing of it
 	_face_player(psi)
 
 
@@ -270,6 +270,27 @@ func _board(b: Dictionary) -> Sprite3D:
 	s.set_meta("at", _godot(b["world"]))
 	s.position = _godot(b["world"])
 	return s
+
+
+## Sun beams retain their world-space heights through the camera swing.
+func _beam(info: Dictionary) -> MeshInstance3D:
+	var start := _godot(info["beam"][0])
+	var end := _godot(info["beam"][1])
+	var cylinder := CylinderMesh.new()
+	cylinder.top_radius = .35
+	cylinder.bottom_radius = .35
+	cylinder.height = start.distance_to(end)
+	cylinder.radial_segments = 6
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = info["color"]
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = cylinder
+	mesh.material_override = material
+	mesh.position = (start + end) * .5
+	mesh.basis = Basis(Quaternion(Vector3.UP, (end - start).normalized()))
+	return mesh
 
 
 static func _godot(w: Vector3) -> Vector3:

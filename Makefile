@@ -7,6 +7,7 @@
 #   make sources        download + checksum the open-licence recordings (~100 MB, once)
 #   make sfx            regenerate all sound     (fast; needs make sources first)
 #   make props          regenerate the test props (fast, needs the map's data)
+#   make solar          regenerate solar mirror/feed sheets and four-view anchors
 #   make interior       regenerate the base interior (seconds)
 #   make windows        regenerate only glass inspection assets
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
@@ -26,7 +27,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props interior windows astronaut astronaut-quick map all import check \
+.PHONY: help env sources sfx props solar interior windows astronaut astronaut-quick map all import check \
         check-overworld check-interior check-tests shot sounds verify clean-shots
 
 help:
@@ -54,6 +55,9 @@ sfx: $(PY)
 props: $(PY)
 	$(PY) tools/props_gen.py
 
+solar: $(PY)
+	$(PY) tools/solar_field_gen.py
+
 interior: $(PY)
 	$(PY) tools/interior_gen.py
 	$(PY) tools/window_repair_gen.py
@@ -72,6 +76,8 @@ astronaut-quick: $(PY)
 map: $(PY)
 	$(PY) tools/mars_map_gen.py
 	$(PY) tools/props_gen.py
+	$(PY) tools/solar_field_gen.py
+	$(PY) tools/check_solar_field.py
 
 all: astronaut map interior sfx import
 
@@ -105,6 +111,8 @@ check-interior:
 # They report their own pass/fail and exit nonzero.
 check-tests:
 	@echo "== tests"
+	@$(GODOT) --headless --path . res://tests/solar_field_test.tscn 2>&1 | tee /tmp/gtfo-solar.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-solar.log
 	@$(GODOT) --headless --path . res://tests/survival_test.tscn 2>&1 | tee /tmp/gtfo-survival.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-survival.log
 	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn 2>&1 | tee /tmp/gtfo-hud.log | grep -v '^$$' || true

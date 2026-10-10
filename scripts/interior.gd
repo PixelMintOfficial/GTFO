@@ -31,6 +31,7 @@ var door: AirlockDoor
 var repairs: MachineRepairs
 var cracks: WindowCracks
 var view_turn: ViewTurn
+var solar_input: SolarPowerInput
 var _repair_mask := 0
 
 @onready var player: Player = $Actors/Player
@@ -67,6 +68,9 @@ func _ready() -> void:
 	repairs = MachineRepairs.new()
 	add_child(repairs)
 	repairs.setup(meta, player, multitool)
+	solar_input = SolarPowerInput.new()
+	add_child(solar_input)
+	solar_input.setup(meta, terrain)
 	for machine_id in ["power", "oxygen"]:
 		GameState.repair_for(machine_id).changed.connect(_repair_changed)
 	cracks = WindowCracks.new()
@@ -108,6 +112,7 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	fx.load_view(terrain.view_json)
 	multitool.set_view(terrain.depth_map)
 	repairs.set_view(meta)
+	solar_input.load_view(meta)
 	cracks.set_view(meta)
 	door.queue_free()
 	_setup_door(meta)

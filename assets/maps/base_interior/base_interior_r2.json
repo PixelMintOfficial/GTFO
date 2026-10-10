@@ -502,5 +502,28 @@
     290.1
    ]
   ]
+ },
+ "solar_input": {
+  "anchor": [
+   357.4,
+   170.4
+  ],
+  "world": [
+   184.7347583639753,
+   478.7347583639753,
+   21.0
+  ],
+  "panel_id": "sw",
+  "housing": "solar_input/housing_r2.png",
+  "lights": "solar_input/lights_r2.png",
+  "position": [
+   331,
+   143
+  ],
+  "size": [
+   52,
+   53
+  ],
+  "frames": 8
  }
 }
