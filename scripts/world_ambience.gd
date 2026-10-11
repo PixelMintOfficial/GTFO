@@ -53,10 +53,9 @@ func setup(meta_path: String, camera: Camera2D, player: Player, biome_source: Ca
 ## The camera turned: the emitters, where this view puts them (Audio moves the playing ones).
 func load_view(meta_path: String) -> void:
 	_emitters.clear()
-	var dir := meta_path.get_base_dir()
 	var meta := ViewData.get_json(meta_path)
 	if meta.has("fx"):
-		_cluster_glows(dir.path_join(meta["fx"]))
+		_cluster_glows(ViewData.fx_of(meta_path, meta))
 	for name in meta.get("domes", {}):
 		if name == "base":
 			continue                      # the main base has no power: it is silent
@@ -67,8 +66,7 @@ func load_view(meta_path: String) -> void:
 
 ## Turn the generator's glow points into a handful of things you can hear. One pool is one
 ## pool; a cluster of twenty is a loud one.
-func _cluster_glows(fx_path: String) -> void:
-	var fx := ViewData.get_json(fx_path)
+func _cluster_glows(fx: Dictionary) -> void:
 	var groups := {}                      # kind -> cell -> [sum x, sum y, count]
 	for g in fx.get("glows", []):
 		var kind := int(g[5])

@@ -46,7 +46,8 @@
     0.0,
     520.0
    ],
-   "radius": 94.0
+   "radius": 94.0,
+   "dome": "command"
   },
   "power": {
    "label": "POWER ROOM",
@@ -156,7 +157,9 @@
     474.0,
     468.8
    ],
-   "seen": false
+   "seen": false,
+   "reach_min_height": 11.0,
+   "patch": {}
   },
   {
    "id": "crescent",
@@ -173,7 +176,18 @@
     474.0,
     382.8
    ],
-   "seen": true
+   "seen": true,
+   "reach_min_height": 11.0,
+   "patch": {
+    "file": "windows/crescent_r1.png",
+    "height": "windows/crescent_r1_height.png",
+    "sun": "windows/crescent_r1_sun.png",
+    "light": "windows/crescent_r1_light.png",
+    "position": [
+     452,
+     352
+    ]
+   }
   },
   {
    "id": "gash",
@@ -190,12 +204,115 @@
     72.9,
     407.4
    ],
-   "seen": true
+   "seen": true,
+   "reach_min_height": 11.0,
+   "patch": {
+    "file": "windows/gash_r1.png",
+    "height": "windows/gash_r1_height.png",
+    "sun": "windows/gash_r1_sun.png",
+    "light": "windows/gash_r1_light.png",
+    "position": [
+     69,
+     375
+    ]
+   }
+  }
+ ],
+ "window_restorations": [
+  {
+   "panes": [
+    "burst"
+   ],
+   "file": "windows/restored_1_r1.png",
+   "sun": "windows/restored_1_r1_sun.png",
+   "light": "windows/restored_1_r1_light.png",
+   "position": [
+    401,
+    456
+   ]
+  },
+  {
+   "panes": [
+    "crescent"
+   ],
+   "file": "windows/restored_2_r1.png",
+   "sun": "windows/restored_2_r1_sun.png",
+   "light": "windows/restored_2_r1_light.png",
+   "position": [
+    393,
+    355
+   ]
+  },
+  {
+   "panes": [
+    "burst",
+    "crescent"
+   ],
+   "file": "windows/restored_3_r1.png",
+   "sun": "windows/restored_3_r1_sun.png",
+   "light": "windows/restored_3_r1_light.png",
+   "position": [
+    110,
+    157
+   ]
+  },
+  {
+   "panes": [
+    "gash"
+   ],
+   "file": "windows/restored_4_r1.png",
+   "sun": "windows/restored_4_r1_sun.png",
+   "light": "windows/restored_4_r1_light.png",
+   "position": [
+    58,
+    386
+   ]
+  },
+  {
+   "panes": [
+    "burst",
+    "gash"
+   ],
+   "file": "windows/restored_5_r1.png",
+   "sun": "windows/restored_5_r1_sun.png",
+   "light": "windows/restored_5_r1_light.png",
+   "position": [
+    58,
+    386
+   ]
+  },
+  {
+   "panes": [
+    "crescent",
+    "gash"
+   ],
+   "file": "windows/restored_6_r1.png",
+   "sun": "windows/restored_6_r1_sun.png",
+   "light": "windows/restored_6_r1_light.png",
+   "position": [
+    58,
+    355
+   ]
+  },
+  {
+   "panes": [
+    "burst",
+    "crescent",
+    "gash"
+   ],
+   "file": "windows/restored_7_r1.png",
+   "sun": "windows/restored_7_r1_sun.png",
+   "light": "windows/restored_7_r1_light.png",
+   "position": [
+    58,
+    157
+   ]
   }
  ],
  "fx": {
   "shafts": [
    {
+    "pane": "burst",
     "hull": [
      [
       477.3,
@@ -240,6 +357,7 @@
     ]
    },
    {
+    "pane": "crescent",
     "hull": [
      [
       400.8,
@@ -372,5 +490,28 @@
     175.3
    ]
   ]
+ },
+ "solar_input": {
+  "anchor": [
+   185.7,
+   683.1
+  ],
+  "world": [
+   184.7347583639753,
+   478.7347583639753,
+   21.0
+  ],
+  "panel_id": "sw",
+  "housing": "solar_input/housing_r1.png",
+  "lights": "solar_input/lights_r1.png",
+  "position": [
+   160,
+   656
+  ],
+  "size": [
+   52,
+   53
+  ],
+  "frames": 8
  }
 }

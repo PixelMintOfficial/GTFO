@@ -14,6 +14,7 @@ extends RefCounted
 
 static var _cache := {}
 static var _parses := 0
+static var _fx_held: Array[String] = []    # the one fx payload worth holding on to
 
 
 ## A JSON file's parsed contents, parsed on first ask.
@@ -36,13 +37,23 @@ static func get_json(path: String) -> Dictionary:
 ## A view's fx data. The overworld's `fx` names a file beside the meta (it is 350 KB of plants
 ## and glows); the interior's is small enough that the generator writes it inline. Both come
 ## back the same way.
+##
+## Only one view's fx is kept. Parsed, 350 KB of JSON costs 4.2 MB of heap - twelve times what
+## it weighs on disk - and holding all four views' would be 17 MB of the player's memory for
+## the sake of a parse that was never what made a turn slow. Within one turn it is still parsed
+## once, which is what matters: four systems ask for the same view's fx in the same frame.
 static func fx_of(meta_path: String, meta: Dictionary) -> Dictionary:
 	var fx = meta.get("fx")
 	if fx is Dictionary:
 		return fx
-	if fx is String:
-		return get_json(meta_path.get_base_dir().path_join(fx))
-	return {}
+	if not fx is String:
+		return {}
+	var path := meta_path.get_base_dir().path_join(fx)
+	for other in _fx_held:
+		if other != path:
+			_cache.erase(other)
+	_fx_held = [path]
+	return get_json(path)
 
 
 ## How many files have actually been parsed (the turn tests assert a turn adds none).

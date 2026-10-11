@@ -8,13 +8,17 @@ extends Node2D
 ## --face=DX,DY  --equip (take the tool out)  --use (then hold F: works, or lifts, what is in reach)
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ## --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
+## --dev-panel / --dev-freeze=hunger,thirst,oxygen (master control panel, F1; see DevPanel)
 ## --repair=power|oxygen opens its current task (three demo scraps supplied for captures).
 ## --repair-done=power|oxygen|both marks both tasks for repaired-art captures.
 ## --repair-circuit=power|oxygen skips cracks only for circuit screenshots/tests.
 ## --repair-bars keeps ambient F input from opening a panel during a machine-bar capture.
 ## --cargo=burst|crescent|gash sets the cargo box down under that pane and stands you on it;
 ## --cargo-mended=N mends the first N panes first (the box shows N cracks); --cargo-land lands on
-## the box (the next pane cracks it; after the other two, it gives way).
+## the box (wear only; collapse waits until all three scans have sealed their windows).
+## --window=burst|crescent|gash opens a reachable window with six demo glass for captures;
+## --window-fit=N fits N pieces; --window-scan=P starts the complete board's scan at fraction P.
+## --window-close=S closes that live panel after S seconds for world scan/persistence captures.
 ## --audio-debug (print every sound as it plays)
 ## --perf / --perf-every=SECONDS (print texture memory, draw calls and frame times)
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
@@ -30,6 +34,7 @@ var door: AirlockDoor
 var repairs: MachineRepairs
 var cracks: WindowCracks
 var view_turn: ViewTurn
+var solar_input: SolarPowerInput
 var _repair_mask := 0
 
 @onready var player: Player = $Actors/Player
@@ -70,6 +75,9 @@ func _ready() -> void:
 	repairs = MachineRepairs.new()
 	add_child(repairs)
 	repairs.setup(meta, player, multitool)
+	solar_input = SolarPowerInput.new()
+	add_child(solar_input)
+	solar_input.setup(meta, terrain)
 	for machine_id in ["power", "oxygen"]:
 		GameState.repair_for(machine_id).changed.connect(_repair_changed)
 	cracks = WindowCracks.new()
@@ -81,6 +89,9 @@ func _ready() -> void:
 	var survival_hud := SurvivalHUD.new()
 	add_child(survival_hud)
 	survival_hud.setup(player, multitool)
+	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
+	add_child(dev_panel)
+	dev_panel.setup(player)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
@@ -112,6 +123,7 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	fx.load_view(terrain.view_json)
 	multitool.set_view()
 	repairs.set_view(meta)
+	solar_input.load_view(meta)
 	cracks.set_view(meta)
 	door.queue_free()
 	_setup_door(meta)
@@ -202,12 +214,29 @@ func _run_test_hooks(args: Dictionary) -> void:
 	if args.has("cargo-mended"):
 		for i in mini(int(args["cargo-mended"]), cracks.panes.size()):
 			GameState.window_repair.crack_box(cracks.panes[i]["id"])
-			GameState.window_repair.fix(cracks.panes[i]["id"])
+			cracks.fix(cracks.panes[i]["id"])
 		cracks.box.sprite.frame = GameState.window_repair.damage()
+		cracks.set_view(JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json)))
 	if args.has("cargo"):
 		player.teleport(cracks.place_box_under(args["cargo"]))
 	if args.has("cargo-land"):
 		get_tree().create_timer(0.5).timeout.connect(func() -> void: player.landed.emit(0.0))
+	if args.has("window"):
+		var id: String = args["window"]
+		player.teleport(cracks.place_box_under(id))
+		player.set_tool_out(true)
+		while GameState.item_count("glass") < 6:
+			GameState.store_item("glass")
+		get_tree().create_timer(.25).timeout.connect(func() -> void:
+			if cracks.open_window(id):
+				var puzzle := cracks.panel.puzzle
+				for i in mini(int(args.get("window-fit", "0")), 6):
+					puzzle.rotations[i] = 0
+					puzzle.place(i, puzzle.target(i))
+				if args.has("window-scan"):
+					puzzle.scan = clampf(float(args["window-scan"]), 0, 1))
+		if args.has("window-close"):
+			get_tree().create_timer(float(args["window-close"])).timeout.connect(cracks.panel.close)
 	if args.has("face"):
 		var f: PackedStringArray = args["face"].split(",")
 		var sd := Vector2(float(f[0]), float(f[1]))

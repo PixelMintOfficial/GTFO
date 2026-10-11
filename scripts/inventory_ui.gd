@@ -3,7 +3,7 @@ extends CanvasLayer
 ## Six-slot quick access and a paused 24-slot backpack, shared by both scenes.
 ## E / Start toggles; F / X remains world interaction. Click two slots to swap;
 ## arrows / d-pad navigate, Enter / A picks and places. 1-6 / wheel select quick access.
-## Draws with PixelFont and existing generated sprites, in a 384x216 logical canvas.
+## Draws with PixelFont and generated resource sprites (including window glass), at 384x216.
 ## Test hooks (both scenes): --open-inventory opens after setup, --inventory-demo
 ## seeds ore/scrap explicitly for screenshots; normal games start with only the tool.
 
@@ -51,6 +51,11 @@ func setup(player: Player, tool: Multitool) -> void:
 		tex.atlas = load("res://assets/maps/red_planet/" + sheet["file"])
 		tex.region = Rect2(Vector2.ZERO, Vector2(sheet["frame_size"][0], sheet["frame_size"][1]))
 		_textures[kind] = tex
+	var glass_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/maps/base_interior/interior_props.json"))["sprites"]["glass"]
+	var glass := AtlasTexture.new()
+	glass.atlas = load("res://assets/maps/base_interior/" + glass_data["file"])
+	glass.region = Rect2(Vector2.ZERO, Vector2(glass_data["frame_size"][0], glass_data["frame_size"][1]))
+	_textures["glass"] = glass
 	_portrait = player.sprite.sprite_frames.get_frame_texture("idle_SE", 0)
 	GameState.inventory_changed.connect(_refresh)
 	tool.inventory_full.connect(func() -> void:

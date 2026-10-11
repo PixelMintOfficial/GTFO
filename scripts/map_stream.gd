@@ -18,7 +18,9 @@ extends Node
 ## but the finished window ever reaches the GPU. A tile the generator left out is a run of one
 ## colour (sky, mostly): the window is filled with that colour before anything is blitted in.
 ##
-## Test hooks (after "--"): --stream-debug prints every window as it is built.
+## Test hooks (after "--"): --stream-debug prints every window as it is built; --no-stream
+## loads the whole pictures instead, which is what the game did before the windows existed and
+## is there so the two can be measured against each other in one build.
 
 ## Emitted after a view's window has been rebuilt and published. The scene re-pushes the
 ## shader uniforms that point at it, the way _apply_view does on a turn.
@@ -253,6 +255,17 @@ func _take(path: String) -> Resource:
 
 
 ## The window as a shader uniform: where it starts in map pixels, and how big it is.
+## Is streaming switched off for this run (--no-stream)? Read once; the command line does not
+## change while the game is running.
+static func disabled() -> bool:
+	if _off == -1:
+		_off = 1 if OS.get_cmdline_user_args().has("--no-stream") else 0
+	return _off == 1
+
+
+static var _off := -1
+
+
 static func win_vec(terrain: MapTerrain) -> Vector4:
 	var r := terrain.window
 	return Vector4(r.position.x, r.position.y, r.size.x, r.size.y)

@@ -58,6 +58,7 @@ from scipy import ndimage as ndi
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import astronaut_sprite_gen as A  # noqa: E402  (shared SDF primitives, ray-marcher, palette)
+from solar_layout import pad_distance, footprints  # small equipment pads and collision
 
 ROOT = os.path.dirname(HERE)
 OUT = os.environ.get('MAP_OUT', os.path.join(ROOT, 'assets', 'maps', 'red_planet'))
@@ -246,7 +247,11 @@ def canon_unit(name):
 # ================================================================== layout (camera X/Y, world units)
 DOME_SCALE = 2.5                  # bases are designed at R0 and scaled as a whole (doors ~1.6x the astronaut)
 LAMP_SCALE = 1.5                  # path lamps ~22 units: as tall as the astronaut
+# Lamps along the trails: off (the owner removed them). Their spots still keep plants and the
+# spawn clear, so the forest is unchanged; TRAIL_LAMPS=1 draws them, their posts and light again.
+TRAIL_LAMPS = os.environ.get('TRAIL_LAMPS', '0') == '1'
 SOLAR_SCALE = 1.6
+SOLAR_DESIGN = os.environ.get('SOLAR_DESIGN', 'field')  # approved field; 'array' retains the old panels
 DOMES = {
     'base':    dict(X=-1000.0, Y=1620.0, R0=120.0, ribs=36),
     'nursery': dict(X=250.0, Y=2500.0, R0=80.0, ribs=24),
@@ -745,6 +750,7 @@ def build_world():
     rim_d = np.minimum.reduce([r - u['R'] for r, u in zip(unit_r, units)])
     crash_d, c_along, c_lat = crash_field(Xg, Yg)
     su, sv = to_grid(SOLAR['X'], SOLAR['Y'])
+    # Preserve the original terrain and random-placement stream for either solar design.
     solar_d = np.maximum(np.abs(U - su) - 62 * SOLAR_SCALE, np.abs(V - sv) - 42 * SOLAR_SCALE)
 
     # the ice massif under the comms dome
@@ -987,7 +993,7 @@ def build_world():
     glow = np.zeros((N, N), np.float32)
     pool = 19.0 * LAMP_SCALE
     for li, (X, Y) in enumerate(lamps):
-        if li in dead_lamps:
+        if li in dead_lamps or not TRAIL_LAMPS:
             continue
         u0, v0 = to_grid(X, Y)
         r_ = int(pool) + 2
@@ -1034,6 +1040,19 @@ def build_world():
     del dX, dY, inv, ao, walk_d
     G['shadow'] = shadow_map(Hf)
     place_flora(G, U, V, rs)
+    if SOLAR_DESIGN == 'field':
+        # Do this after scattering: adding hardware cannot reroll the planet's forest.
+        pads = pad_distance(Xg, Yg)
+        G['H'] *= smoothstep(0, 12, pads)
+        Hu, Hv = np.gradient(G['H'])
+        dx, dy = (Hu - Hv) / SQ2, (Hu + Hv) / SQ2
+        inv = 1 / np.sqrt(dx * dx + dy * dy + 1)
+        for key, values in [('nX', -dx * inv), ('nY', -dy * inv), ('nZ', inv)]:
+            G[key] = values.astype(np.float32)
+        G['ao'] = (np.clip((ndi.gaussian_filter(G['H'], 4) - G['H']) / 5, 0, 1) * .8
+                   + np.clip((ndi.gaussian_filter(G['H'], 14) - G['H']) / 18, 0, 1) * .6).astype(np.float32)
+        G['shadow'] = shadow_map(G['H'])
+        stamp_plant_shadows(G, U, V)
     print(f'sand drifts: {drifts}')
     print(f'world built in {time.time() - t0:.1f}s ({len(craters)} craters, {len(peaks)} peaks, '
           f'{placed} boulders, {len(lamps)} lamps, {len(G["flora"])} plants and crystals)')
@@ -2152,6 +2171,9 @@ def apex_anemometer(d, theta):
 
 
 def solar_field():
+    if SOLAR_DESIGN == 'field':
+        from solar_field_gen import static_models
+        return static_models(sys.modules[__name__], lambda X, Y: 0.0)
     parts = []
     face = A.nz([SUN[0], SUN[1], 0.0])
     Rp = yaw_to(np.array([-face[1], face[0], 0.0])) @ A.rx(math.radians(32))
@@ -3743,6 +3765,11 @@ def band_dome(img, D, kind, gid, d, gid_val):
             k = np.clip(np.floor(0.6 + envh.mean(axis=1) / 255.0 * 5.0 + fres * 2.4 + by[ho] * 0.8 + 0.4 * _h(qi, ri, 5)), 0, 7).astype(int)
             idx = np.nonzero(ho)[0]
             was = TINT[k] * 0.68 + envh * 0.32
+            was[L['y'][ho] > g['h'] - 1.6] *= 0.75               # as the glass round it: trim shade, glare
+            sw = np.mod(sxp[ho] * 1.0 + syp[ho] * 1.6, 150.0)
+            was[sw < 6.0] = was[sw < 6.0] * 0.5 + SHINE * 0.5
+            b2 = (sw > 10.0) & (sw < 12.5)
+            was[b2] = was[b2] * 0.66 + SHINE * 0.34
             for h_i in range(len(holes)):
                 mine = wh[ho] == h_i
                 if mine.any():
@@ -4445,9 +4472,13 @@ def export_game_data(G, D, kind, debris=(), body=None, world=True):
             stamp_disc(solid, pl['X'], pl['Y'], FLORA_BLOCK[pl['species']])
     walk &= ~hop
     del hop
-    for u, v in solar_panels():
-        solid |= np.hypot(U - u, V - v) < 9.5 * SOLAR_SCALE
-    for X, Y in G['lamps']:
+    if SOLAR_DESIGN == 'field':
+        for X, Y, radius in footprints():
+            stamp_disc(solid, X, Y, radius)
+    else:
+        for u, v in solar_panels():
+            solid |= np.hypot(U - u, V - v) < 9.5 * SOLAR_SCALE
+    for X, Y in (G['lamps'] if TRAIL_LAMPS else []):
         solid |= np.hypot(Xg - X, Yg - Y) < 2.5 * LAMP_SCALE
     solid |= (U <= 6) | (U >= N - 6) | (V <= 6) | (V >= N - 6)
     walk &= ~solid
@@ -4660,7 +4691,7 @@ def render_view(G, G0, k):
     for lk in locks:
         gb = render_groups(turned(lk), img, D, kind, gid, gb)
     gb = render_groups(turned(solar), img, D, kind, gid, gb)
-    for i, (X, Y) in enumerate(G0['lamps']):
+    for i, (X, Y) in enumerate(G0['lamps'] if TRAIL_LAMPS else []):
         u, v = to_grid(X, Y)
         z = float(G0['H'][int(u), int(v)])
         on = i not in G0['dead_lamps']

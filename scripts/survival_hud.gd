@@ -3,7 +3,8 @@ extends CanvasLayer
 ## One draggable parent panel with four SurvivalMeter children; top right by default.
 ## Grip only: left-drag moves, right-click resets; Home/left-stick click also resets.
 ## SurvivalHUDLayout persists normalized UI placement in user://survival_hud.cfg.
-## Owns scene ticking/input only; vitals remain in GameState. Pauses in modals/cutscenes.
+## Owns scene ticking/input only; vitals remain in GameState. Pauses in ordinary modals and
+## cutscenes; the live window inspection keeps survival ticking along with world physics.
 ## Explicit development mode: --survival-debug enables F6 damage, F7 air, F8 empty needs,
 ## F9 refill, F10 60x time. --vitals=H,O,F,W and --survival-speed=N require that flag.
 ## --hud-preview=H,O,F,W is UI-only; F11 cycles 0/25/50/75/100, F12 restores live display.
@@ -129,20 +130,27 @@ func _save_position() -> void:
 		push_warning("Could not save survival HUD position")
 
 
-## Existing room/day toasts can avoid the moved panel without changing their timers/state.
-static func toast_position(canvas: CanvasItem, desired: Vector2, width: int) -> Vector2:
+## Labels in a UI canvas or the world can avoid the moved panel in their own coordinates.
+## Including the canvas transform handles the world's camera/zoom as well as UI scaling.
+static func plate_position(canvas: CanvasItem, desired: Rect2) -> Vector2:
 	var hud := canvas.get_tree().get_first_node_in_group("survival_hud") as SurvivalHUD
 	if hud == null or not hud._panel.visible:
-		return desired
-	var transform := canvas.get_global_transform().affine_inverse() * hud._panel.get_global_transform()
+		return desired.position
+	var transform := canvas.get_global_transform_with_canvas().affine_inverse() * hud._panel.get_global_transform_with_canvas()
 	var panel_rect := Rect2(transform.origin, PANEL_SIZE * transform.get_scale())
-	if panel_rect.intersects(Rect2(desired - Vector2(8, 5), Vector2(width + 16, 22))):
-		return Vector2(desired.x, panel_rect.end.y + 10).round()
-	return desired
+	if panel_rect.intersects(desired):
+		return Vector2(desired.position.x, panel_rect.end.y + 5).round()
+	return desired.position
+
+
+## Existing room/day toasts retain their margins and timers.
+static func toast_position(canvas: CanvasItem, desired: Vector2, width: int) -> Vector2:
+	var plate := Rect2(desired - Vector2(8, 5), Vector2(width + 16, 22))
+	return plate_position(canvas, plate) + Vector2(8, 5)
 
 
 var _shell_drawn := Vector2i(-1, -1)
-var _hud_drawn := Vector4i(-1, -1, -1, -1)
+var _hud_drawn := []
 
 
 func _process(delta: float) -> void:
@@ -162,7 +170,7 @@ func _process(delta: float) -> void:
 	if shell != _shell_drawn:                             # the panel only changes when you grab it
 		_shell_drawn = shell
 		_panel.queue_redraw()
-	if not get_tree().paused and _player.controls_enabled and not _player.puppet and not _player.turning:
+	if not get_tree().paused and (_player.controls_enabled or _tool.window_panel_open) and not _player.puppet and not _player.turning:
 		GameState.survival.advance(delta * speed, _player.can_breathe(), _player.sprinting)
 	if GameState.survival.dead:
 		layer = 20
@@ -175,8 +183,8 @@ func _process(delta: float) -> void:
 	for meter in meters:
 		meter.pulse = _pulse
 		meter.refresh()
-	var hud := Vector4i(1 if _player.controls_enabled else 0, 1 if _player.can_breathe() else 0,
-			1 if GameState.survival.dead else 0, 1 if debug_enabled else 0)
+	var hud := [_player.controls_enabled, _player.can_breathe(), GameState.survival.dead,
+			debug_enabled, meters[0].preview]
 	if hud != _hud_drawn:                                 # a few lines of text, and only on a change
 		_hud_drawn = hud
 		_canvas.queue_redraw()

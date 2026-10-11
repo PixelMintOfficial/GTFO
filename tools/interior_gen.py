@@ -37,7 +37,15 @@ cargo box: a loose prop now (props/cargo_box*.png: whole, three cracks, burst op
 lifts and the astronaut stands on (top, half, yaw), with the ration packs it spills (props/ration*.png).
 Storage's window band has three smashed panes, one on the far wall (hidden in the view you come in
 by); window_cracks in each view's JSON says where to stand under each and where this view draws it.
+The eighteen glass pickups are single thin shards with baked reflection sweeps (three variants,
+animation.variant_frames/fps). windows/ holds scan patches and complete restoration states,
+including the sun/light masks with sealed holes' shafts removed. window_repair_gen.py owns
+the inspection assets. Storage's barrel cluster is omitted so the cargo box has a clear route.
+--props-only refreshes loose-prop sprites, keeping placements and session IDs unchanged.
 --repair-metadata-only refreshes machine interaction anchors without rendering the art.
+--solar-input-only renders the small wall inlet repeaters and refreshes their four-view
+anchors in every machine-repair variant. The panels occupy opposite diagonal walls;
+only the one on a standing wall is drawn, so camera cutaways never leave floating lights.
 
 Four views: like the overworld, the base is rendered from four sides (the camera turns in quarter
 turns). Each view cuts away the walls nearest the camera. View 0 writes the usual files, view k
@@ -68,8 +76,8 @@ TAU = 2 * math.pi
 # ================================================================== layout (world units)
 OY = 520.0                        # the interior lives here in its own little world
 N = 760                           # walk grid size
-ROOMS = {
-    'storage': dict(X=0.0, Y=OY, R=94.0, label='STORAGE'),
+ROOMS = {   # dome: the base room outside it on the overworld (mars_map_gen BASE_ROOMS); the airlocks are in it
+    'storage': dict(X=0.0, Y=OY, R=94.0, label='STORAGE', dome='command'),
     'power':   dict(X=236.0, Y=OY + 10.0, R=76.0, label='POWER ROOM'),
     'oxygen':  dict(X=-236.0, Y=OY + 10.0, R=76.0, label='OXYGEN ROOM'),
 }
@@ -118,6 +126,8 @@ M.O_RAMPS.update({
     'pcb':     ['#0a2418', '#124a2c', '#1f7a44', '#4fbf72'],
     'trace':   ['#6a4a12', '#b98a1e', '#f0c640', '#fff0a0'],
     'chip':    ['#0e0c16', '#1a1726', '#2a2638', '#3e3a52'],
+    'windowglass': ['#5aa8b4', '#86cfd2', '#b6ece6', '#e6fff8'],
+    'glassedge': ['#b8b7cb', '#dad9e6', '#f0f0f6', '#ffffff'],
 })
 M.O_NAMES[:] = list(M.O_RAMPS)
 M.OID.clear()
@@ -637,10 +647,7 @@ def storage_props(rs):
         parts += crate(C + np.array([dx, dy, 0]), kk, yaw, group=f'stackB{k}')
     parts += crate(C + np.array([18, -50, 0.5]), 0.8, 0.6, tilt=1.15, group='tipped')            # knocked over
     # (the cargo box at CARGO_AT is a loose prop the tool can lift: export_cargo_box)
-    # barrels
-    for k, (dx, dy, ramp) in enumerate([(-30, -40, 'teal'), (-24, -46, 'mustard'), (-36, -48, 'teal')]):
-        b = C + np.array([dx, dy, 4.0])
-        parts.append(P_('barrel', A.Disc(b, 2.7, 4.0, 0.6, M.UPAX), ramp, f'barrel{k}', decal_barrel))
+    # Keep this route clear for carrying the cargo box between the three window repairs.
     # a pallet of sacks
     p0 = C + np.array([-6, -30, 0.0])
     parts.append(P_('pallet', A.RoundBox(p0 + np.array([0, 0, 0.6]), (6.0, 5.0, 0.6), 0.2, A.rz(0.3)), 'wood', 'pallet'))
@@ -917,7 +924,20 @@ def wall_layers(P):
     return room, th
 
 
-def shade_walls(img, D, gid, wall_gids, bay_img):
+def window_material(x, y, bay, xs, ys):
+    """The window band, shared by the world, restored patches and glass inspection."""
+    a = (WIN[1] - WIN[0]) / 2.5
+    qi, ri, _, _, edge = M.hex_cell(x, y - a / 2, a)
+    frame = (edge < 0.32) | (y < 0.45) | (y > WIN[1] - WIN[0] - 0.45)
+    k = np.clip(np.floor(y / (WIN[1] - WIN[0]) * 3.2 + bay * 0.8 + 0.4 * M._h(qi, ri, 3)), 0, 3).astype(int)
+    col = SKYWIN[k].copy()
+    col[frame] = WHITE[4]
+    sw = np.mod(xs * 1.0 + ys * 1.5, 70.0) < 3.5
+    col[sw & ~frame] = col[sw & ~frame] * 0.6 + 255 * 0.4
+    return col, frame
+
+
+def shade_walls(img, D, gid, wall_gids, bay_img, closed=frozenset()):
     t0 = time.time()
     ys, xs = np.nonzero(np.isin(gid, wall_gids))
     O = view_rays(ys, xs)
@@ -981,18 +1001,14 @@ def shade_walls(img, D, gid, wall_gids, bay_img):
         a = (WIN[1] - WIN[0]) / 2.5
         x = arc[win]
         y = z[win] - WIN[0]
-        qi, ri, px, py, edge = M.hex_cell(x, y - a / 2, a)
-        frame = (edge < 0.32) | (y < 0.45) | (y > WIN[1] - WIN[0] - 0.45)
-        k = np.clip(np.floor((y / (WIN[1] - WIN[0])) * 3.2 + bay[win] * 0.8 + 0.4 * M._h(qi, ri, 3)), 0, 3).astype(int)
-        cw = SKYWIN[k].copy()
-        cw[frame] = WHITE[4]
-        sw = np.mod(xs[win] * 1.0 + ys[win] * 1.5, 70.0) < 3.5
-        cw[sw & ~frame] = cw[sw & ~frame] * 0.6 + 255 * 0.4
+        cw, frame = window_material(x, y, bay[win], xs[win], ys[win])
         col[win] = cw
         glow_mask[np.nonzero(win)[0][~frame]] = 0.55
         # storage: the three smashed panes, bright with daylight
         si = names.index('storage')
         for kind_, ang in HOLES:
+            if kind_ in closed:
+                continue
             rs = np.random.default_rng(int(ang) % 360)
             poly, cracks = M.hole_shape(kind_, a * 1.15, rs)
             st = (room[win] == si)
@@ -1121,7 +1137,7 @@ def shade_floor(img, D, kind, region, Xf, Yf, ys, xs, bay, prop_ao, shafts_floor
     col[glow == -3.0] = HAZ[0]
     col[glow == -4.0] = col[glow == -4.0] * 0.35 + AMBER * 0.65
     # sunlit patches under the holes, sand blown in through them
-    if shafts_floor:
+    if shafts_floor is not None:
         lit = np.zeros(n, np.float32)
         for poly in shafts_floor:
             pin = M._poly_inside(Xf, Yf, poly)
@@ -1158,14 +1174,14 @@ def sunlit(ang):
     return math.cos(a) * -LIGHT_IN[0] + math.sin(a) * -LIGHT_IN[1] > 0.0
 
 
-def hole_world_polys():
+def hole_world_polys(closed=frozenset()):
     """Each smashed pane the sun shines through, as a polygon in the world."""
     a = (WIN[1] - WIN[0]) / 2.5
     Ri = r_in('storage')
     st = ROOMS['storage']
     out = []
     for kind_, ang in HOLES:
-        if not sunlit(ang):
+        if kind_ in closed or not sunlit(ang):
             continue
         rs = np.random.default_rng(int(ang) % 360)
         poly, _ = M.hole_shape(kind_, a * 1.15, rs)
@@ -1174,21 +1190,21 @@ def hole_world_polys():
             th = math.radians(ang) + lx / Ri
             z = WIN[0] + (WIN[1] - WIN[0]) / 2 + ly
             pts.append(cam(st['X'] + Ri * math.cos(th), st['Y'] + Ri * math.sin(th), z))
-        out.append(np.array(pts))
+        out.append((kind_, np.array(pts)))
     return out
 
 
-def shaft_geometry():
+def shaft_geometry(closed=frozenset()):
     """Light shafts: the hole polygons, where their light lands on the floor, and the screen polygon
     each shaft covers (for the haze and the dust)."""
     out = []
-    for poly in hole_world_polys():
+    for id_, poly in hole_world_polys(closed):
         t = poly[:, 2] / -LIGHT_IN[2]
         land = poly + t[:, None] * LIGHT_IN
         scr = np.array([M.project(*M.to_view(p)) for p in np.vstack([poly, land])])
         from scipy.spatial import ConvexHull
         hull = scr[ConvexHull(scr).vertices]
-        out.append(dict(hole=poly, floor=land[:, :2], hull=hull))
+        out.append(dict(pane=id_, hole=poly, floor=land[:, :2], hull=hull))
     return out
 
 
@@ -1214,6 +1230,9 @@ def build(fixed=frozenset()):
     M.SUN = SUN_IN
     rs = np.random.default_rng(77)
     s_parts = storage_props(rs)
+    glass_positions = [p.sdf.c[:2].tolist() for p in s_parts if p.group.startswith('gshard')]
+    # Keep the original random calls: furniture stays exactly where it was in every view.
+    s_parts = [p for p in s_parts if not p.group.startswith('gshard')]
     p_parts, reactor_c, pfx = power_props(rs)
     o_parts, gen_c, tanks, ofx = oxygen_props(rs)
     # Build the original models first so random environment detail stays identical.
@@ -1228,7 +1247,6 @@ def build(fixed=frozenset()):
     set_frame()
     export_machines(p_parts + o_parts, dict(power_generator=reactor_c, oxygen_generator=gen_c))
     if not fixed:
-        export_loose_scrap(reactor_c, gen_c)
         export_repair_panels()
 
     # footprints for soft contact shadows on the floor and for the walk grid (the base's frame)
@@ -1260,6 +1278,8 @@ def build(fixed=frozenset()):
         M.VIEW, M.SFX = k, M.view_sfx(k)
         render_view(k, furniture)
     M.VIEW, M.SFX = 0, ''
+    if not fixed:
+        export_loose_scrap(reactor_c, gen_c, glass_positions)
     print(f'interior done in {time.time() - t_start:.1f}s -> {OUT}')
 
 
@@ -1268,50 +1288,19 @@ def label_visible(ang):
     return math.sin(view_th(math.radians(ang))) > 0.3
 
 
-def render_view(k, fur):
-    t_start = time.time()
-    sfx = M.SFX
-    set_frame()
-    W, H = M.W, M.H
-    img = np.zeros((H, W, 3), np.uint8)
-    D = np.full((H, W), np.inf, np.float32)
-    kind = np.zeros((H, W), np.uint8)
-    gid = np.zeros((H, W), np.int32)
+def shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, closed=frozenset()):
+    """Shade the same geometry with selected panes sealed: no hole, shaft or hole bloom remains.
+    Reuse this pass for every restoration state so overlapping beams and masks are exact."""
+    img = base.copy()
+    H, W = D.shape
     jj, ii = np.mgrid[0:H, 0:W]
-    bay_img = M.BAYER[jj % 4, ii % 4]
-    M.EMIT = np.zeros((H, W), np.uint8)                  # props drawn with a light ramp mark it
-
-    # --- the floor (plane z = 0)
-    O = view_rays(jj.ravel(), ii.ravel())
-    t = -O[:, 2] / M.F[2]
-    P = O + t[:, None] * M.F
-    Pc = M.to_canon(P)                                    # the floor's patterns belong to the base
-    region = floor_region(Pc[:, 0], Pc[:, 1]).reshape(H, W)
-    fl = region > 0
-    D[fl] = P[:, 1].reshape(H, W)[fl]
-    kind[fl] = 1
-    Xf, Yf = Pc[:, 0].reshape(H, W), Pc[:, 1].reshape(H, W)
-    del O, t, P, Pc
-
-    # --- walls (cut away on the side nearest the camera), furniture and the door, turned into the view
-    t0 = time.time()
-    gb = 1
-    wparts = M.turned(wall_parts())
-    gw0 = gb
-    gb = M.render_groups(wparts, img, D, kind, gid, gb)
-    wall_gids = np.arange(gw0, gb)
-    gb = M.render_groups(M.turned(fur['parts']), img, D, kind, gid, gb)
-    gb = M.render_groups(M.turned(door_parts(0.0)), img, D, kind, gid, gb)
-    print(f'view {M.VIEW}: walls and furniture in {time.time() - t0:.1f}s')
-
-    # --- shading
-    sh = shaft_geometry()
+    sh = shaft_geometry(closed)
     ys, xs = np.nonzero(fl & (gid == 0))
     pu, pv = M.to_grid(Xf[ys, xs], Yf[ys, xs])
     prop_ao = np.clip(M.sample(fur['ao_grid'], pu, pv) * 1.3, 0, 1)
     fglow, sun = shade_floor(img, D, kind, region[ys, xs], Xf[ys, xs], Yf[ys, xs], ys, xs, bay_img[ys, xs], prop_ao,
                              [s['floor'] for s in sh])
-    wglow, _, _ = shade_walls(img, D, gid, wall_gids, bay_img)
+    wglow, _, _ = shade_walls(img, D, gid, wall_gids, bay_img, closed)
     # --- outlines
     dark = (img.astype(np.float32) * 0.62).astype(np.uint8)
     M.depth_lines(img, dark, D, kind, gid)
@@ -1356,10 +1345,6 @@ def render_view(k, fur):
     light[~filled] = 1.0                                  # the void round the cutaway never changes
     light[ring] = 0.0
     sun[~filled | ring] = 0.0
-    Image.fromarray(np.round(np.clip(light, 0, 1) * 255).astype(np.uint8), 'L').save(
-        os.path.join(OUT, f'base_interior_light{sfx}.png'))
-    Image.fromarray(np.round(np.clip(sun, 0, 1) * 255).astype(np.uint8), 'L').save(os.path.join(OUT, f'base_interior_sun{sfx}.png'))
-    M.EMIT = None
     for name, txt, ang, z, colr in (('storage', 'STORAGE', 64.0, 22.5, '#e2604a'), ('storage', 'B-01', 120.0, 22.5, '#e2604a'),
                                     ('power', 'POWER', 64.0, 23.0, '#e2604a'), ('oxygen', 'OXYGEN', 90.0, 33.5, '#2aa89c')):
         if not label_visible(ang):
@@ -1371,7 +1356,58 @@ def render_view(k, fur):
         status = 'ONLINE' if 'power' in fur['fixed'] else 'OFFLINE'
         M.draw_text(final, int(x - M.text_width(status) / 2), int(y - 2), status,
                     A.hex2rgb('#7fe6cf' if 'power' in fur['fixed'] else '#ff5a4a'), shadow=(20, 16, 30))
+    return final, sun, light, sh
+
+
+
+def render_view(k, fur):
+    t_start = time.time()
+    sfx = M.SFX
+    set_frame()
+    W, H = M.W, M.H
+    img = np.zeros((H, W, 3), np.uint8)
+    D = np.full((H, W), np.inf, np.float32)
+    kind = np.zeros((H, W), np.uint8)
+    gid = np.zeros((H, W), np.int32)
+    jj, ii = np.mgrid[0:H, 0:W]
+    bay_img = M.BAYER[jj % 4, ii % 4]
+    M.EMIT = np.zeros((H, W), np.uint8)                  # props drawn with a light ramp mark it
+
+    # --- the floor (plane z = 0)
+    O = view_rays(jj.ravel(), ii.ravel())
+    t = -O[:, 2] / M.F[2]
+    P = O + t[:, None] * M.F
+    Pc = M.to_canon(P)                                    # the floor's patterns belong to the base
+    region = floor_region(Pc[:, 0], Pc[:, 1]).reshape(H, W)
+    fl = region > 0
+    D[fl] = P[:, 1].reshape(H, W)[fl]
+    kind[fl] = 1
+    Xf, Yf = Pc[:, 0].reshape(H, W), Pc[:, 1].reshape(H, W)
+    del O, t, P, Pc
+
+    # --- walls (cut away on the side nearest the camera), furniture and the door, turned into the view
+    t0 = time.time()
+    gb = 1
+    wparts = M.turned(wall_parts())
+    gw0 = gb
+    gb = M.render_groups(wparts, img, D, kind, gid, gb)
+    wall_gids = np.arange(gw0, gb)
+    gb = M.render_groups(M.turned(fur['parts']), img, D, kind, gid, gb)
+    gb = M.render_groups(M.turned(door_parts(0.0)), img, D, kind, gid, gb)
+    print(f'view {M.VIEW}: walls and furniture in {time.time() - t0:.1f}s')
+
+    # Re-shade only colours and light, retaining the one shared geometry/depth/walk render.
+    base = img.copy()
+    states = {}
+    for mask in range(8):
+        closed = {id_ for i, (id_, _) in enumerate(HOLES) if mask & (1 << i)}
+        states[mask] = shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, closed)
+    final, sun, light, sh = states[0]
     Image.fromarray(final).save(os.path.join(OUT, f'base_interior{sfx}.png'))
+    for field, values in [('light', light), ('sun', sun)]:
+        Image.fromarray(np.round(np.clip(values, 0, 1) * 255).astype(np.uint8)).save(
+            os.path.join(OUT, f'base_interior_{field}{sfx}.png'))
+    M.EMIT = None
 
     # --- game data
     reactor_c, gen_c, pfx, ofx, tanks = fur['reactor_c'], fur['gen_c'], fur['pfx'], fur['ofx'], fur['tanks']
@@ -1380,16 +1416,22 @@ def render_view(k, fur):
                         view_center=[float(M.VIEW_C[0]), float(M.VIEW_C[1])])
     meta.update(name='base_interior', image=f'base_interior{sfx}.png', size=[W, H], origin_px=[M.AX, M.AY], view=M.VIEW,
                 views=[f'base_interior{M.view_sfx(i)}.json' for i in range(4)])
-    meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R']) for name, rm in ROOMS.items()}
+    meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R'],
+                                **({'dome': rm['dome']} if 'dome' in rm else {})) for name, rm in ROOMS.items()}
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
     meta['door'] = export_door()
     meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
+    meta['solar_input'] = solar_input_info()
     meta['repair_variants'] = {str(mask): folder + '/base_interior.json' for mask, folder in
                                [(1, 'repaired_power'), (2, 'repaired_oxygen'), (3, 'repaired_both')]}
     meta['fixed_machines'] = sorted(fur['fixed'])
     meta['window_cracks'] = window_crack_info()
+    patches = export_window_patches(D, gid, wall_gids, states)
+    meta['window_restorations'] = export_window_restorations(states)
+    for pane in meta['window_cracks']:
+        pane['patch'] = patches.get(pane['id'], {})
     meta['fx'] = dict(
-        shafts=[dict(hull=[[round(float(x), 1), round(float(y), 1)] for x, y in s['hull']],
+        shafts=[dict(pane=s['pane'], hull=[[round(float(x), 1), round(float(y), 1)] for x, y in s['hull']],
                      hole=pxl(s['hole'].mean(axis=0))) for s in sh],
         leds=[dict(px=pxl(p), color='#7fe6cf' if k == 'steady' else '#ff5a4a', kind=k) for p, k in pfx['leds'] + ofx['leds']],
         core=[0, 0] if 'power' in fur['fixed'] else pxl(pfx['core']),
@@ -1403,7 +1445,10 @@ def render_view(k, fur):
         del meta['fx']['circuit_board']
     with open(os.path.join(OUT, f'base_interior{sfx}.json'), 'w') as fh:
         json.dump(meta, fh, indent=1)
-    Image.fromarray(final).resize((W // 2, H // 2), Image.LANCZOS).save(os.path.join(OUT, f'preview_half{sfx}.png'))
+    # Replace previews atomically: an interrupted write must not corrupt the prior preview.
+    preview = os.path.join(OUT, f'preview_half{sfx}.png')
+    Image.fromarray(final).resize((W // 2, H // 2), Image.LANCZOS).save(preview + '.tmp', format='PNG')
+    os.replace(preview + '.tmp', preview)
     print(f'view {M.VIEW} rendered in {time.time() - t_start:.1f}s')
 
 
@@ -1441,6 +1486,61 @@ def refresh_repair_metadata():
             fh.write('\n')
     M.VIEW = 0
     print('Machine repair anchors refreshed; existing art preserved.')
+
+
+def solar_input_info():
+    """A physical inlet repeater on the standing diagonal wall, clear of the reactor."""
+    angle = 45.0 if label_visible(45.0) else 225.0
+    center = room_pt('power', angle, r_in('power') - 1.0, 21.0)
+    return dict(anchor=pxl(center), world=center.tolist(), panel_id='ne' if angle == 45 else 'sw',
+                housing=f'solar_input/housing{M.view_sfx(M.VIEW)}.png',
+                lights=f'solar_input/lights{M.view_sfx(M.VIEW)}.png')
+
+
+def export_solar_input():
+    """SDF housing plus eight three-channel lens states, shared by all repair variants."""
+    root = os.path.join(M.ROOT, 'assets', 'maps', 'base_interior')
+    folder = os.path.join(root, 'solar_input')
+    os.makedirs(folder, exist_ok=True)
+    for k in range(4):
+        path = os.path.join(root, f'base_interior{M.view_sfx(k)}.json')
+        with open(path) as stream:
+            meta = json.load(stream)
+        M.VIEW = k
+        M.AX, M.AY = meta['origin_px']
+        info = solar_input_info()
+        c = np.array(info['world'])
+        angle = math.radians(45 if info['panel_id'] == 'ne' else 225)
+        R = A.rz(angle - math.pi / 2)
+        normal = np.array([math.cos(angle), math.sin(angle), 0])
+        parts = [P_('inletframe', A.RoundBox(c, [9.3, .6, 4], .45, R), 'steel', 'inlet'),
+                 P_('inletface', A.RoundBox(c - normal * .7, [8.5, .35, 3.25], .25, R), 'darkwin', 'inlet'),
+                 P_('inletstripe', A.RoundBox(c + [0, 0, 3.5] - normal * .8, [8, .35, .35], .1, R), 'teal', 'inlet')]
+        lamps = []
+        for x, ramp in [(-5, 'mustard'), (0, 'teal'), (5, 'coral')]:
+            parts.append(P_('lensrim', A.Torus(c - normal * 1.0 + R @ np.array([x, 0, 0]), 1.9, .35,
+                                              M.yaw_to(-normal) @ A.ry(math.pi / 2)), ramp, 'inlet'))
+        for state in range(8):
+            lamps.append([P_('lens', A.Disc(c - normal * 1.2 + R @ np.array([x, 0, 0]), 1.75, .35, .25,
+                                           M.yaw_to(-normal)), ramp if state & (1 << group) else 'darkwin', f'lens{group}')
+                          for group, (x, ramp) in enumerate([(-5, 'mustard'), (0, 'teal'), (5, 'coral')])])
+        parts = M.turned(parts)
+        lamps = [M.turned(frame) for frame in lamps]
+        box = M.sprite_box([parts] + lamps, pad=2)
+        Image.fromarray(M.sprite_rgba(M.render_sprite(parts, box))).save(os.path.join(root, info['housing']))
+        strip = np.concatenate([M.sprite_rgba(M.render_sprite(frame, box)) for frame in lamps], axis=1)
+        Image.fromarray(strip).save(os.path.join(root, info['lights']))
+        info.update(position=list(box[:2]), size=list(box[2:]), frames=8)
+        for variant in ['', 'repaired_power', 'repaired_oxygen', 'repaired_both']:
+            target = os.path.join(root, variant, f'base_interior{M.view_sfx(k)}.json')
+            with open(target) as stream:
+                data = json.load(stream)
+            data['solar_input'] = info
+            with open(target, 'w') as stream:
+                json.dump(data, stream, indent=1)
+                stream.write('\n')
+    M.VIEW = 0
+    print('Solar wall inlet: three lenses, four views, all repair variants.')
 
 
 def board_info(b):
@@ -1810,7 +1910,7 @@ def export_repair_panels():
     print('Flat machine repair panels generated.')
 
 
-def export_loose_scrap(reactor_c, gen_c):
+def export_loose_scrap(reactor_c, gen_c, glass_positions):
     """Enough salvage for both machines, in reachable front-of-room positions outside F priority."""
     source = os.path.join(M.ROOT, 'assets', 'maps', 'red_planet', 'red_planet_props.json')
     with open(source) as fh:
@@ -1825,13 +1925,44 @@ def export_loose_scrap(reactor_c, gen_c):
                                 world=[float(p[0]), float(p[1])], radius=4.0, solid=False))
     own_views, box = export_cargo_box()
     objects.append(box)
+    # Twelve fragments under the front panes and six under the far gash. Append after the box
+    # so the session IDs of all existing props remain stable.
+    objects.extend(glass_pickups(glass_positions))
     sprites_views = [dict(relative(s), **own) for s, own in zip(sheets['sprites_views'], own_views)]
     data = dict(sprites=sprites_views[0], sprites_views=sprites_views, objects=objects, lamps=[],
-                note='Six loose scraps for the two three-patch machine repairs, and the cargo box (lift it, stand on it: '
+                note='Eighteen collectible glass fragments, six per window, six machine scraps, and the cargo box (lift it, stand on it: '
                      'top = its height, half = half its footprint turned by yaw, contents = what spills when it breaks). '
                      'Session IDs persist through airlocks.')
     with open(os.path.join(OUT, 'interior_props.json'), 'w') as fh:
         json.dump(data, fh, indent=1)
+
+
+def glass_pickups(positions):
+    """Keep shards under their authored panes but move any obstructed scatter onto open floor."""
+    walk = np.array(Image.open(os.path.join(OUT, 'base_interior_walk.png')))[..., 2]
+    def clear(p):
+        for dx, dy in ((0, 0), (4, 0), (-4, 0), (0, 4), (0, -4)):
+            u, v = M.to_grid(p[0] + dx, p[1] + dy)
+            u, v = math.floor(u), math.floor(v)
+            if not (0 <= u < N and 0 <= v < N and walk[v, u] == 255):
+                return False
+        return True
+    objects = []
+    for index in list(range(0, 24, 2)) + list(range(26, 38, 2)):
+        original = np.array(positions[index])
+        spot = None
+        for radius in (0, 2, 4, 6, 8, 10, 12, 16):
+            for angle in np.arange(8) * TAU / 8:
+                p = original + radius * np.array([math.cos(angle), math.sin(angle)])
+                if clear(p):
+                    spot = p.tolist()
+                    break
+            if spot is not None:
+                break
+        if spot is None:
+            raise ValueError(f'No open floor for glass {index}: {original}')
+        objects.append(dict(kind='glass', frame=index % 3, job='gather', world=spot, radius=3.0, solid=False))
+    return objects
 
 
 def prop_sheet(name, frames_parts, k):
@@ -1840,7 +1971,11 @@ def prop_sheet(name, frames_parts, k):
     where its foot point sits."""
     frames_parts = [M.turned(fp, about=np.zeros(3), k=k) for fp in frames_parts]
     box = M.sprite_box(frames_parts, pad=3)
-    strip = np.concatenate([M.sprite_rgba(M.render_sprite(fp, box)) for fp in frames_parts], axis=1)
+    frames = [M.render_sprite(fp, box) for fp in frames_parts]
+    # Thin glass uses the original floor debris's exposed teal/white edges, without the opaque
+    # black silhouette of crates and metal salvage. Reflections remain inside the SDF surface.
+    strip = np.concatenate([np.dstack([fr['rgb'], fr['filled'].astype(np.uint8) * 255])
+                            if name == 'glass' else M.sprite_rgba(fr) for fr in frames], axis=1)
     fn = f'props/{name}{M.view_sfx(k)}.png'
     Image.fromarray(strip).save(os.path.join(OUT, fn))
     return dict(file=fn, frames=len(frames_parts), frame_size=[box[2], box[3]],
@@ -1851,8 +1986,11 @@ def export_cargo_box():
     """The cargo box as a loose prop the tool lifts and you stand on (frames: whole, three cracks,
     burst), and the ration packs it spills, in every view. Returns each view's sheets and the box."""
     os.makedirs(os.path.join(OUT, 'props'), exist_ok=True)
-    models = dict(cargo_box=[cargo_box(s) for s in range(5)], ration=[ration(k) for k in range(3)])
+    models = dict(cargo_box=[cargo_box(s) for s in range(5)], ration=[ration(k) for k in range(3)],
+                  glass=[glass_fragment(k, f) for k in range(3) for f in range(28)])
     views = [{name: prop_sheet(name, fps, k) for name, fps in models.items()} for k in range(4)]
+    for view in views:
+        view['glass'].update(animation=dict(variant_frames=28, fps=9), shadow_alpha=.22)
     st = ROOMS['storage']
     h = CARGO_HALF
     box = dict(kind='cargo_box', frame=0, job='lift', world=[st['X'] + CARGO_AT[0], st['Y'] + CARGO_AT[1]],
@@ -1860,6 +1998,92 @@ def export_cargo_box():
                half=[float(h[0]), float(h[1])], yaw=CARGO_YAW, contents=dict(kind='ration', count=CARGO_RATIONS),
                drop_sound='cargo_drop')
     return views, box
+
+
+def glass_fragment(k, frame=0):
+    """One angular chip of teal glass, a thin bevel and a brief moving white reflection.
+    Facets use the existing tglass/SKYWIN/WHITE ramps; no paper-like overlapping sheets."""
+    a, b, yaw = [(2.1, .9, -.35), (1.6, 1.15, .7), (1.25, .85, 1.2)][k]
+    c = cam(0, 0, .24)
+    R = A.rz(yaw) @ A.rx(.08)
+    base = A.RoundBox(c, (a, b, .12), .04, R)
+    # Two diagonal bites create a pointed broken edge rather than a rounded rectangle.
+    sdf = Cut(base, A.RoundBox(c + R @ [a, -b, 0], (.75, .55, .5), .02, R @ A.rz(.55)))
+    sdf = Cut(sdf, A.RoundBox(c + R @ [-a, b, 0], (.5, .55, .5), .02, R @ A.rz(-.45)))
+    def facet(part, points):
+        q = part.sdf.local(points)
+        mat = np.full(len(points), OID['windowglass' if k == 0 else 'tglass'])
+        # A pale sharp fracture edge and one quiet reflected facet; most of the face stays teal.
+        mat[(q[:, 1] > b - .18) & (q[:, 0] < a * .4)] = OID['glassedge']
+        mat[(q[:, 0] + q[:, 1] * .8 > a * .45)] = OID['windowglass']
+        if 1 <= frame <= 6:
+            sweep = -a - b * .5 + (frame - 1) / 5 * (2 * a + b)
+            mat[np.abs(q[:, 0] + q[:, 1] * .7 - sweep) < .3] = OID['glassedge']
+        return mat
+    return [P_('glass', sdf, 'tglass', 'glass', facet)]
+
+
+def export_window_patches(D, gid, wall_gids, states):
+    """Pristine window pixels and their real world-height for the live scanning pass.
+    Read the re-shaded sealed state, including its own local light/sun masks: no crack halo
+    or light from the old aperture is copied onto the clean pane."""
+    os.makedirs(os.path.join(OUT, 'windows'), exist_ok=True)
+    ys, xs = np.nonzero(np.isin(gid, wall_gids))
+    O = view_rays(ys, xs)
+    t = (D[ys, xs] - O[:, 1]) / M.F[1]
+    P = M.to_canon(O + t[:, None] * M.F)
+    room, th = wall_layers(P)
+    st = ROOMS['storage']
+    rr = np.hypot(P[:, 0] - st['X'], P[:, 1] - st['Y'])
+    win = (room == list(ROOMS).index('storage')) & (rr < st['R']) & (P[:, 2] > WIN[0]) & (P[:, 2] < WIN[1])
+    data = {}
+    for index, (id_, ang) in enumerate(HOLES):
+        sel = win & (np.abs(th * rr - math.radians(ang) * rr) < 4 * (WIN[1] - WIN[0]) / 2.5)
+        if not sel.any():
+            continue
+        xx, yy = xs[sel], ys[sel]
+        x0, y0, x1, y1 = xx.min(), yy.min(), xx.max() + 1, yy.max() + 1
+        shape = (y1 - y0, x1 - x0)
+        final, sun, light, _ = states[1 << index]
+        rgba = np.zeros((*shape, 4), np.uint8)
+        rgba[yy - y0, xx - x0, :3] = final[yy, xx]
+        rgba[yy - y0, xx - x0, 3] = 255
+        height = np.zeros(shape, np.uint8)
+        height[yy - y0, xx - x0] = np.clip((WIN[1] - P[sel, 2]) / (WIN[1] - WIN[0]) * 255, 0, 255).astype(np.uint8)
+        stem = f'windows/{id_}{M.SFX}'
+        Image.fromarray(rgba).save(os.path.join(OUT, stem + '.png'))
+        Image.fromarray(height).save(os.path.join(OUT, stem + '_height.png'))
+        for field, values in [('sun', sun), ('light', light)]:
+            Image.fromarray(np.round(np.clip(values[y0:y1, x0:x1], 0, 1) * 255).astype(np.uint8)).save(
+                os.path.join(OUT, stem + '_' + field + '.png'))
+        data[id_] = dict(file=stem + '.png', height=stem + '_height.png', sun=stem + '_sun.png',
+                        light=stem + '_light.png', position=[int(x0), int(y0)])
+    return data
+
+
+def export_window_restorations(states):
+    """Small exact replacements for each repaired-pane combination, including overlapping shafts.
+    The combined colour pass removes cracks, rims, halos and floor/wall light together; geometry
+    stays unchanged. Full local mask rectangles replace the corresponding sun/light values."""
+    original, sun0, light0, _ = states[0]
+    data = []
+    for mask in range(1, 8):
+        final, sun, light, _ = states[mask]
+        changed = np.any(final != original, axis=-1) | (sun != sun0) | (light != light0)
+        info = dict(panes=[id_ for index, (id_, _) in enumerate(HOLES) if mask & (1 << index)])
+        if changed.any():
+            yy, xx = np.nonzero(changed)
+            x0, y0, x1, y1 = xx.min(), yy.min(), xx.max() + 1, yy.max() + 1
+            stem = f'windows/restored_{mask}{M.SFX}'
+            rgba = np.dstack([final[y0:y1, x0:x1], changed[y0:y1, x0:x1].astype(np.uint8) * 255])
+            Image.fromarray(rgba).save(os.path.join(OUT, stem + '.png'))
+            for field, values in [('sun', sun), ('light', light)]:
+                Image.fromarray(np.round(np.clip(values[y0:y1, x0:x1], 0, 1) * 255).astype(np.uint8)).save(
+                    os.path.join(OUT, stem + '_' + field + '.png'))
+            info.update(file=stem + '.png', sun=stem + '_sun.png', light=stem + '_light.png',
+                        position=[int(x0), int(y0)])
+        data.append(info)
+    return data
 
 
 def window_crack_info():
@@ -1871,7 +2095,8 @@ def window_crack_info():
         mid = room_pt('storage', ang, r_in('storage'), (WIN[0] + WIN[1]) / 2)
         stand = room_pt('storage', ang, r_in('storage') - 14.0)
         out.append(dict(id=kind_, world=[round(float(v), 2) for v in stand[:2]], hole=[round(float(v), 2) for v in mid],
-                        px=pxl(mid), seen=bool(RoomWall('storage', []).height(math.radians(ang)) > WIN[1])))
+                        px=pxl(mid), seen=bool(RoomWall('storage', []).height(math.radians(ang)) > WIN[1]),
+                        reach_min_height=round(float(mid[2] - 22.0 - 10.0), 1)))
     return out
 
 
@@ -1926,13 +2151,32 @@ def export_door():
 
 if __name__ == '__main__':
     np.seterr(all='ignore')
-    if '--repair-metadata-only' in sys.argv:
+    if '--solar-input-only' in sys.argv:
+        M.SUN = SUN_IN
+        export_solar_input()
+    elif '--repair-metadata-only' in sys.argv:
         refresh_repair_metadata()
     elif '--repair-panels-only' in sys.argv:
         M.VIEW, M.SFX = 0, ''
         M.SUN = SUN_IN
         set_frame()
         export_repair_panels()
+    elif '--props-only' in sys.argv:
+        M.VIEW, M.SFX = 0, ''
+        M.SUN = SUN_IN
+        set_frame()
+        path = os.path.join(OUT, 'interior_props.json')
+        with open(path) as fh:
+            data = json.load(fh)
+        views, _ = export_cargo_box()
+        for sprites, own in zip(data['sprites_views'], views):
+            sprites.update(own)
+        data['sprites'] = data['sprites_views'][0]
+        parts = storage_props(np.random.default_rng(77))
+        positions = [p.sdf.c[:2].tolist() for p in parts if p.group.startswith('gshard')]
+        data['objects'] = [o for o in data['objects'] if o['kind'] != 'glass'] + glass_pickups(positions)
+        with open(path, 'w') as fh:
+            json.dump(data, fh, indent=1)
     else:
         build()
         root = OUT
@@ -1940,3 +2184,4 @@ if __name__ == '__main__':
                               ('repaired_both', {'power', 'oxygen'})]:
             OUT = os.path.join(root, folder)
             build(fixed)
+        export_solar_input()

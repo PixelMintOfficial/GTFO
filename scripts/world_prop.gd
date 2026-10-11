@@ -7,6 +7,8 @@ extends Node2D
 ## A box you can stand on (the cargo box) has a top and a footprint: resting on the ground it is
 ## one of MapTerrain's platforms, so the astronaut can jump onto it and is stopped by its sides.
 ## Crushed flat (top 0) it stays one, level with the floor: walked over, and drawn under you.
+## Optional sheet.animation (variant_frames, fps) plays baked reflections within a selected
+## prop variant, retaining its phase through camera turns. Glass also has a faint shadow_alpha.
 
 const SHADER := preload("res://shaders/prop_depth.gdshader")
 
@@ -31,6 +33,15 @@ var sprite: Sprite2D
 var shadow: Sprite2D
 var _terrain: MapTerrain
 var _mat: ShaderMaterial
+var _animation: Dictionary = {}
+var _variant_frame := 0
+var _animation_time := 0.0
+var _animation_started := false
+var _shadow_alpha := 1.0
+
+
+func _ready() -> void:
+	set_process(not _animation.is_empty())
 
 
 func setup(sheet: Dictionary, frame: int, terrain: MapTerrain) -> void:
@@ -45,13 +56,11 @@ func setup(sheet: Dictionary, frame: int, terrain: MapTerrain) -> void:
 	shadow.material = _mat
 	add_child(shadow)
 	sprite = Sprite2D.new()
-	sprite.texture = sheet["tex"]
-	sprite.hframes = int(sheet["frames"])
-	sprite.frame = clampi(frame, 0, sprite.hframes - 1)
 	sprite.centered = false
-	sprite.offset = -sheet["anchor"]
 	sprite.material = _mat
 	add_child(sprite)
+	_set_sheet(sheet, frame)
+	shadow.modulate.a = _shadow_alpha
 
 
 ## Put it at a world point on the ground.
@@ -59,6 +68,10 @@ func place(p: Vector2) -> void:
 	world = p
 	position = _terrain.to_screen(p, _terrain.height_at(p)).round()
 	_mat.set_shader_parameter("sprite_depth", _terrain.view_depth(p))
+	if not _animation.is_empty() and not _animation_started:
+		_animation_time = fposmod(p.dot(Vector2(.137, .271)), float(_animation["variant_frames"]) / float(_animation["fps"]))
+		_animation_started = true
+		_animate()
 	_update_blocker()
 
 
@@ -69,11 +82,7 @@ func refresh_window() -> void:
 
 ## The camera turned: this view's drawing of it, and its depth map.
 func set_view(sheet: Dictionary) -> void:
-	var frame := sprite.frame
-	sprite.texture = sheet["tex"]
-	sprite.hframes = int(sheet["frames"])
-	sprite.frame = clampi(frame, 0, sprite.hframes - 1)
-	sprite.offset = -sheet["anchor"]
+	_set_sheet(sheet, sprite.frame if _animation.is_empty() else _variant_frame)
 	refresh_window()
 	place(world)
 	set_lift(lift)
@@ -84,8 +93,36 @@ func set_lift(px: float) -> void:
 	sprite.position.y = -roundf(px)
 	var k := clampf(px / 40.0, 0.0, 1.0)
 	shadow.scale = Vector2.ONE * lerpf(1.0, 0.6, k)
-	shadow.modulate.a = lerpf(1.0, 0.45, k)
+	shadow.modulate.a = lerpf(1.0, 0.45, k) * _shadow_alpha
 	_update_blocker()
+
+
+func _set_sheet(sheet: Dictionary, frame: int) -> void:
+	_animation = sheet.get("animation", {})
+	_shadow_alpha = float(sheet.get("shadow_alpha", 1.0))
+	sprite.texture = sheet["tex"]
+	sprite.hframes = int(sheet["frames"])
+	sprite.offset = -sheet["anchor"]
+	if _animation.is_empty():
+		sprite.frame = clampi(frame, 0, sprite.hframes - 1)
+	else:
+		_variant_frame = clampi(frame, 0, floori(sprite.hframes / float(_animation["variant_frames"])) - 1)
+		_animate()
+	set_process(not _animation.is_empty())
+
+
+func _process(delta: float) -> void:
+	if gone or _animation.is_empty():
+		return
+	_animation_time += delta
+	_animate()
+
+
+func _animate() -> void:
+	var count := int(_animation["variant_frames"])
+	# Reflected light follows the daylight; the glass never becomes an emissive light source.
+	var frame := posmod(int(_animation_time * float(_animation["fps"])), count) if DayNight.daylight > .05 else 0
+	sprite.frame = _variant_frame * count + frame
 
 
 func remove() -> void:

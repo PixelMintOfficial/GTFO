@@ -6,7 +6,7 @@ extends Node2D
 ## (gamepad X) works on whatever is in reach, and the tool picks the job from the target:
 ##   mine    orange  ore rocks: a pulsing cutting beam, sparks and chips flying, cracks
 ##                   spreading through the rock until it bursts into ore chunks
-##   gather  teal    ore chunks, scrap, ration packs: a spiral stream pulls the thing into the lens
+##   gather  teal    ore chunks, scrap, glass, ration packs: a spiral pulls the thing into the lens
 ##   lift    violet  crates, the cargo box: a wavy tether floats it up and it follows you until F
 ##                   sets it down (never the box you are standing on)
 ##   fix     cyan    dead lamps: scan lines sweep it, sparks gather, and it flickers back on
@@ -49,6 +49,12 @@ var suppressed := false
 var inventory_suppressed := false
 ## Machine proximity and the repair modal own F independently of door/inventory input.
 var repair_suppressed := false
+## Window proximity and the live glass panel own F separately; physics continues during it.
+var window_suppressed := false
+## Solar equipment owns F independently while in reach, including its release guard.
+var solar_suppressed := false
+## A live window modal blocks controls but keeps survival and world simulation running.
+var window_panel_open := false
 
 var _player: Player
 var _terrain: MapTerrain
@@ -140,16 +146,24 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 			var prop := _spawn_prop(o.get("kind", "ore_chunk"), o["world"], o["frame"], "gather", o.get("radius", 2.5), false)
 			prop.set_meta("inventory_id", id)
 	for l in data["lamps"]:
-		var w := Vector2(l["world"][0], l["world"][1])
-		_lamps.append({"world": w, "head": _lamp_head(l, terrain.heading), "heads": l.get("head_px_views", [l["head_px"]]),
-				"base": terrain.to_screen(w, terrain.height_at(w)).round(),
-				"lit": false, "progress": 0.0, "t": 0.0, "radius": 4.0, "job": "fix"})
-		var lg := Node2D.new()
-		lg.material = add
-		lg.position = Vector2(0, _lamps[-1]["base"].y + 1.0)
-		lg.draw.connect(_draw_lamp.bind(lg, _lamps[-1]))
-		actors.add_child(lg)
-		_lamp_glows.append(lg)
+		add_lamp(l)
+
+
+## A dead lamp to fix, from the props data: world, head_px (and head_px_views). Returns it.
+func add_lamp(l: Dictionary) -> Dictionary:
+	var w := Vector2(l["world"][0], l["world"][1])
+	_lamps.append({"world": w, "head": _lamp_head(l, _terrain.heading), "heads": l.get("head_px_views", [l["head_px"]]),
+			"base": _terrain.to_screen(w, _terrain.height_at(w)).round(),
+			"lit": false, "progress": 0.0, "t": 0.0, "radius": 4.0, "job": "fix"})
+	var lg := Node2D.new()
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	lg.material = add
+	lg.position = Vector2(0, _lamps[-1]["base"].y + 1.0)
+	lg.draw.connect(_draw_lamp.bind(lg, _lamps[-1]))
+	_actors.add_child(lg)
+	_lamp_glows.append(lg)
+	return _lamps[-1]
 
 
 ## This view's drawing of each kind of prop.
@@ -159,7 +173,8 @@ func _load_sheets(k: int) -> void:
 	for name in sprites:
 		var s: Dictionary = sprites[name]
 		_sheets[name] = {"tex": load(_props_dir.path_join(s["file"])), "frames": int(s["frames"]),
-				"anchor": Vector2(s["anchor"][0], s["anchor"][1])}
+				"anchor": Vector2(s["anchor"][0], s["anchor"][1]), "animation": s.get("animation", {}),
+				"shadow_alpha": s.get("shadow_alpha", 1.0)}
 
 
 static func _lamp_head(l: Dictionary, k: int) -> Vector2:
@@ -243,7 +258,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed
+	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()

@@ -87,11 +87,13 @@ scripts/
   game_camera.gd       GameCamera: pixel-snapped follow, zoom levels, cutscene focus, shake, zoom lock
   multitool.gd         Multitool: equip, job picking (mine/gather/lift/fix) and their effects
   world_prop.gd        WorldProp: a loose thing the tool works on (rock, chunk, scrap, crate)
+  solar/               stateless optics, session field state, world equipment/controls and engine inlet
   airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
   repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter;
                        window_repair.gd / window_cracks.gd: storage's smashed panes and the cargo box
+                       glass_puzzle.gd / glass_repair_ui.gd: live glass jigsaw and sealing scan
   crash_site.gd        the satellite crash intro and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
@@ -99,6 +101,7 @@ scripts/
   interior_fx.gd       sun shafts and dust, sparks, leaking gas, fault LEDs, room-name toast
   map_screen.gd        M: full map overview (pauses the game)
   pixel_font.gd        PixelFont: the 3x5 pixel font for every bit of in-game text
+  dev_panel.gd         DevPanel: F1 master control panel (debug builds): set the time, freeze needs
 shaders/
   day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky())
   map_light            the map: time of day, with its light mask kept lit (and indoors the sun mask)
@@ -115,6 +118,8 @@ tools/                 the pipeline (Python): generates everything in assets/
   mars_map_gen.py           the overworld: terrain, biomes, domes, props, plants, all map data
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
+  window_repair_gen.py      source-matched window inspections, connected glass pieces and working tool
+  solar_field_gen.py        solar mirror/feed sheets and four-view indicator metadata (shared SDF renderer)
   sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
   requirements.txt          what make env installs
   *_viewer.html             browser previews of the sprites and the map
@@ -143,11 +148,12 @@ repeated art. Each map is **one big pre-rendered image**, plus data images and J
 the same generator so they always match the picture exactly.
 
 A view of the overworld is 7751x4350, and its picture, depth map and light mask come to about
-240 MB. Keeping three views for the camera's turns meant over a gigabyte of textures, so each
-of those three layers is also **cut into 512 px tiles**, and the game keeps only a window of
-them around the camera (§4.10). The whole-picture PNGs are still written - they are what the
-browser viewer and the previews use, and the tiles are cut from them - but the game never
-loads them.
+240 MB. Keeping three views for the camera's turns meant over a gigabyte of **texture** memory,
+so each of those three layers is also **cut into 512 px tiles**, and the game keeps only a
+window of them around the camera (§4.10). That is GPU memory: it is what the frame rate and an
+integrated GPU care about, and it is not the number a task manager shows for the process. The
+whole-picture PNGs are still written - they are what the browser viewer and the previews use,
+and the tiles are cut from them - but the game never loads them.
 
 | File | Contents |
 |---|---|
@@ -176,9 +182,24 @@ spawn, every `world` position in the data - exists once, in view 0's frame.
 
 `base_interior.json → window_cracks` lists storage's three smashed panes: `id` (its hole shape),
 `world` (where to stand under it: the middle of the box pushed to the wall), `hole` (the hole's
-middle, with height), `px` (where this view draws it) and `seen` (this view leaves its wall
-standing). `interior_props.json`'s `cargo_box` object adds `top` (its height), `half` (half its
-footprint), `yaw` (its turn) and `contents` (what spills when it breaks).
+middle, with height), `px` (where this view draws it), `seen` (this view leaves its wall
+standing), `reach_min_height` (feet height needed to interact) and `patch` (`file`, `height`,
+`sun`, `light`, `position`: restored glass, world-height and local lighting masks for the scan).
+`window_restorations` lists the seven completed-pane combinations (`panes`, plus `file`, `sun`,
+`light`, `position` when this view changes). These exact re-shaded replacements remove the
+aperture, rim, bloom, baked beam and floor light together, while retaining other panes' beams.
+Each `fx.shafts` entry has a `pane` ID; sealing it removes that shaft and its floating dust.
+`windows/inspection/catalog.json` owns each silhouette, six fragment targets/anchors and initial
+quarter turns, cost and scan duration. `interior_props.json` adds eighteen gatherable glass
+pickups; its `cargo_box` object adds `top` (its height), `half` (half its
+footprint), `yaw` (its turn) and `contents` (what spills when it breaks). Glass sheets use
+`animation.variant_frames` / `fps` and `shadow_alpha`: three small single-chip variants with
+brief reflection sweeps, staggered in the world and retained through camera turns.
+
+`base_interior.json → rooms.storage.dome` names the overworld base room storage sits in
+(`command`: the airlocks are cut into it). When all three panes are mended, that room's dome
+holes outside get their glass back: `DomeFX` lays each hole's `red_planet_fx.json → cracks →
+patch` (the band's glass as it was, glare and trim shade included) over the map at `patch_pos`.
 
 `base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
@@ -251,6 +272,7 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | turn_left / turn_right (turn the camera a quarter turn) | G / H | d-pad left / right | view_turn.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
+| dev_panel (debug builds only) | F1 | Guide | dev_panel.gd |
 
 F / gamepad X is shared: while a door's prompt is showing, the door sets
 `multitool.suppressed = true`, so it opens the door instead of using the tool.
@@ -262,6 +284,15 @@ Machine repairs use `multitool.repair_suppressed` independently, pause the world
 modal input. F/X must be released after closing. On the board, arrows/WASD/d-pad select
 movable modules; Enter/Space/F/A turns clockwise, Q/left shoulder turns back, Esc/B closes.
 Mouse left/right click turns clockwise/back. Bolted modules and plates are skipped.
+Window repairs use independent `window_suppressed` and `window_panel_open` ownership. They
+disable movement input while keeping physics, the clock and survival running; leaving reach
+closes the panel. F/X must be released before world interactions resume. Drag/click places glass;
+R/right-click/left shoulder rotates clockwise, Tab/right shoulder cycles pieces, Q cycles back,
+WASD/arrows/left stick/d-pad moves the selected fragment, Enter/Space/F/A/X places, Esc/B closes.
+Solar equipment uses independent `solar_suppressed` proximity/release ownership. F/X
+opens/closes a nearby sun feed or turns a mirror clockwise 22.5 degrees. Q has no solar
+action; left shoulder retains hotbar cycling. No modal/pause;
+camera turns reproject equipment and rays without changing the optical puzzle.
 
 ### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
@@ -272,7 +303,7 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
     the day).
   - `heading`: which way the camera faces (quarter turns, 0..3), the same indoors and out.
   - `inventory`, `selected_slot`: 24 slot dictionaries (`kind`, `count`), first six are
-    quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`;
+    quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`, `glass`, `ration`, `water`;
     resources/rations/water stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
     `inventory_changed`. A full bag leaves gathered props in the world.
   - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
@@ -280,7 +311,11 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
     chunks and `/spill/N` for the cargo box's rations; `spawned_props` entries keep their `kind`
     and `radius`. Generated JSON is unchanged. Saving to disk is not implemented.
   - `window_repair`: `WindowRepair`: storage's mended panes, the cracks the cargo box has
-    taken (one per pane), where it was last set down, and whether it broke. Reset with the
+    taken (one per pane), where it was last set down, and whether it broke. Its `puzzles` keep
+    independent `GlassPuzzle` placements/rotations and unfinished scan progress through closes,
+    views and airlocks. Six glass are consumed atomically only when that pane's scan completes.
+    `dome_mended` names the overworld room whose dome glass is whole again (set when every
+    pane is mended; read by `DomeFX`). Reset with the
     world ledger (`reset_inventory`), which holds its spilled rations.
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
     Each stores its crack placements/seams, circuit puzzle/countdown/index and completed tasks.
@@ -290,6 +325,12 @@ Mouse left/right click turns clockwise/back. Bolted modules and plates are skipp
     clamped mutation APIs. `data/survival.json` owns balance, starter supplies and consumable
     restoration. `consume_slot` uses the existing inventory. `rescue` restores vitals and
     supplies at overworld spawn while preserving session progress. See docs/survival.md.
+    `frozen` (kind -> true) holds needs still - no drain, recovery or damage - set from the
+    master control panel; it is kept through rescue.
+  - `solar_field`: `SolarFieldState`: thirteen world mirror orientations, three closed/open
+    feeds and cached optical routes. All three complete 4/5/4 routes supply the base reactor;
+    `base_powered()` also requires its existing machine repair. State survives turns, airlocks
+    and rescue. See docs/solar-field.md for optics, generated art, ownership and test hooks.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -389,8 +430,11 @@ the scene from one view to the next.
 ### 4.10 The map window: only what you can see is in memory
 
 `MapStream` (`scripts/map_stream.gd`) stitches a window of each resident view out of the tiles
-§4.1 describes, and that window is what the game actually draws and samples. Memory then
-follows the zoom instead of the size of the world.
+§4.1 describes, and that window is what the game actually draws and samples. **Texture** memory
+then follows the zoom instead of the size of the world: 1097 MB down to 200 MB at the default
+zoom on an Intel UHD 620 (`--no-stream` loads the whole pictures instead, so the two can be
+compared in one build). This is GPU memory. It is not what a task manager shows for the
+process, which moves by about 11 MB - see §12.
 
 - **What it covers**: what the camera shows, grown by the margin the turn's swing lays out
   (`TurnOverlay.MARGIN`) and then by `PAD`, so walking does not restitch every step. It is
@@ -453,7 +497,7 @@ consts in the named files.
     | mine | orange `#ff8a3a` | ore rock | hold F for 1.6 s; the rock bursts into chunks |
     | gather | teal `#4fe0c8` | ore chunk, scrap, ration pack | hold F for 0.55 s; a spiral pulls it into the backpack |
     | lift | violet `#b583ff` | crate, cargo box | tap F to float it so it follows you; tap again to set it down (never the box under your feet) |
-    | fix | cyan `#7fd8ff` | dead lamp | hold F for 2.4 s; the lamp flickers back on |
+    | fix | cyan `#7fd8ff` | dead lamp (none placed now) | hold F for 2.4 s; the lamp flickers back on |
 
   - Inventory shows resource stack counts; survival meters above it are approved (§12).
 - **Inventory** (`inventory_ui.gd`): six-slot bottom hotbar; E / Start toggles the paused
@@ -492,10 +536,49 @@ consts in the named files.
   - When the last pane is mended with you standing on it, it groans (0.45 s), gives way and
     crushes flat: you go down with it (`collapse`), and its 4 ration packs (MREs) spill clear
     of the wreck, to be gathered with the tool. The wreck stays; nothing to lift or stand on.
-  - **Mending a pane is not built yet.** `STAND_IN_FIX` stands in for it: landing on the box
-    under a pane (within 20 units of its `world`) counts as mending it. The real job calls
-    `WindowCracks.fix(id)`; cracks, the break and the saved state stay as they are.
+  - F/X within 20 units of an unrepaired visible pane opens **Window Repair** with the tool
+    equipped and six collected glass. The set-down box supports the player; levitated boxes
+    cannot be ridden. A floor jump can open it briefly but gravity closes it when out of reach.
+  - Six connected fragments need placement and quarter-turn rotation. Inside-facing crescent,
+    star (`burst`) and gash silhouettes stay constant; SKYWIN colours, honeycomb, dithering and
+    reflections reuse the actual window shader. Fractures remain clipped to the pane.
+  - After all pieces fit, the actual working gauntlet scans top to bottom for 2.4 seconds,
+    progressively restoring continuous glass in the panel and world. Closing pauses the scan;
+    reopening resumes it. Completion spends six glass once and calls `WindowCracks.fix(id)`.
+    The final panel closes before the box's groan snapshots controls. Landing or moving the
+    box never repairs a pane or triggers collapse; all three completed repairs are required.
+  - Completed panes replace their entire damaged appearance and lighting; their hole beams,
+    floor light and illuminated dust stop. Camera turns, machine repairs and airlocks retain this.
+    Partial scans use generated world-height masks and pristine local day/night shading.
+  - Glass pickups are small individual teal shards with sharp pale edges and brief animated
+    white reflections, matching the owner's floor-glass reference. The three storage barrels
+    and their collision are removed to leave room for carrying the cargo box.
   - State survives the airlock (`GameState.window_repair`). No `[F] EXIT` prompt while up on a box.
+  - With all three mended, the dome outside is mended too: the `command` room's two holes (the
+    same burst and crescent) show whole glass in every view, by day and night and through the
+    camera's swing. The far pane has no hole outside. The other rooms keep theirs.
+- **Solar field** (`scripts/solar/`, `data/solar_field.json`):
+  - Three closed sun feeds and 4/5/4 Amber/Jade/Coral reflectors surround one conical receiver.
+    F/X opens a feed or turns a nearby mirror clockwise 22.5 degrees. No Q reverse action.
+    Movement, survival and the clock continue. Every assigned reflector is required.
+    Local solar prompts and bars avoid the movable survival HUD using its canvas-aware
+    `plate_position`; prompts sit beside the equipment's feet to stay readable at close zoom.
+  - The receiver's local bar has three channel segments. Its cable goes into the base's
+    power conduit; all three complete paths plus the repaired reactor run the engine.
+    Routes persist through views and airlocks. Time of day fades beams without losing progress.
+  - The field occupies the original array clearing/red-dust ground; only equipment pads
+    are levelled after the unchanged flora placement stream. The forest is preserved.
+  - Mirrors have silver sweeps/pivots; feeds deploy crystals and gather sunlight. Completing
+    all routes sends a charge wave through receiver cells, lights its crown and pulses outward.
+  - Canonical `SolarOptics` and session `SolarFieldState` are separate from `SolarField`
+    input, `SolarFieldFX` animation and `SolarPowerInput` wall lenses. No prototype navigation box.
+- **Outdoors** there are no loose test props (ore rocks, scrap, crates) and no trail lamps any
+  more (owner, §12); the gather/mine/lift/fix jobs remain for the base and what comes next.
+- **Master control panel** (`dev_panel.gd`, editor and debug builds only): F1 / Guide opens it
+  in either scene, outside cutscenes and pauses. Set the time in half-hour steps or to a part
+  of the day (dawn, morning, noon, evening, night; same day), and freeze food, water and
+  oxygen where they are (`GameState.survival.frozen`). The clock runs on while it is open; the
+  astronaut stands still. Arrows / d-pad, Enter / A, Esc / B / F1 closes; mouse works too.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -547,6 +630,7 @@ the existing renderer (`render_groups` / `render_sprite`).
 | `python tools/astronaut_sprite_gen.py` then `python tools/godot_spriteframes.py` | `assets/characters/astronaut/*` | you change the astronaut, the multitool or any animation | slow (about 1,000 frames); `--quick` writes only the contact sheet |
 | `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | ~35 min for the four views (~9 each, measured on an 8-core laptop), several GB of RAM. `--tiles-only` re-cuts the tiles from the pictures already on disk in a couple of minutes |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
+| `python tools/solar_field_gen.py` | `assets/maps/red_planet/solar/*`, `solar_field.json` | after every map regeneration or equipment change; `make map` includes it | seconds |
 | `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about 25 seconds (four views) |
 | `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
 
@@ -559,6 +643,11 @@ If you change shared code (a ramp, the renderer, `hole_shape`, the outline) you 
 designs can be compared or restored:
 - `BASE_DESIGN` = `v1` | `hex` | `v2` | `v3` (default **v3**) — the main base.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
+- `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
+- `TRAIL_LAMPS` = `0` | `1` (default **0**) — the lamps along the trails (and their light). Off,
+  their spots still keep plants and the spawn clear, so the forest and spawn are unchanged.
+- `TEST_PROPS` = `0` | `1` (default **0**) — `props_gen.py`'s ore/scrap/crate test set by the
+  spawn. Its sprite sheets are always written: the interior reuses them.
 - `MAP_OUT=<folder>` writes the map somewhere else, so you can preview a design without
   replacing the game's map.
 - `MAP_VIEWS=0` (or `013`...) renders only those views (map and interior) - quick to check a
@@ -581,11 +670,39 @@ The views add: `views`, `view`, `game.heading`, `game.view_center` in every meta
 `sprites_views` and `lamps[].head_px_views` in `red_planet_props.json`; `anchor` on every plant
 sheet; `anchor` and `world` on every animated dome sprite (the turn stands them up).
 
+`data/solar_field.json` owns canonical `bounds`, `collector`, `cable`, `beam_height`,
+`mirror_span`, `reach`, `engine_room` and three `routes` (ID/label/color/ramp, source/direction/mirrors).
+Optional `access_paths` contain canonical `points` and `half_width` for narrow level approaches.
+Generated `solar_field.json` adds `sheets` (file/size/frames/anchor, mirror `shine_frames`,
+feed `deploy_frames`) and four `views` with receiver `indicator_px` and `receiver_mask`
+(file/position/size; RGBA = normalized height/cell interior/local view depth/surface).
+`feed_visual` owns `crystal_offset`, `tip_closed`, `tip_open` and `emerge` for the sunlight
+funnel's endpoint as a beacon opens. Closed beacons conceal the crystal under metal lids.
+Its `stands` map contains reachable canonical approach points for captures and placement
+checks, clear of the receiver's footprint; normal play can approach from any side.
+The map generator owns small level equipment pads and solid footprints, preserving the
+original landscape/plant random stream. `check_solar_field.py` verifies reachability,
+original forest fingerprints, equipment clearance and view anchors.
+Elevated routes add `source_elevation`; these feeds keep their natural terrain instead of
+getting a level pad. `mirror_half_height` defines finite vertical mirror extent. `SolarOptics`
+intersects three-dimensional rays with mirror rectangles and the capped frustum. The first
+mirror's fixed pitch is derived from descending input and horizontal output. Every mirror's
+fixed yaw offset follows its authored route, allowing free placement around terrain;
+`special_mirrors` exports four view-specific sheets for nonzero mounting offsets.
+F continues to control yaw only, in eight 22.5-degree steps.
+Every interior/repair variant exports `solar_input`: a physical diagonal-wall inlet's
+world/anchor/panel_id, housing/lights sprite paths, position/size and eight connection frames.
+`interior_gen.py --solar-input-only` regenerates these without changing existing room art.
+
 The panes and the box add (§4.1): `window_cracks` in every interior meta JSON (incl. the
 repaired variants; read by `WindowCracks`), and `top` / `half` / `yaw` / `contents` /
 `drop_sound` on props objects (read by `Multitool.setup`; any prop with `top` is something to
 stand on; `drop_sound` names the `audio.json` sound it makes when the tool sets it down, else
 `lift_drop`).
+`make interior` also runs `window_repair_gen.py`; `make windows` refreshes only inspection
+assets. `interior_gen.py --props-only` refreshes prop sprites and ensures glass pickups have
+clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced by real pickups.
+`windowglass` and `glassedge` register the existing SKYWIN and WHITE colours for those SDF props.
 
 ### 6.4 Recipes
 - **A new prop or machine:**
@@ -692,7 +809,8 @@ stand on; `drop_sound` names the `audio.json` sound it makes when the tool sets 
   - Lands blend with soft, dithered, domain-warped edges, never hard lines.
 - **Trails, not roads.** Nothing is drawn on the ground: a trail is the way through where
   nothing grows. Toward a trail the forest thins out gradually and unevenly, and tall plants keep
-  out of the strip just in front of it (from this camera they would hide it). Lamps line the way.
+  out of the strip just in front of it (from this camera they would hide it). No lamps line
+  the trails any more (owner, §12; `TRAIL_LAMPS=1` restores them).
   Trails wind; they are never straight. The map screen shows them as dotted routes.
 - **The main base (v3):**
   - three smooth white rooms joined by corridors;
@@ -777,7 +895,9 @@ godot --headless --path . res://tests/inventory_test.tscn             # inventor
 godot --headless --path . res://tests/repair_test.tscn                # circuits + real machine/input integration
 godot --headless --path . res://tests/view_turn_test.tscn             # turning the camera, in both scenes
 godot --headless --path . res://tests/window_crack_test.tscn          # the cargo box: jump on, lift, crack, break, rations
-godot --path . res://scenes/interior.tscn -- --cargo=gash --turn=2 --cargo-mended=2 --cargo-land --capture=break.png --seconds=0.5 --burst=6 --gap=0.3
+godot --headless --path . res://tests/window_glass_test.tscn          # live reach, real input, scans, cost, final collapse
+godot --headless --path . res://tests/dev_panel_test.tscn            # master control panel: time, frozen needs, real keys
+godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
 node tools/test_wire_repair.cjs                                     # browser circuit model checks
@@ -791,9 +911,13 @@ Useful hooks:
   second. There is no screenshot for memory, so this is how a change to it is shown (both scenes)
 - `--stream-debug`: every map window as it is stitched (both scenes, §4.10)
 - `--turn=N`, `--turn-left` / `--turn-right`, `--turn-at=SECONDS` (when the turn fires, default 1)
-- overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`
+- `--dev-panel` (open the master control panel), `--dev-freeze=hunger,thirst,oxygen` (both, debug builds)
+- overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`,
+  `--dome-mended=ROOM` (that room's dome glass whole again; `command` = storage's)
 - interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
   `--cargo-mended=N` (the first N panes mended first), `--cargo-land` (land on the box),
+  `--window=burst|crescent|gash` (six demo glass and native inspection), `--window-fit=N`,
+  `--window-scan=P`, `--window-close=S` (scan/close capture hooks; normal games get no demo glass),
   `--arrive`, `--exit`, `--repair=power|oxygen`,
   `--repair-done=power|oxygen|both` (both tasks for screenshots),
   `--repair-circuit=power|oxygen` (circuit-only preview), `--repair-bars`
@@ -841,8 +965,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   gauntlet) is the default.
 - Main base design **v3** is the default. The old designs stay available as versions.
 - The three lands and where they are; the comms massif.
-- **Trails are not drawn on the ground**: they form where the plants thin out, and lamps line
-  them.
+- **Trails are not drawn on the ground**: they form where the plants thin out (no trail lamps
+  since 2026-10-11, §12).
 - The base starts dead and broken; it gets repaired through play.
 - **Compact HUD only**; four survival meters, inventory stack counts, a six-slot hotbar,
   local machine repair progress and the time panel are approved (§12).
@@ -948,13 +1072,14 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
     3 both) to generated room variants; `fixed_machines` declares their restored equipment.
     `interior_props.json` exports six gatherable scraps using existing prop sprites in four views.
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
-  - **Storage's three smashed panes**: reaching them with the cargo box is built (§5); mending
-    them is not. `WindowCracks.STAND_IN_FIX` mends a pane when you land on the box under it;
-    the fix job should call `WindowCracks.fix(id)` and remove the stand-in. `window_cracks`
-    gives each pane's hole (world, with height) and its pixels per view for that job.
-  - The overworld dome still shows two holes in the storage room; the interior has three.
-- **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
-  spawn, from `props_gen.py`). Real ore deposits are not placed yet.
+  - **Storage's three smashed panes**: native glass jigsaws, collected glass and resumable
+    multitool scans are built (§5). The box breaks only after all three repairs complete.
+  - The overworld's `command` room (storage, inside) has two holes; the interior has three.
+    Mending all three inside mends both outside. Habitat's and garage's holes stay open until
+    their own rooms get interiors and repairs.
+- **Nothing outdoors for the multitool yet**: the test props and dead trail lamps were removed
+  (`TEST_PROPS=1` / `TRAIL_LAMPS=1` bring them back). Real ore deposits are not placed yet; the
+  tool works on the base's scrap, glass, cargo box and rations. The tests bring their own props.
 - **Inventory is implemented:** session backpack, resource stacks, quick access and slot
   swaps. Resources are gathered through the existing tool; ration/water consumption is
   implemented, and three scraps per successful crack repair are consumed atomically.
@@ -1095,14 +1220,80 @@ Write one line per decision: date — decision (who approved it).
   Recorded steel, cracking, squeak, impact and glass from the existing CC0 packs, with small
   synthesised layers (hollow shell, steel stress, groan, glass seal); no new packs. Baked with
   --only, so every existing sound is unchanged.
-- 2026-10-09 — Performance, against three reported issues (#7, #8, #11). Measured first with a
-  new `--perf` hook: on an Intel UHD 620 the overworld held **1124 MB of textures** (1190 MB peak
-  during a turn) and a turn's worst frame was **135 ms**, or nearly two seconds when it came soon
-  after another. Three changes, none of them to the art: a turn no longer forces its view into
-  memory on the frame of the press, and the map JSONs and sprite sheets are no longer re-read
-  on every turn; each map layer is stored as 512 px tiles and only a **window around the camera**
-  is in memory (§4.10), so memory follows the zoom rather than the size of the world; and the
-  forest's trees lean about half as far (crown travel ±6.1 px → ±2.8 px) on a slow gust that
-  rolls through a grove at a time instead of every tree swaying at once. The depth map also
-  dropped its unused alpha channel. The clock dial, the survival meters and the flora list are
-  redrawn only when what they show has changed (agent, from the owner's three issues).
+- 2026-10-09 — Approved compact window draft integrated for crescent, star and third gash
+  (owner). Six world-collected glass per pane; placement and quarter turns; source SKYWIN/WHITE
+  material with honeycomb and inside-facing orientation; damage clipped to the pane. Physics,
+  clock and survival continue; falling out of reach closes it and retains progress. Stand only
+  on the set-down box. The existing gauntlet scans top to bottom and restores glass progressively;
+  all three completed scans, rather than three landings/placements, unlock box collapse and the
+  existing four-ration spill. Modal ownership releases before collapse to preserve controls.
+- 2026-10-09 — Owner requested small single glass chips like the original floor debris,
+  with moving white glints instead of opaque outlined piles. They use the existing SDF renderer
+  and teal/glass/WHITE ramps; only these thin fragments omit the heavy outer silhouette.
+  Reflection sheets retain their selected variant across views and fade with the daylight.
+  Remove storage's three teal/mustard barrels, including their baked collision, for the cargo route.
+  Sealing a window now restores its entire appearance and removes its hole's baked shaft,
+  floor light, halo and live beam/dust. Exact combined restoration states and matching masks
+  preserve other holes' lighting across all views, machine variants and airlocks.
+- 2026-10-09 — When all three storage panes are mended, the dome outside is mended too (owner,
+  requested): the `command` room - storage's room on the overworld, where the airlocks are -
+  shows whole glass over its burst and crescent holes in every view. DomeFX lays the patches the
+  map generator already exported for mending (`cracks → patch`), lit like the map; no new art.
+  The generator's patches now carry the glass band's glare and trim shade through the hole, so
+  the mend has no seam. Habitat and garage keep their holes.
+- 2026-10-10 — Owner approved the Sunthread web prototype for complete main-game integration
+  on latest main: one large triangular-cell conical collector, 4/5/4 Amber/Jade/Coral mirror
+  routes, distributed closed-by-default sun feeds, nearby F/X activation/rotation and Q/left
+  shoulder reverse, a local three-channel bar and a ground cable into the base power conduit.
+  Every assigned reflector is required; B4's 157.5-degree early ray misses the actual cone.
+  No outdoor generator or prototype objective/navigation box. Canonical optics/session state
+  are separate from generated four-view equipment/world adapters. Repaired reactor plus all
+  three channels runs the engine; closing a feed removes its output. Existing DayNight shading,
+  WorldProp depth/collision, PixelFont, sound palette and relief camera swing are reused.
+- 2026-10-10 — Owner requested moving the complete solar field into the marked original
+  array/red-dust clearing and restoring the removed forest/cliffs. Original terrain and flora
+  placement rules are retained; only small hardware pads are levelled after scattering.
+  Reflectors gain silver sweeps and pivots; sun feeds raise crystals through split lids,
+  collecting daylight into beams. Three completed channels energize the receiver cells/crown
+  with a rising wave and outward pulse. F/X alone rotates reflectors; Q reverse is removed
+  and left shoulder again cycles inventory. Three colored lenses on physical power-room
+  walls replace the intrusive floating solar bar, with generated art/anchors in all four views.
+- 2026-10-10 — Owner encouraged a varied layout with a sun feed on a mountain sending light
+  down to a reflector. Coral's feed uses the existing reachable 58.28-unit mountain ledge;
+  its first mirror has fixed tilt. Optics now use actual 3D finite mirror planes and the
+  capped receiver, while player controls remain F/X yaw rotation and source activation.
+  Elevated feed terrain is preserved; the remaining mirrors use small level ground pads.
+- 2026-10-10 — Owner requested a smaller receiver and an uncluttered, interleaved layout:
+  receiver radius/height become 40/54 units; all three reflector colors span the field,
+  including behind the receiver, with wide hardware clearance. Amber moves onto open ground
+  with a narrow level access path. Feeds become sealed cylindrical beacons; split lids open
+  before a short faceted crystal emerges and conceal it again on shutdown. The plate version
+  is retained as `SOLAR_FEED_DESIGN=shield`. Fixed mirror mounting offsets permit routes to
+  follow the landscape; finite optics and generated orientations share the same geometry.
+  F/X controls, 4/5/4 counts, mountain feed, original forest and wall inlet lenses are retained.
+- 2026-10-11 — Owner removed the outdoor test set (ore rocks, scrap, crates by the spawn) and
+  every lamp outside: all trail lamps, lit and dead, with their light pools and posts. Kept as
+  versions: `TEST_PROPS=1`, `TRAIL_LAMPS=1`. Lamp spots still keep plants and the spawn clear, so
+  the forest is unchanged. Interior and in-dome lamps stay. The fix job remains, with no target.
+- 2026-10-11 — Owner requested a master control panel; dev-only by owner's choice (editor and
+  debug builds, F1 / Guide): set the time (half-hour steps or a part of the day) and freeze food,
+  water and oxygen (`SurvivalState.frozen`). Not part of the shipped HUD. PixelFont gains `<` `>`.
+- 2026-10-12 — Performance, against three reported issues (#7, #8, #11), measured with a new
+  `--perf` hook rather than by feel, and with `--no-stream` so both map paths can be compared in
+  one build. **What each change is actually worth, measured on an Intel UHD 620:**
+  - *the map window* (§4.10): texture memory 1097 MB → 200 MB, VRAM 1122 MB → 232 MB. Frame
+    rate unchanged (both 60), and **process RSS 306 MB → 295 MB**. Nearly all of its benefit is
+    GPU memory, which on an integrated GPU is system memory but is not in the process's
+    resident set - so it does **not** show in a task manager, and #11 is not answered by it.
+  - *redrawing only what changed* (the clock dial, the four survival meters, the flora list):
+    this is what took the frame rate from 30 to a locked 60.
+  - *the turn* no longer freezes: it kept a press rather than forcing its view into memory on
+    the frame of the press, which cost up to 1965 ms when one turn followed another.
+  - *the forest*: trees lean about half as far (crown travel ±6.1 px → ±2.8 px) on a slow gust
+    that rolls through a grove at a time; the screen changing between frames fell 27% → 6%.
+  Of the ~300 MB a task manager shows, ~177 MB is an empty Godot window on the same machine,
+  20 MB the walk grid and 8 MB the audio. **Say which memory you mean when you report a
+  number**; the three in play here (process RSS, texture memory, VRAM) move independently.
+  Also: the map's layers are stored as 512 px tiles, the depth map dropped its unused alpha
+  channel, and the map JSONs are parsed once with one view's fx held at a time - parsed, 350 KB
+  of JSON costs 4.2 MB of heap (agent, from the owner's three issues).

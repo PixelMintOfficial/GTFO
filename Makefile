@@ -7,7 +7,9 @@
 #   make sources        download + checksum the open-licence recordings (~100 MB, once)
 #   make sfx            regenerate all sound     (fast; needs make sources first)
 #   make props          regenerate the test props (fast, needs the map's data)
+#   make solar          regenerate solar mirror/feed sheets and four-view anchors
 #   make interior       regenerate the base interior (seconds)
+#   make windows        regenerate only glass inspection assets
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
 #   make map            regenerate the overworld (~35 min for four views, several GB of RAM)
 #   make tiles          re-cut the map's tiles from the pictures on disk (fast)
@@ -26,7 +28,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props interior astronaut astronaut-quick map tiles all import check \
+.PHONY: help env sources sfx props solar interior windows astronaut astronaut-quick map tiles all import check \
         check-overworld check-interior check-tests shot sounds verify clean-shots
 
 help:
@@ -54,8 +56,15 @@ sfx: $(PY)
 props: $(PY)
 	$(PY) tools/props_gen.py
 
+solar: $(PY)
+	$(PY) tools/solar_field_gen.py
+
 interior: $(PY)
 	$(PY) tools/interior_gen.py
+	$(PY) tools/window_repair_gen.py
+
+windows: $(PY)
+	$(PY) tools/window_repair_gen.py
 
 astronaut: $(PY)
 	$(PY) tools/astronaut_sprite_gen.py
@@ -68,6 +77,8 @@ astronaut-quick: $(PY)
 map: $(PY)
 	$(PY) tools/mars_map_gen.py
 	$(PY) tools/props_gen.py
+	$(PY) tools/solar_field_gen.py
+	$(PY) tools/check_solar_field.py
 
 # Tiling is a pure function of the pictures, so it does not need the planet rendered again.
 tiles: $(PY)
@@ -105,6 +116,8 @@ check-interior:
 # They report their own pass/fail and exit nonzero.
 check-tests:
 	@echo "== tests"
+	@$(GODOT) --headless --path . res://tests/solar_field_test.tscn 2>&1 | tee /tmp/gtfo-solar.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-solar.log
 	@$(GODOT) --headless --path . res://tests/survival_test.tscn 2>&1 | tee /tmp/gtfo-survival.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-survival.log
 	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn 2>&1 | tee /tmp/gtfo-hud.log | grep -v '^$$' || true
@@ -116,6 +129,9 @@ check-tests:
 	@$(GODOT) --headless --path . res://tests/view_turn_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/map_stream_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_crack_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/dev_panel_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/window_glass_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/window_restore_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error|[1-9][0-9]* failures' /tmp/gtfo-tests.log \
 		|| { echo "tests: failures above" >&2; exit 1; }
 

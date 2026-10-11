@@ -1,0 +1,78 @@
+class_name SolarFieldState
+extends RefCounted
+## Session solar controls and evaluated routes. GameState owns this through scene changes.
+## Controls are explicit mutations; evaluation runs only after a change, never every frame.
+## All three complete 4/5/4 paths are required for electrical output. Feeds start closed.
+
+signal changed
+
+const DATA := "res://data/solar_field.json"
+
+var field: Dictionary
+var mirrors: Array[Dictionary] = []
+var orientations: Dictionary = {}
+var feeds: Array[bool] = [false, false, false]
+var routes: Array[Dictionary] = []
+
+
+func _init() -> void:
+	field = JSON.parse_string(FileAccess.get_file_as_string(DATA))
+	for group in field["routes"].size():
+		var route: Dictionary = field["routes"][group]
+		for index in route["mirrors"].size():
+			var world := SolarOptics.point(route["mirrors"][index])
+			var id: String = route["id"] + str(index + 1)
+			var before := SolarOptics.point(route["source"] if index == 0 else route["mirrors"][index - 1])
+			var after := SolarOptics.point(field["collector"]["world"] if index + 1 == route["mirrors"].size() else route["mirrors"][index + 1])
+			var angle := SolarOptics.alignment(world - before, after - world)
+			orientations[id] = posmod(angle + 1 + (index + group * 3) % 7, 8)
+			var mirror := {"id": id, "world": world, "group": group, "index": index}
+			mirror["mount"] = SolarOptics.mount(field, mirror)
+			mirrors.append(mirror)
+	_evaluate()
+
+
+func rotate(id: String) -> bool:
+	if not orientations.has(id):
+		return false
+	orientations[id] = posmod(int(orientations[id]) + 1, 8)
+	_evaluate()
+	changed.emit()
+	return true
+
+
+func toggle_feed(group: int) -> bool:
+	if group < 0 or group >= feeds.size():
+		return false
+	feeds[group] = not feeds[group]
+	_evaluate()
+	changed.emit()
+	return true
+
+
+func connected_count() -> int:
+	var count := 0
+	for route in routes:
+		if route["connected"]:
+			count += 1
+	return count
+
+
+func supplies_power() -> bool:
+	return connected_count() == 3
+
+
+## Count this channel's unique reflectors, rather than repeated or cross-channel bounces.
+func lit_count(group: int) -> int:
+	var count := 0
+	var route: Dictionary = field["routes"][group]
+	for index in route["mirrors"].size():
+		if routes[group]["hits"].has(route["id"] + str(index + 1)):
+			count += 1
+	return count
+
+
+func _evaluate() -> void:
+	routes.clear()
+	for group in feeds.size():
+		routes.append(SolarOptics.trace(field, mirrors, orientations, group, feeds[group]))

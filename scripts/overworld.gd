@@ -19,12 +19,16 @@ extends Node2D
 ##   --door                 walk up to the base's airlock and go in (the whole cutscene)
 ##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
+##   --dev-panel / --dev-freeze=hunger,thirst,oxygen   master control panel (F1; see DevPanel)
 ##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
 ##   --perf                 print texture memory, draw calls and frame times once a second
 ##   --perf-every=SECONDS   how often --perf prints (default 1.0)
 ##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
 ##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
 ##   --turn-left / --turn-right   turn the camera once after a second (see ViewTurn)
+##   --dome-mended=ROOM     that base room's dome glass is whole again (command: storage's windows mended)
+##   --solar-at=ID          stand beside A SUN/B SUN/C SUN or reflector A1..C4
+##   --solar-active / --solar-solved   optical routing capture hooks (ordinary feeds start off)
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
 const PROPS_JSON := "res://assets/maps/red_planet/red_planet_props.json"
@@ -34,6 +38,7 @@ var terrain: MapTerrain
 var doors: Array[AirlockDoor] = []
 var view_turn: ViewTurn
 var stream: MapStream
+var solar: SolarField
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -73,6 +78,9 @@ func _ready() -> void:
 	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	day_night.setup(player, $Map, terrain.light_mask)
 	_setup_doors()
+	solar = SolarField.new()
+	add_child(solar)
+	solar.setup(player, multitool, terrain, $Actors)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
@@ -82,6 +90,9 @@ func _ready() -> void:
 	var survival_hud := SurvivalHUD.new()
 	add_child(survival_hud)
 	survival_hud.setup(player, multitool)
+	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
+	add_child(dev_panel)
+	dev_panel.setup(player)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -136,6 +147,7 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	crash.load_view(view)
 	ambience.load_view(view)
 	multitool.set_view()
+	solar.load_view()
 	for d in doors:
 		d.queue_free()
 	doors.clear()
@@ -148,6 +160,7 @@ func _window_moved(_heading: int) -> void:
 	player.refresh_window()
 	biome_fx.refresh_window()
 	multitool.refresh_window()
+	solar.refresh_window()
 
 
 ## What stands in the world, for the camera's swing: the plants in view, the loose props and
@@ -160,6 +173,7 @@ func _turn_boards() -> Array:
 		if n is WorldProp and not (n as WorldProp).gone:
 			out.append(ViewTurn.prop_board(terrain, n))
 	out.append_array(dome_fx.boards())
+	out.append_array(solar.beam_boards())
 	return out
 
 
@@ -168,8 +182,7 @@ func _setup_doors() -> void:
 	var meta := ViewData.get_json(terrain.view_json)
 	if not meta.has("fx"):
 		return
-	var fx_path := terrain.view_json.get_base_dir().path_join(meta["fx"])
-	var fx := ViewData.get_json(fx_path)
+	var fx := ViewData.fx_of(terrain.view_json, meta)
 	for info in fx.get("doors", []):
 		var d := AirlockDoor.new()
 		$Actors.add_child(d)
@@ -206,6 +219,26 @@ func _run_test_hooks(args: Dictionary) -> void:
 	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
+	if args.has("solar-active") or args.has("solar-solved"):
+		for group in solar.state.feeds.size():
+			if not solar.state.feeds[group]:
+				solar.state.toggle_feed(group)
+	if args.has("solar-solved"):
+		for group in solar.state.field["routes"].size():
+			var route: Dictionary = solar.state.field["routes"][group]
+			for index in route["mirrors"].size():
+				var point := SolarOptics.point(route["mirrors"][index])
+				var before := SolarOptics.point(route["source"] if index == 0 else route["mirrors"][index - 1])
+				var after := SolarOptics.point(solar.state.field["collector"]["world"] if index + 1 == route["mirrors"].size() else route["mirrors"][index + 1])
+				var id: String = route["id"] + str(index + 1)
+				var angle := SolarOptics.alignment(point - before, after - point)
+				while solar.state.orientations[id] != angle:
+					solar.state.rotate(id)
+	if args.has("solar-at") and solar.equipment.has(args["solar-at"]):
+		player.teleport(solar.interaction_point(args["solar-at"]))
+	if args.has("dome-mended"):
+		GameState.window_repair.dome_mended = args["dome-mended"]
+		dome_fx.load_view(terrain.view_json)
 	if args.has("spawn"):
 		var xy: PackedStringArray = args["spawn"].split(",")
 		player.teleport(Vector2(float(xy[0]), float(xy[1])))

@@ -120,296 +120,6 @@
     ],
     "view_notes": "The game keeps the world in view 0's frame. View k shows it turned: view point = R_k (P - view_center) + view_center, R_k a quarter turn clockwise k times ((x, y) -> (y, -x) per turn); the screen formula above applies to the view point."
   },
-  "biomes": {
-    "png": "red_planet_biome.png",
-    "grid_size": 575,
-    "cell": 4,
-    "names": [
-      "red",
-      "forest",
-      "ice"
-    ]
-  },
-  "minimap": {
-    "file": "red_planet_minimap_r2.png",
-    "origin": [
-      60,
-      29
-    ],
-    "scale": 0.046133682830930535,
-    "size": [
-      352,
-      190
-    ]
-  },
-  "animated": {
-    "sprites": [
-      {
-        "name": "nursery_anemometer",
-        "file": "anim/nursery_anemometer_r2.png",
-        "frames": 8,
-        "fps": 14,
-        "position": [
-          3240,
-          2587
-        ],
-        "frame_size": [
-          116,
-          116
-        ],
-        "anchor": [
-          58.1,
-          57.9
-        ],
-        "world": [
-          250.0,
-          2500.0,
-          210.0
-        ]
-      },
-      {
-        "name": "comms_dish",
-        "file": "anim/comms_dish_r2.png",
-        "frames": 24,
-        "fps": 6,
-        "position": [
-          1026,
-          1068
-        ],
-        "frame_size": [
-          249,
-          249
-        ],
-        "anchor": [
-          124.4,
-          125.1
-        ],
-        "world": [
-          1180.0,
-          1590.0,
-          410.5
-        ]
-      }
-    ],
-    "ring_lights": [
-      [
-        3760,
-        3043,
-        0.0,
-        "nursery"
-      ],
-      [
-        2836,
-        3047,
-        0.5,
-        "nursery"
-      ],
-      [
-        2842,
-        3083,
-        0.525,
-        "nursery"
-      ],
-      [
-        3030,
-        3233,
-        0.65,
-        "nursery"
-      ],
-      [
-        3092,
-        3252,
-        0.675,
-        "nursery"
-      ],
-      [
-        3159,
-        3265,
-        0.7,
-        "nursery"
-      ],
-      [
-        3573,
-        3230,
-        0.85,
-        "nursery"
-      ],
-      [
-        3738,
-        3114,
-        0.95,
-        "nursery"
-      ],
-      [
-        3755,
-        3079,
-        0.975,
-        "nursery"
-      ],
-      [
-        1612,
-        1776,
-        0.0,
-        "comms"
-      ],
-      [
-        688,
-        1780,
-        0.5,
-        "comms"
-      ],
-      [
-        694,
-        1816,
-        0.525,
-        "comms"
-      ],
-      [
-        712,
-        1852,
-        0.55,
-        "comms"
-      ],
-      [
-        740,
-        1885,
-        0.575,
-        "comms"
-      ],
-      [
-        779,
-        1916,
-        0.6,
-        "comms"
-      ],
-      [
-        827,
-        1943,
-        0.625,
-        "comms"
-      ],
-      [
-        882,
-        1966,
-        0.65,
-        "comms"
-      ],
-      [
-        944,
-        1985,
-        0.675,
-        "comms"
-      ],
-      [
-        1012,
-        1998,
-        0.7,
-        "comms"
-      ],
-      [
-        1082,
-        2007,
-        0.725,
-        "comms"
-      ],
-      [
-        1155,
-        2009,
-        0.75,
-        "comms"
-      ],
-      [
-        1227,
-        2006,
-        0.775,
-        "comms"
-      ],
-      [
-        1364,
-        1983,
-        0.825,
-        "comms"
-      ],
-      [
-        1425,
-        1964,
-        0.85,
-        "comms"
-      ],
-      [
-        1564,
-        1881,
-        0.925,
-        "comms"
-      ],
-      [
-        1591,
-        1847,
-        0.95,
-        "comms"
-      ],
-      [
-        1607,
-        1812,
-        0.975,
-        "comms"
-      ]
-    ],
-    "door_lights": [
-      [
-        3806,
-        2884,
-        0.37
-      ],
-      [
-        1604,
-        1568,
-        0.11
-      ],
-      [
-        1540,
-        1920,
-        0.48
-      ],
-      [
-        2916,
-        2792,
-        0.85
-      ]
-    ],
-    "beacon": [
-      1150,
-      908
-    ]
-  },
-  "fx": "red_planet_fx_r2.json",
-  "zoom": {
-    "max_view_px": [
-      1480,
-      1163
-    ],
-    "frames": {
-      "base": [
-        5445,
-        1305,
-        1480,
-        1163
-      ],
-      "nursery": [
-        2812,
-        2541,
-        1026,
-        779
-      ],
-      "comms": [
-        665,
-        1044,
-        972,
-        1009
-      ]
-    },
-    "note": "The furthest zoom-out shows max_view_px of map: the whole main base, no more. frames are [x, y, w, h] boxes the camera frames at that zoom."
-  },
   "tiles": {
     "tile": [
       512,
@@ -1654,21 +1364,6 @@
             "t_04_02.png"
           ],
           [
-            5,
-            2,
-            "t_05_02.png"
-          ],
-          [
-            6,
-            2,
-            "t_06_02.png"
-          ],
-          [
-            8,
-            2,
-            "t_08_02.png"
-          ],
-          [
             10,
             2,
             "t_10_02.png"
@@ -1719,16 +1414,6 @@
             "t_07_03.png"
           ],
           [
-            8,
-            3,
-            "t_08_03.png"
-          ],
-          [
-            9,
-            3,
-            "t_09_03.png"
-          ],
-          [
             12,
             3,
             "t_12_03.png"
@@ -1757,11 +1442,6 @@
             2,
             4,
             "t_02_04.png"
-          ],
-          [
-            3,
-            4,
-            "t_03_04.png"
           ],
           [
             4,
@@ -1946,7 +1626,28 @@
         ],
         "fills": [
           [
+            5,
+            2,
+            [
+              0
+            ]
+          ],
+          [
+            6,
+            2,
+            [
+              0
+            ]
+          ],
+          [
             7,
+            2,
+            [
+              0
+            ]
+          ],
+          [
+            8,
             2,
             [
               0
@@ -1967,6 +1668,20 @@
             ]
           ],
           [
+            8,
+            3,
+            [
+              0
+            ]
+          ],
+          [
+            9,
+            3,
+            [
+              0
+            ]
+          ],
+          [
             10,
             3,
             [
@@ -1976,6 +1691,13 @@
           [
             11,
             3,
+            [
+              0
+            ]
+          ],
+          [
+            3,
+            4,
             [
               0
             ]
@@ -1997,5 +1719,295 @@
         ]
       }
     }
+  },
+  "biomes": {
+    "png": "red_planet_biome.png",
+    "grid_size": 575,
+    "cell": 4,
+    "names": [
+      "red",
+      "forest",
+      "ice"
+    ]
+  },
+  "minimap": {
+    "file": "red_planet_minimap_r2.png",
+    "origin": [
+      60,
+      29
+    ],
+    "scale": 0.046133682830930535,
+    "size": [
+      352,
+      190
+    ]
+  },
+  "animated": {
+    "sprites": [
+      {
+        "name": "nursery_anemometer",
+        "file": "anim/nursery_anemometer_r2.png",
+        "frames": 8,
+        "fps": 14,
+        "position": [
+          3240,
+          2587
+        ],
+        "frame_size": [
+          116,
+          116
+        ],
+        "anchor": [
+          58.1,
+          57.9
+        ],
+        "world": [
+          250.0,
+          2500.0,
+          210.0
+        ]
+      },
+      {
+        "name": "comms_dish",
+        "file": "anim/comms_dish_r2.png",
+        "frames": 24,
+        "fps": 6,
+        "position": [
+          1026,
+          1068
+        ],
+        "frame_size": [
+          249,
+          249
+        ],
+        "anchor": [
+          124.4,
+          125.1
+        ],
+        "world": [
+          1180.0,
+          1590.0,
+          410.5
+        ]
+      }
+    ],
+    "ring_lights": [
+      [
+        3760,
+        3043,
+        0.0,
+        "nursery"
+      ],
+      [
+        2836,
+        3047,
+        0.5,
+        "nursery"
+      ],
+      [
+        2842,
+        3083,
+        0.525,
+        "nursery"
+      ],
+      [
+        3030,
+        3233,
+        0.65,
+        "nursery"
+      ],
+      [
+        3092,
+        3252,
+        0.675,
+        "nursery"
+      ],
+      [
+        3159,
+        3265,
+        0.7,
+        "nursery"
+      ],
+      [
+        3573,
+        3230,
+        0.85,
+        "nursery"
+      ],
+      [
+        3738,
+        3114,
+        0.95,
+        "nursery"
+      ],
+      [
+        3755,
+        3079,
+        0.975,
+        "nursery"
+      ],
+      [
+        1612,
+        1776,
+        0.0,
+        "comms"
+      ],
+      [
+        688,
+        1780,
+        0.5,
+        "comms"
+      ],
+      [
+        694,
+        1816,
+        0.525,
+        "comms"
+      ],
+      [
+        712,
+        1852,
+        0.55,
+        "comms"
+      ],
+      [
+        740,
+        1885,
+        0.575,
+        "comms"
+      ],
+      [
+        779,
+        1916,
+        0.6,
+        "comms"
+      ],
+      [
+        827,
+        1943,
+        0.625,
+        "comms"
+      ],
+      [
+        882,
+        1966,
+        0.65,
+        "comms"
+      ],
+      [
+        944,
+        1985,
+        0.675,
+        "comms"
+      ],
+      [
+        1012,
+        1998,
+        0.7,
+        "comms"
+      ],
+      [
+        1082,
+        2007,
+        0.725,
+        "comms"
+      ],
+      [
+        1155,
+        2009,
+        0.75,
+        "comms"
+      ],
+      [
+        1227,
+        2006,
+        0.775,
+        "comms"
+      ],
+      [
+        1364,
+        1983,
+        0.825,
+        "comms"
+      ],
+      [
+        1425,
+        1964,
+        0.85,
+        "comms"
+      ],
+      [
+        1564,
+        1881,
+        0.925,
+        "comms"
+      ],
+      [
+        1591,
+        1847,
+        0.95,
+        "comms"
+      ],
+      [
+        1607,
+        1812,
+        0.975,
+        "comms"
+      ]
+    ],
+    "door_lights": [
+      [
+        3806,
+        2884,
+        0.37
+      ],
+      [
+        1604,
+        1568,
+        0.11
+      ],
+      [
+        1540,
+        1920,
+        0.48
+      ],
+      [
+        2916,
+        2792,
+        0.85
+      ]
+    ],
+    "beacon": [
+      1150,
+      908
+    ]
+  },
+  "fx": "red_planet_fx_r2.json",
+  "zoom": {
+    "max_view_px": [
+      1480,
+      1163
+    ],
+    "frames": {
+      "base": [
+        5445,
+        1305,
+        1480,
+        1163
+      ],
+      "nursery": [
+        2812,
+        2541,
+        1026,
+        779
+      ],
+      "comms": [
+        665,
+        1044,
+        972,
+        1009
+      ]
+    },
+    "note": "The furthest zoom-out shows max_view_px of map: the whole main base, no more. frames are [x, y, w, h] boxes the camera frames at that zoom."
   }
 }

@@ -7,6 +7,8 @@ extends Node2D
 ## The sun's shafts and the dust in them fade with the daylight (DayNight); at night only the
 ## base's own lights are left.
 ## Repaired room variants omit their fault emitters and use steady cyan status LEDs.
+## Each shaft carries its pane ID. A sealed pane loses its shaft and dust immediately;
+## load_view reads the session repair ledger so neither returns after a turn or airlock.
 
 const DUST := Color("#ffe6b4")
 const SPARK_HOT := Color("#fff0a0")
@@ -15,7 +17,7 @@ const VAPOR := Color("#dff8f4")
 const SOCKET := Color("#ffb24a")
 
 var _player: Player
-var _shafts: Array = []         # [PackedVector2Array hull, Rect2 bounds]
+var _shafts: Array = []         # [PackedVector2Array hull, Rect2 bounds, pane ID]
 var _motes: Array = []          # [pos, vel, phase, shaft index]
 var _leds: Array = []           # [pos, color, kind]
 var _core := Vector2.ZERO
@@ -69,13 +71,15 @@ func load_view(meta_path: String) -> void:
 	var meta := ViewData.get_json(meta_path)
 	var fx: Dictionary = meta["fx"]
 	for s in fx["shafts"]:
+		if GameState.window_repair.fixed.has(s["pane"]):
+			continue
 		var hull := PackedVector2Array()
 		for p in s["hull"]:
 			hull.append(Vector2(p[0], p[1]))
 		var r := Rect2(hull[0], Vector2.ZERO)
 		for p in hull:
 			r = r.expand(p)
-		_shafts.append([hull, r])
+		_shafts.append([hull, r, s["pane"]])
 		for i in 34:
 			_motes.append([r.position + Vector2(randf() * r.size.x, randf() * r.size.y),
 					Vector2(randf_range(2.0, 6.0), randf_range(3.0, 8.0)), randf() * TAU, _shafts.size() - 1])
@@ -97,6 +101,19 @@ func load_view(meta_path: String) -> void:
 
 static func _vec(a: Array) -> Vector2:
 	return Vector2(a[0], a[1])
+
+
+## Remove one aperture's beam and its dust without restarting the unrelated room effects.
+func seal_window(id: String) -> void:
+	for i in range(_shafts.size() - 1, -1, -1):
+		if _shafts[i][2] != id:
+			continue
+		_shafts.remove_at(i)
+		_motes = _motes.filter(func(m: Array) -> bool: return m[3] != i)
+		for mote in _motes:
+			if mote[3] > i:
+				mote[3] -= 1
+	_glow.queue_redraw()
 
 
 func _process(delta: float) -> void:

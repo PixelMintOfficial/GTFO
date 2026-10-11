@@ -7,17 +7,18 @@ extends Node2D
 ## the last pane is mended with you standing on it, the box gives way: you go down with it, and
 ## the ration packs inside spill across the floor, to be gathered with the tool.
 ##
-## Mending a pane is not built yet. STAND_IN_FIX stands in for it: landing on the box under a pane
-## counts as mending it. The real job will call fix(id) instead, and STAND_IN_FIX goes; the box's
-## cracks, the break and what is kept stay as they are.
+## Landing only wears the box. The glass puzzle calls fix(id) after its final sealing scan;
+## only all three completed repairs can trigger the collapse and ration spill.
 ##
 ## State: GameState.window_repair (WindowRepair). Data: base_interior.json -> window_cracks (where
 ## to stand under each pane, where this view draws it); interior_props.json -> the cargo_box object
 ## (its footprint, top and contents). Drawn here: chips and dust as the box cracks and bursts, and
 ## a ring of light where a pane is mended.
+## window_restorations supplies the exact combined room colours and lighting masks for sealed
+## panes. Completing a scan also removes that hole's live shaft/dust from InteriorFX.
+## With every pane mended, the dome outside (rooms.storage.dome) is mended too:
+## GameState.window_repair.dome_mended, drawn on the overworld by DomeFX.
 
-## Until panes can be mended with the tool: landing on the box under one mends it.
-const STAND_IN_FIX := true
 ## How near the spot under a pane you must be, standing on the box (world units).
 const NEAR := 20.0
 ## How long the box groans under you before it gives way, seconds.
@@ -43,13 +44,37 @@ var _parts: Array = []                                 # [pos, vel, age, life, c
 var _rings: Array = []                                 # [pos, age, life]
 var _glow: Node2D
 var _discs := {}
+var panel: GlassRepairUI
+var nearest := ""
+var _catalog: Dictionary
+var _active := ""
+var _release_guard := false
+var _panel_controls := true
+var _patches: Dictionary = {}
+var _map: Sprite2D
+var _map_source := ""
+var _sun_source := ""
+var _light_source := ""
+var _restorations: Array = []
+var _prompt: Node2D
+var _dome := ""                                        # the base room outside, on the overworld
 
 
 func setup(meta: Dictionary, player: Player, tool: Multitool, terrain: MapTerrain) -> void:
 	_player = player
 	_tool = tool
 	_terrain = terrain
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	repair = GameState.window_repair
+	_map = get_parent().get_node("Map")
+	_catalog = JSON.parse_string(FileAccess.get_file_as_string(GlassRepairUI.DIR + "catalog.json"))
+	panel = GlassRepairUI.new()
+	add_child(panel)
+	panel.closed.connect(_panel_closed)
+	_prompt = Node2D.new()
+	_prompt.set_meta("dn_unlit", true)
+	_prompt.draw.connect(_draw_prompt)
+	add_child(_prompt)
 	z_index = 29                                       # over the actors, under the tool's own light
 	_glow = Node2D.new()
 	var add := CanvasItemMaterial.new()
@@ -57,7 +82,9 @@ func setup(meta: Dictionary, player: Player, tool: Multitool, terrain: MapTerrai
 	_glow.material = add
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
+	_dome = meta["rooms"]["storage"].get("dome", "")
 	set_view(meta)
+	_mend_dome()
 	box = tool.find_prop("cargo_box")
 	if box == null:
 		return
@@ -75,14 +102,43 @@ func set_view(meta: Dictionary) -> void:
 	panes.clear()
 	for p in meta.get("window_cracks", []):
 		panes.append({"id": p["id"], "world": Vector2(p["world"][0], p["world"][1]),
-				"hole": Vector2(p["hole"][0], p["hole"][1]), "px": Vector2(p["px"][0], p["px"][1]), "seen": p["seen"]})
+				"hole": Vector2(p["hole"][0], p["hole"][1]), "px": Vector2(p["px"][0], p["px"][1]), "seen": p["seen"],
+				"reach_min_height": p["reach_min_height"], "patch": p.get("patch", {})})
+	for sprite in _patches.values():
+		sprite.queue_free()
+	_patches.clear()
+	_map_source = _terrain.view_json.get_base_dir().path_join(meta["image"])
+	_sun_source = _terrain.view_json.get_base_dir().path_join(meta["game"]["sun_png"])
+	_light_source = _terrain.view_json.get_base_dir().path_join(meta["game"]["light_png"])
+	_restorations = meta.get("window_restorations", [])
+	for pane in panes:
+		var info: Dictionary = pane["patch"]
+		if info.is_empty() or repair.fixed.has(pane["id"]):
+			continue
+		var dir := _terrain.view_json.get_base_dir()
+		var sprite := Sprite2D.new()
+		sprite.centered = false
+		sprite.texture = load(dir.path_join(info["file"]))
+		sprite.position = Vector2(info["position"][0], info["position"][1])
+		var material := ShaderMaterial.new()
+		material.shader = preload("res://shaders/window_patch.gdshader")
+		material.set_shader_parameter("height_map", load(dir.path_join(info["height"])))
+		material.set_shader_parameter("sun_mask", load(dir.path_join(info["sun"])))
+		material.set_shader_parameter("light_mask", load(dir.path_join(info["light"])))
+		material.set_shader_parameter("map_size", _terrain.map_size)
+		material.set_shader_parameter("map_position", sprite.position)
+		material.set_shader_parameter("patch_size", sprite.texture.get_size())
+		sprite.material = material
+		_map.add_child(sprite)                        # on the wall, behind FX and actors
+		_patches[pane["id"]] = sprite
+	_compose_fixed()
 	_parts.clear()
 	_rings.clear()
 
 
 ## Standing on the box (not jumping off it).
 func on_box() -> bool:
-	return (box != null and box.top > 0.0 and not _player.is_airborne()
+	return (box != null and not box.gone and box.lift < 1.0 and box.top > 0.0 and not _player.is_airborne()
 			and _player.height_above_floor() >= box.top - 1.0 and box.covers(_player.world_pos, 2.0))
 
 
@@ -108,6 +164,156 @@ func fix(id: String) -> void:
 			Audio.play("pane_mend", pane["px"])
 			if pane["seen"]:
 				_rings.append([pane["px"], 0.0, 0.6])
+	_compose_fixed()
+	(get_parent().get_node("InteriorFX") as InteriorFX).seal_window(id)
+	if _patches.has(id):
+		_patches[id].queue_free()
+		_patches.erase(id)
+	_mend_dome()
+
+
+## Every pane mended: the storage room's dome outside has whole glass again (DomeFX draws it).
+func _mend_dome() -> void:
+	if _dome != "" and repair.all_fixed(_pane_ids()):
+		repair.dome_mended = _dome
+
+
+## Compose the complete sealed room state, including its colour, sun and light replacements,
+## then paused scan rows. The live shader adds new rows while scanning. Camera swings and
+## machine variant swaps receive the same fully restored map, rather than a hole-shaped patch.
+func _compose_fixed() -> void:
+	var image := (load(_map_source) as Texture2D).get_image().duplicate() as Image
+	image.convert(Image.FORMAT_RGBA8)
+	var sun := (load(_sun_source) as Texture2D).get_image().duplicate() as Image
+	var light := (load(_light_source) as Texture2D).get_image().duplicate() as Image
+	var dir := _terrain.view_json.get_base_dir()
+	for state: Dictionary in _restorations:
+		var fixed: Array = state["panes"]
+		if fixed.size() != repair.fixed.size() or not fixed.all(func(id: String) -> bool: return repair.fixed.has(id)):
+			continue
+		if state.has("file"):
+			var replacement := (load(dir.path_join(state["file"])) as Texture2D).get_image()
+			replacement.convert(Image.FORMAT_RGBA8)
+			var at := Vector2i(state["position"][0], state["position"][1])
+			var rect := Rect2i(Vector2i.ZERO, replacement.get_size())
+			image.blend_rect(replacement, rect, at)
+			sun.blit_rect((load(dir.path_join(state["sun"])) as Texture2D).get_image(), rect, at)
+			light.blit_rect((load(dir.path_join(state["light"])) as Texture2D).get_image(), rect, at)
+		break
+	for pane in panes:
+		var info: Dictionary = pane["patch"]
+		if repair.fixed.has(pane["id"]):
+			continue
+		var progress := 0.0
+		if repair.puzzles.has(pane["id"]):
+			progress = repair.puzzles[pane["id"]].scan
+		if progress <= 0.0 or info.is_empty():
+			continue
+		var patch := (load(_terrain.view_json.get_base_dir().path_join(info["file"])) as Texture2D).get_image().duplicate() as Image
+		patch.convert(Image.FORMAT_RGBA8)
+		if progress < 1.0:
+			var height := (load(_terrain.view_json.get_base_dir().path_join(info["height"])) as Texture2D).get_image()
+			for y in patch.get_height():
+				for x in patch.get_width():
+					if height.get_pixel(x, y).r > progress:
+						patch.set_pixel(x, y, Color.TRANSPARENT)
+		image.blend_rect(patch, Rect2i(Vector2i.ZERO, patch.get_size()), Vector2i(info["position"][0], info["position"][1]))
+	_terrain.map_texture = ImageTexture.create_from_image(image)
+	_map.texture = _terrain.map_texture
+	_terrain.sun_mask = ImageTexture.create_from_image(sun)
+	_terrain.light_mask = ImageTexture.create_from_image(light)
+	(get_parent().get_node("DayNight") as DayNight).set_masks(_terrain.light_mask, _terrain.sun_mask)
+
+
+func in_reach(id: String) -> bool:
+	for pane in panes:
+		if pane["id"] != id:
+			continue
+		return (pane["seen"] and _player.world_pos.distance_to(pane["world"]) < NEAR
+				and _player.height_above_floor() >= float(pane["reach_min_height"])
+				and _player.height_above_floor() < 36.0 and (_player.is_airborne() or on_box()))
+	return false
+
+
+func open_window(id: String) -> bool:
+	if panel.opened or not _catalog.has(id) or repair.fixed.has(id) or not in_reach(id) or get_tree().paused or _player.puppet or not _player.controls_enabled or _player.turning or _player.tool_state != Player.Tool.READY or _tool._lifted != null or _tool.inventory_suppressed or _tool.repair_suppressed:
+		return false
+	if GameState.item_count("glass") < int(_catalog[id]["cost"]):
+		Audio.play("ui_deny")
+		return false
+	_tool.cancel_work()
+	_tool.window_suppressed = true
+	_panel_controls = _player.controls_enabled
+	_player.controls_enabled = false
+	_active = id
+	_tool.window_panel_open = true
+	panel.open(repair.puzzle_for(id, _catalog[id]))
+	return true
+
+
+func _panel_closed() -> void:
+	Audio.release("window:scan")
+	_player.work_target = null
+	_player.controls_enabled = _panel_controls
+	_release_guard = true
+	_tool.window_suppressed = true
+	_tool.window_panel_open = false
+	_active = ""
+	_compose_fixed()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_echo() and event.is_action_pressed("interact") and nearest != "" and not _release_guard:
+		open_window(nearest)
+		get_viewport().set_input_as_handled()
+
+
+func _update_panel(delta: float) -> void:
+	nearest = ""
+	if _release_guard and not Input.is_action_pressed("interact") and not Input.is_action_pressed("tool_use"):
+		_release_guard = false
+	if panel.opened:
+		if not in_reach(_active) or get_tree().paused or _player.puppet or GameState.survival.dead:
+			panel.close()
+		else:
+			var puzzle := panel.puzzle
+			if puzzle.scanning():
+				for pane in panes:
+					if pane["id"] == _active:
+						_player.work_target = pane["hole"]
+						Audio.loop("beam_fix", "window:scan", pane["px"])
+				if puzzle.advance(delta) and GameState.consume_item("glass", int(puzzle.definition["cost"])):
+					var completed := _active
+					puzzle.done = true
+					Audio.release("window:scan")
+					_player.work_target = null
+					# Release the modal BEFORE the collapse snapshots player controls.
+					if repair.fixed.size() == panes.size() - 1:
+						panel.close()
+					fix(completed)
+	else:
+		if not get_tree().paused and _player.controls_enabled and not _player.puppet and not _player.turning and not _tool.inventory_suppressed and not _tool.repair_suppressed and not _tool.suppressed and _tool._lifted == null:
+			for pane in panes:
+				if not repair.fixed.has(pane["id"]) and in_reach(pane["id"]):
+					nearest = pane["id"]
+					break
+	_tool.window_suppressed = panel.opened or _release_guard or (nearest != "" and _player.tool_state == Player.Tool.READY)
+	for id in _patches:
+		var progress := 0.0
+		if repair.puzzles.has(id):
+			progress = repair.puzzles[id].scan
+		_patches[id].visible = progress > 0.0
+		_patches[id].material.set_shader_parameter("scan", progress)
+
+
+func _exit_tree() -> void:
+	Audio.release("window:scan")
+	if is_instance_valid(_tool):
+		_tool.window_suppressed = false
+		_tool.window_panel_open = false
+	if is_instance_valid(_player) and panel != null and panel.opened:
+		_player.controls_enabled = _panel_controls
+		_player.work_target = null
 
 
 ## Test hooks: set the box down under pane `id`, as near the wall as it fits. Returns where.
@@ -134,17 +340,19 @@ func _landed(_impact: float) -> void:
 		return
 	if repair.crack_box(pane):
 		_crack()
-	if STAND_IN_FIX and repair.box_cracks.has(pane):
-		fix(pane)
 
 
 func _process(delta: float) -> void:
 	if box == null or _player == null:
 		return
+	_update_panel(delta)
+	if get_tree().paused:
+		_prompt.queue_redraw()
+		return
 	if not repair.box_broken:
 		if box.lift <= 0.0 and not box.gone:
 			repair.box_world = box.world                # wherever it was last set down
-		if _groan < 0.0 and repair.all_fixed(_pane_ids()) and on_box():
+		if _groan < 0.0 and not panel.opened and repair.all_fixed(_pane_ids()) and on_box():
 			_start_groan()
 	if _groan >= 0.0:
 		_groan += delta
@@ -175,6 +383,7 @@ func _process(delta: float) -> void:
 		i += 1
 	queue_redraw()
 	_glow.queue_redraw()
+	_prompt.queue_redraw()
 
 
 func _pane_ids() -> Array:
@@ -255,6 +464,16 @@ func _dust(at: Vector2, n: int) -> void:
 		var a := TAU * k / n
 		_parts.append([at + Vector2(cos(a) * 6, sin(a) * 2), Vector2(cos(a), sin(a) * 0.45) * randf_range(12, 24),
 				0.0, randf_range(0.6, 0.9), DUST, 2, -4.0, true])
+
+
+func _draw_prompt() -> void:
+	if nearest != "" and not panel.opened:
+		var label := "F - REPAIR WINDOW" if GameState.item_count("glass") >= 6 else "NEED 6 GLASS"
+		if _player.tool_state != Player.Tool.READY:
+			label = "T - EQUIP MULTITOOL"
+		var p := _player.global_position + Vector2(-PixelFont.width(label) / 2.0, -65)
+		_prompt.draw_rect(Rect2(p - Vector2(3, 3), Vector2(PixelFont.width(label) + 6, 11)), Color("#22182c"))
+		PixelFont.draw(_prompt, p.round(), label, Color("#efb950"))
 
 
 func _draw() -> void:

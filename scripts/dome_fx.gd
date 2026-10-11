@@ -7,6 +7,13 @@ extends Node2D
 ##
 ## Sit this node between the map and the player: its lights draw under the player, its
 ## sprites (on top of the domes) draw over anyone walking behind a dome.
+##
+## Mended glass: once a base room's windows are mended from inside
+## (GameState.window_repair.dome_mended), each of its holes gets the glass back - the patch the
+## map generator exported with it (red_planet_fx.json -> cracks), laid over the map like the map
+## itself, so the hole, its bright rim and its cracks are gone in every view.
+
+const GLASS := preload("res://shaders/dome_glass.gdshader")
 
 const RIM_BRIGHT := Color("#e2fff6")
 const RIM_GLOW := Color(0.5, 0.95, 0.85, 0.3)
@@ -20,6 +27,7 @@ const DOOR_GLOW := Color(1.0, 0.7, 0.3, 0.28)
 @export var beacon_period := 2.0
 
 var _sprites: Array = []   # [Sprite2D, frame count, fps]
+var _glass: Array[Sprite2D] = []   # mended holes: the glass as it was
 var _rim: Array = []       # [Vector2, phase around the rim]
 var _doors: Array = []     # [Vector2, phase]
 var _beacon := Vector2.ZERO
@@ -65,6 +73,32 @@ func load_view(meta_path: String) -> void:
 		_beacon = Vector2(b[0], b[1])
 	_door_lit.resize(_doors.size())
 	_door_lit.fill(false)
+	_load_glass(meta_path, meta, dir)
+
+
+## This view's mended holes: a patch of whole glass over each hole in the mended room.
+func _load_glass(meta_path: String, meta: Dictionary, dir: String) -> void:
+	for spr in _glass:
+		spr.queue_free()
+	_glass.clear()
+	var room := GameState.window_repair.dome_mended
+	if room == "" or not meta.has("fx"):
+		return
+	var fx := ViewData.fx_of(meta_path, meta)
+	var mat := ShaderMaterial.new()
+	mat.shader = GLASS
+	for c in fx.get("cracks", []):
+		if c["room"] != room:
+			continue
+		var spr := Sprite2D.new()
+		spr.texture = load(dir.path_join(c["patch"]))
+		spr.centered = false
+		spr.position = Vector2(c["patch_pos"][0], c["patch_pos"][1])
+		spr.material = mat
+		spr.set_meta("world", Vector3(c["world"][0], c["world"][1], c["world"][2]))
+		spr.set_meta("anchor", Vector2(c["center"][0], c["center"][1]) - spr.position)
+		add_child(spr)
+		_glass.append(spr)
 
 
 ## The moving parts on the domes, for the camera's turn: billboards (see TurnOverlay._board).
@@ -76,6 +110,9 @@ func boards() -> Array:
 			continue
 		var w := spr.texture.get_width() / float(spr.hframes)
 		out.append({"tex": spr.texture, "region": Rect2(spr.frame * w, 0.0, w, spr.texture.get_height()),
+				"anchor": spr.get_meta("anchor"), "world": spr.get_meta("world")})
+	for spr in _glass:
+		out.append({"tex": spr.texture, "region": Rect2(Vector2.ZERO, spr.texture.get_size()),
 				"anchor": spr.get_meta("anchor"), "world": spr.get_meta("world")})
 	return out
 

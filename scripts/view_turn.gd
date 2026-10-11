@@ -40,6 +40,7 @@ const WISH_PATIENCE := 8.0
 
 var _pending := 0
 var _keep := {}                  # resource path -> resource: views kept loaded
+var _paths_of := {}              # view JSON -> the files that view needs
 var _overlay: TurnOverlay
 var _wish := 0                   # a press waiting for its view's pictures to load
 var _wish_left := 0.0
@@ -160,11 +161,15 @@ func _turn(step: int) -> void:
 ## the forced load this file used to do, and rebinding the map's own huge textures), but it is the
 ## part that was unbounded: a cold cache could add a hundred milliseconds of PNG decode.
 func _paths(k: int) -> Array[String]:
-	var out: Array[String] = []
+	# Keyed by the view's own JSON, not by its heading: the interior swaps every view for a
+	# repaired one (MapTerrain.replace_variant), and those are different files.
 	var path := terrain.views[posmod(k, terrain.views.size())]
+	if _paths_of.has(path):
+		return _paths_of[path]               # worked out once: a view's files do not change
+	var out: Array[String] = []
 	var meta := ViewData.get_json(path)
 	if meta.is_empty():
-		return out
+		return out                           # not cached: a missing view may just be a slow disk
 	var dir := path.get_base_dir()
 	var game: Dictionary = meta["game"]
 	if not terrain.streaming:
@@ -196,6 +201,7 @@ func _paths(k: int) -> Array[String]:
 			out.append(dir.path_join(d["file"]))
 	if meta.has("door"):                       # the interior's one door is named in its meta
 		out.append(dir.path_join(meta["door"]["file"]))
+	_paths_of[path] = out
 	return out
 
 

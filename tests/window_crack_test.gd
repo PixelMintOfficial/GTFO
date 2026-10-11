@@ -2,8 +2,9 @@ extends Node
 ## Checks for storage's smashed panes and the cargo box (WindowCracks, WindowRepair), against the
 ## real interior and real jumps: the box blocks you from the floor, a held jump lands you on top,
 ## walking off the edge drops you, the tool lifts it but never from under your own feet; standing
-## on it under a pane cracks it once and (for now) mends the pane; after the third, it gives way,
+## on it under a pane only cracks it once; only finishing all three repairs makes it give way,
 ## you go down with it, and its rations spill to be gathered; all of it survives a scene reload.
+## Outside, the storage room's dome gets its glass back once all three windows are mended.
 ## Run: godot --headless --path . res://tests/window_crack_test.tscn  (failures exit nonzero)
 
 var _checks := 0
@@ -21,6 +22,7 @@ func _ready() -> void:
 	_model()
 	_data()
 	await _scene()
+	await _outside()
 	print("WINDOW CRACK TESTS: %d checks, %d failures" % [_checks, _failures])
 	await Audio.quit(1 if _failures else 0)
 
@@ -139,18 +141,20 @@ func _scene() -> void:
 	_check(tool._lifted == null and terrain.platforms.size() == 1 and box.lift == 0.0, "set down, you can stand on it again")
 	_check(GameState.window_repair.box_world == box.world, "where it was set down is kept")
 
-	# under each pane: one crack, the pane mended (the stand-in), no more cracks
+	# under each pane: wear alone never repairs the glass or collapses the box
 	cracks.place_box_under("burst")
 	player.teleport(box.world)
 	await _hop(player)
 	_check(GameState.window_repair.damage() == 1 and box.sprite.frame == 1, "under the first pane the box cracks")
-	_check(GameState.window_repair.fixed.has("burst"), "and (for now) that mends the pane")
+	_check(not GameState.window_repair.fixed.has("burst"), "landing never mends the pane")
 	await _hop(player)
 	_check(GameState.window_repair.damage() == 1, "jumping on it again there cracks nothing more")
+	cracks.fix("burst")
 	cracks.place_box_under("crescent")
 	player.teleport(box.world)
 	await _hop(player)
 	_check(GameState.window_repair.damage() == 2 and box.sprite.frame == 2, "the second pane: the second crack")
+	cracks.fix("crescent")
 
 	# leave and come back: the box is where you left it, as cracked as it was
 	var kept := box.world
@@ -171,7 +175,13 @@ func _scene() -> void:
 	cracks.place_box_under("gash")
 	player.teleport(box.world)
 	await _hop(player)
-	_check(GameState.window_repair.damage() == 3 and GameState.window_repair.all_fixed(cracks._pane_ids()), "the third pane cracks it a third time")
+	_check(GameState.window_repair.damage() == 3 and not GameState.window_repair.all_fixed(cracks._pane_ids()), "the third landing leaves its window open")
+	await _wait(WindowCracks.GROAN + .2)
+	_check(not GameState.window_repair.box_broken and box.top > 0 and player.controls_enabled, "the box stays usable at third wear until the final repair")
+	_check(GameState.window_repair.dome_mended == "", "two panes mended: the dome outside is still broken")
+	cracks.fix("gash")
+	_check(GameState.window_repair.dome_mended == "command", "all three mended: so is the storage room's dome outside")
+	await _wait(.05)
 	_check(not player.controls_enabled, "it groans under you")
 	await _wait(WindowCracks.GROAN + 0.2)
 	_check(GameState.window_repair.box_broken and box.job == "" and box.sprite.frame == box.sprite.hframes - 1, "it gives way")
@@ -186,7 +196,7 @@ func _scene() -> void:
 	_check(tool._find_target() != box, "the wreck is nothing for the tool")
 	for p in spilled:
 		_check(not box.covers(p.world, 4.0), "a ration lands clear of the wreck")
-	for attempt in 8:                                   # the tool may take a neighbour first: go round till none are left
+	for attempt in 20:                                  # nearby glass is also legitimate salvage; gather until rations are gone
 		var left := spilled.filter(func(p: Variant) -> bool: return is_instance_valid(p) and not p.gone)
 		if left.is_empty():
 			break
@@ -213,4 +223,32 @@ func _scene() -> void:
 			left += 1
 	_check(box.sprite.frame == box.sprite.hframes - 1 and box.job == "" and left == 0, "the wreck stays; gathered rations stay gathered")
 	room.queue_free()
+	await get_tree().process_frame
+
+
+## Outside, the mended room's holes get their glass back, in every view that shows them, and
+## stand in the camera's swing; nothing is mended outside until the windows are.
+func _outside() -> void:
+	GameState.intro_done = true
+	GameState.arrive = ""
+	var world := load("res://scenes/overworld.tscn").instantiate() as Node2D
+	get_tree().root.add_child(world)
+	await get_tree().process_frame
+	var terrain: MapTerrain = world.terrain
+	var domes: DomeFX = world.dome_fx
+	for k in 4:
+		terrain.load_view(k)
+		domes.load_view(terrain.view_json)
+		var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+		var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json.get_base_dir().path_join(meta["fx"])))
+		var holes := (fx["cracks"] as Array).filter(func(c: Dictionary) -> bool: return c["room"] == "command")
+		_check(domes._glass.size() == holes.size(), "view %d: glass over every hole of the mended room" % k)
+		for i in mini(holes.size(), domes._glass.size()):
+			_check(domes._glass[i].position == Vector2(holes[i]["patch_pos"][0], holes[i]["patch_pos"][1]),
+					"view %d: the glass sits where its hole was" % k)
+		_check(domes.boards().size() >= holes.size(), "view %d: the mended glass stands in the camera's swing" % k)
+	GameState.window_repair.dome_mended = ""
+	domes.load_view(terrain.view_json)
+	_check(domes._glass.is_empty(), "nothing mended outside until the windows are")
+	world.queue_free()
 	await get_tree().process_frame

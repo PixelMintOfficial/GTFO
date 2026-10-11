@@ -125,7 +125,7 @@ func load_view(k: int) -> void:
 		max_view_px = Vector2(meta["zoom"]["max_view_px"][0], meta["zoom"]["max_view_px"][1])
 		for f in meta["zoom"].get("frames", {}).values():
 			frames.append(Rect2(f[0], f[1], f[2], f[3]))
-	streaming = not tiles_in(heading).is_empty()
+	streaming = not tiles_in(heading).is_empty() and not MapStream.disabled()
 	sun_mask = load(dir.path_join(game["sun_png"])) if game.has("sun_png") else null
 	if streaming:
 		return                               # MapStream stitches the picture, depth and light

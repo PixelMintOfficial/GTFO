@@ -16,7 +16,7 @@ var heading := 0
 var clock := 8.0
 
 ## Backpack: first six slots are the hotbar. Only the multitool can be equipped;
-## ore is stored; three scraps are consumed atomically on successful machine crack repair;
+## ore is stored; three scraps per machine and six glass per window are spent on completion;
 ## ration/water restore vitals through consume_slot().
 signal inventory_changed
 const HOTBAR_SIZE := 6
@@ -26,6 +26,7 @@ const ITEMS := {
 	"multitool": {"name": "MULTITOOL", "detail": "T TO EQUIP - F TO WORK", "stack": 1},
 	"ore_chunk": {"name": "ORE", "detail": "COLLECTED FROM ORE ROCKS", "stack": STACK_LIMIT},
 	"scrap": {"name": "SCRAP", "detail": "SALVAGED MATERIAL", "stack": STACK_LIMIT},
+	"glass": {"name": "GLASS", "detail": "6 FRAGMENTS TO SEAL A WINDOW", "stack": STACK_LIMIT},
 	"ration": {"name": "RATION", "detail": "C TO EAT", "stack": STACK_LIMIT},
 	"water": {"name": "WATER", "detail": "C TO DRINK", "stack": STACK_LIMIT},
 }
@@ -40,6 +41,8 @@ var machine_repairs: Dictionary = {}
 ## world ledger, which holds the rations the box spills.
 var window_repair := WindowRepair.new()
 var survival := SurvivalState.new()
+## Solar routing/closed feeds persist through camera turns, airlocks and rescue.
+var solar_field := SolarFieldState.new()
 ## Initial developer vital overrides apply once, never on airlock transitions or rescue.
 var survival_debug_initialized := false
 
@@ -48,6 +51,11 @@ func repair_for(machine_id: String) -> MachineRepair:
 	if not machine_repairs.has(machine_id):
 		machine_repairs[machine_id] = MachineRepair.new(machine_id, randi())
 	return machine_repairs[machine_id]
+
+
+## Repair restores the equipment; the outdoor collector supplies its electrical input.
+func base_powered() -> bool:
+	return solar_field.supplies_power() and repair_for(solar_field.field["engine_room"]).progress() >= 1.0
 
 
 func _ready() -> void:
