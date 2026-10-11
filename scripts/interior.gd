@@ -8,6 +8,7 @@ extends Node2D
 ## --face=DX,DY  --equip (take the tool out)  --use (then hold F: works, or lifts, what is in reach)
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ## --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
+## --dev-panel / --dev-freeze=hunger,thirst,oxygen (master control panel, F1; see DevPanel)
 ## --repair=power|oxygen opens its current task (three demo scraps supplied for captures).
 ## --repair-done=power|oxygen|both marks both tasks for repaired-art captures.
 ## --repair-circuit=power|oxygen skips cracks only for circuit screenshots/tests.
@@ -82,6 +83,9 @@ func _ready() -> void:
 	var survival_hud := SurvivalHUD.new()
 	add_child(survival_hud)
 	survival_hud.setup(player, multitool)
+	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
+	add_child(dev_panel)
+	dev_panel.setup(player)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards)

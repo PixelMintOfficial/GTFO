@@ -123,6 +123,7 @@ check-tests:
 	@$(GODOT) --headless --path . res://tests/repair_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/view_turn_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_crack_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/dev_panel_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_glass_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_restore_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error|[1-9][0-9]* failures' /tmp/gtfo-tests.log \

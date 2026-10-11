@@ -78,7 +78,9 @@ func _overworld() -> void:
 	var terrain: MapTerrain = world.terrain
 	var start := player.world_pos
 	var facing := player.facing_dir()
+	(world.get_node("Multitool") as Multitool)._spawn_prop("crate", start + Vector2(30, 10), 0, "lift", 7.0, true)   # the world has no test props
 	var props := _props(world)
+	_check(not props.is_empty(), "a prop to follow round")
 	_check(terrain.heading == 0, "starts on view 0")
 	for step in [KEY_H, KEY_H, KEY_G, KEY_H, KEY_H]:
 		await _tap(step)

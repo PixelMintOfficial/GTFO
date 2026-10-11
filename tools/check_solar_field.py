@@ -19,10 +19,12 @@ from solar_layout import load_field
 
 # The original main map (27b92c9), before solar work: exact instance placement/order in each
 # view. Hardware pads must not reroll or remove the forest. Update only for authored flora changes.
+# 2026-10-11: the trail lamps went (TRAIL_LAMPS); placements are identical, but three plants whose
+# glow a lamp post hid now show it (the last field, live_glow_flags): views 0 and 2 updated.
 ORIGINAL_FLORA = [
-    'a4c4e4a0d2cb9fea946e53f924db293b34a713822c82ed217154ae458f896213',
+    'bafe18a8a80839e8484a82cc15d73a4af6c5522f77743ac756a99220798c5c35',
     '7a6df5795b1308c51abbace62fab83483b6af2ab7b04fa035f9ed2139803bb7b',
-    '52ef077879cdca28288ec00ff7a2b3ce4896eee064d67dfdeb0896a4b8c3a972',
+    '9b120fe5fccb2fe54d6c3b124e226f060d7239551791780f37ccefe9e92fb885',
     'a4e398087fb1577b1731a1b00f7f86df9e071274f1070d526b1a369c3d6076f6',
 ]
 

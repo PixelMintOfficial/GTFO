@@ -19,6 +19,7 @@ extends Node2D
 ##   --door                 walk up to the base's airlock and go in (the whole cutscene)
 ##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
+##   --dev-panel / --dev-freeze=hunger,thirst,oxygen   master control panel (F1; see DevPanel)
 ##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
 ##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
 ##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
@@ -80,6 +81,9 @@ func _ready() -> void:
 	var survival_hud := SurvivalHUD.new()
 	add_child(survival_hud)
 	survival_hud.setup(player, multitool)
+	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
+	add_child(dev_panel)
+	dev_panel.setup(player)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()

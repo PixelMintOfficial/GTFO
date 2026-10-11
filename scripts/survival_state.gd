@@ -10,6 +10,9 @@ var config: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://
 var values: Dictionary = {}
 var dead := false
 var cause := ""
+## Needs held where they are (development: DevPanel): kind -> true. No drain, no recovery, no
+## damage from them. Kept through rescue, like the rest of the session.
+var frozen := {}
 var _damage_time := {"oxygen": 0.0, "hunger": 0.0, "thirst": 0.0}
 
 
@@ -63,6 +66,9 @@ func advance(seconds: float, breathable: bool, sprinting: bool) -> void:
 	while remaining > 0.00001 and not dead:
 		var step := minf(remaining, 0.25)
 		for kind in ["oxygen", "hunger", "thirst"]:
+			if frozen.has(kind):
+				_damage_time[kind] = 0.0
+				continue
 			var rules: Dictionary = config[kind]
 			var rate: float = rules["depletion"]
 			if kind == "oxygen" and breathable:

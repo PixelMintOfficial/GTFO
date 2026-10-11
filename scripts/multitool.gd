@@ -148,16 +148,24 @@ func setup(props_json: String, player: Player, terrain: MapTerrain, actors: Node
 			var prop := _spawn_prop(o.get("kind", "ore_chunk"), o["world"], o["frame"], "gather", o.get("radius", 2.5), false)
 			prop.set_meta("inventory_id", id)
 	for l in data["lamps"]:
-		var w := Vector2(l["world"][0], l["world"][1])
-		_lamps.append({"world": w, "head": _lamp_head(l, terrain.heading), "heads": l.get("head_px_views", [l["head_px"]]),
-				"base": terrain.to_screen(w, terrain.height_at(w)).round(),
-				"lit": false, "progress": 0.0, "t": 0.0, "radius": 4.0, "job": "fix"})
-		var lg := Node2D.new()
-		lg.material = add
-		lg.position = Vector2(0, _lamps[-1]["base"].y + 1.0)
-		lg.draw.connect(_draw_lamp.bind(lg, _lamps[-1]))
-		actors.add_child(lg)
-		_lamp_glows.append(lg)
+		add_lamp(l)
+
+
+## A dead lamp to fix, from the props data: world, head_px (and head_px_views). Returns it.
+func add_lamp(l: Dictionary) -> Dictionary:
+	var w := Vector2(l["world"][0], l["world"][1])
+	_lamps.append({"world": w, "head": _lamp_head(l, _terrain.heading), "heads": l.get("head_px_views", [l["head_px"]]),
+			"base": _terrain.to_screen(w, _terrain.height_at(w)).round(),
+			"lit": false, "progress": 0.0, "t": 0.0, "radius": 4.0, "job": "fix"})
+	var lg := Node2D.new()
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	lg.material = add
+	lg.position = Vector2(0, _lamps[-1]["base"].y + 1.0)
+	lg.draw.connect(_draw_lamp.bind(lg, _lamps[-1]))
+	_actors.add_child(lg)
+	_lamp_glows.append(lg)
+	return _lamps[-1]
 
 
 ## This view's drawing of each kind of prop.

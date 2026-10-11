@@ -98,6 +98,7 @@ scripts/
   interior_fx.gd       sun shafts and dust, sparks, leaking gas, fault LEDs, room-name toast
   map_screen.gd        M: full map overview (pauses the game)
   pixel_font.gd        PixelFont: the 3x5 pixel font for every bit of in-game text
+  dev_panel.gd         DevPanel: F1 master control panel (debug builds): set the time, freeze needs
 shaders/
   day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky())
   map_light            the map: time of day, with its light mask kept lit (and indoors the sun mask)
@@ -258,6 +259,7 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | turn_left / turn_right (turn the camera a quarter turn) | G / H | d-pad left / right | view_turn.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
+| dev_panel (debug builds only) | F1 | Guide | dev_panel.gd |
 
 F / gamepad X is shared: while a door's prompt is showing, the door sets
 `multitool.suppressed = true`, so it opens the door instead of using the tool.
@@ -310,6 +312,8 @@ camera turns reproject equipment and rays without changing the optical puzzle.
     clamped mutation APIs. `data/survival.json` owns balance, starter supplies and consumable
     restoration. `consume_slot` uses the existing inventory. `rescue` restores vitals and
     supplies at overworld spawn while preserving session progress. See docs/survival.md.
+    `frozen` (kind -> true) holds needs still - no drain, recovery or damage - set from the
+    master control panel; it is kept through rescue.
   - `solar_field`: `SolarFieldState`: thirteen world mirror orientations, three closed/open
     feeds and cached optical routes. All three complete 4/5/4 routes supply the base reactor;
     `base_powered()` also requires its existing machine repair. State survives turns, airlocks
@@ -448,7 +452,7 @@ consts in the named files.
     | mine | orange `#ff8a3a` | ore rock | hold F for 1.6 s; the rock bursts into chunks |
     | gather | teal `#4fe0c8` | ore chunk, scrap, ration pack | hold F for 0.55 s; a spiral pulls it into the backpack |
     | lift | violet `#b583ff` | crate, cargo box | tap F to float it so it follows you; tap again to set it down (never the box under your feet) |
-    | fix | cyan `#7fd8ff` | dead lamp | hold F for 2.4 s; the lamp flickers back on |
+    | fix | cyan `#7fd8ff` | dead lamp (none placed now) | hold F for 2.4 s; the lamp flickers back on |
 
   - Inventory shows resource stack counts; survival meters above it are approved (§12).
 - **Inventory** (`inventory_ui.gd`): six-slot bottom hotbar; E / Start toggles the paused
@@ -523,6 +527,13 @@ consts in the named files.
     all routes sends a charge wave through receiver cells, lights its crown and pulses outward.
   - Canonical `SolarOptics` and session `SolarFieldState` are separate from `SolarField`
     input, `SolarFieldFX` animation and `SolarPowerInput` wall lenses. No prototype navigation box.
+- **Outdoors** there are no loose test props (ore rocks, scrap, crates) and no trail lamps any
+  more (owner, §12); the gather/mine/lift/fix jobs remain for the base and what comes next.
+- **Master control panel** (`dev_panel.gd`, editor and debug builds only): F1 / Guide opens it
+  in either scene, outside cutscenes and pauses. Set the time in half-hour steps or to a part
+  of the day (dawn, morning, noon, evening, night; same day), and freeze food, water and
+  oxygen where they are (`GameState.survival.frozen`). The clock runs on while it is open; the
+  astronaut stands still. Arrows / d-pad, Enter / A, Esc / B / F1 closes; mouse works too.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -588,6 +599,10 @@ designs can be compared or restored:
 - `BASE_DESIGN` = `v1` | `hex` | `v2` | `v3` (default **v3**) — the main base.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
 - `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
+- `TRAIL_LAMPS` = `0` | `1` (default **0**) — the lamps along the trails (and their light). Off,
+  their spots still keep plants and the spawn clear, so the forest and spawn are unchanged.
+- `TEST_PROPS` = `0` | `1` (default **0**) — `props_gen.py`'s ore/scrap/crate test set by the
+  spawn. Its sprite sheets are always written: the interior reuses them.
 - `MAP_OUT=<folder>` writes the map somewhere else, so you can preview a design without
   replacing the game's map.
 - `MAP_VIEWS=0` (or `013`...) renders only those views (map and interior) - quick to check a
@@ -747,7 +762,8 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
   - Lands blend with soft, dithered, domain-warped edges, never hard lines.
 - **Trails, not roads.** Nothing is drawn on the ground: a trail is the way through where
   nothing grows. Toward a trail the forest thins out gradually and unevenly, and tall plants keep
-  out of the strip just in front of it (from this camera they would hide it). Lamps line the way.
+  out of the strip just in front of it (from this camera they would hide it). No lamps line
+  the trails any more (owner, §12; `TRAIL_LAMPS=1` restores them).
   Trails wind; they are never straight. The map screen shows them as dotted routes.
 - **The main base (v3):**
   - three smooth white rooms joined by corridors;
@@ -833,6 +849,7 @@ godot --headless --path . res://tests/repair_test.tscn                # circuits
 godot --headless --path . res://tests/view_turn_test.tscn             # turning the camera, in both scenes
 godot --headless --path . res://tests/window_crack_test.tscn          # the cargo box: jump on, lift, crack, break, rations
 godot --headless --path . res://tests/window_glass_test.tscn          # live reach, real input, scans, cost, final collapse
+godot --headless --path . res://tests/dev_panel_test.tscn            # master control panel: time, frozen needs, real keys
 godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
@@ -843,6 +860,7 @@ godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
 - `--quit=SECONDS`, `--audio-debug`, `--equip`, `--use`, `--face=DX,DY` (both scenes)
+- `--dev-panel` (open the master control panel), `--dev-freeze=hunger,thirst,oxygen` (both, debug builds)
 - overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`,
   `--dome-mended=ROOM` (that room's dome glass whole again; `command` = storage's)
 - interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
@@ -896,8 +914,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   gauntlet) is the default.
 - Main base design **v3** is the default. The old designs stay available as versions.
 - The three lands and where they are; the comms massif.
-- **Trails are not drawn on the ground**: they form where the plants thin out, and lamps line
-  them.
+- **Trails are not drawn on the ground**: they form where the plants thin out (no trail lamps
+  since 2026-10-11, §12).
 - The base starts dead and broken; it gets repaired through play.
 - **Compact HUD only**; four survival meters, inventory stack counts, a six-slot hotbar,
   local machine repair progress and the time panel are approved (§12).
@@ -1005,8 +1023,9 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - The overworld's `command` room (storage, inside) has two holes; the interior has three.
     Mending all three inside mends both outside. Habitat's and garage's holes stay open until
     their own rooms get interiors and repairs.
-- **The multitool works on test props only** (ore rocks, chunks, scrap and crates near the
-  spawn, from `props_gen.py`). Real ore deposits are not placed yet.
+- **Nothing outdoors for the multitool yet**: the test props and dead trail lamps were removed
+  (`TEST_PROPS=1` / `TRAIL_LAMPS=1` bring them back). Real ore deposits are not placed yet; the
+  tool works on the base's scrap, glass, cargo box and rations. The tests bring their own props.
 - **Inventory is implemented:** session backpack, resource stacks, quick access and slot
   swaps. Resources are gathered through the existing tool; ration/water consumption is
   implemented, and three scraps per successful crack repair are consumed atomically.
@@ -1198,3 +1217,10 @@ Write one line per decision: date — decision (who approved it).
   is retained as `SOLAR_FEED_DESIGN=shield`. Fixed mirror mounting offsets permit routes to
   follow the landscape; finite optics and generated orientations share the same geometry.
   F/X controls, 4/5/4 counts, mountain feed, original forest and wall inlet lenses are retained.
+- 2026-10-11 — Owner removed the outdoor test set (ore rocks, scrap, crates by the spawn) and
+  every lamp outside: all trail lamps, lit and dead, with their light pools and posts. Kept as
+  versions: `TEST_PROPS=1`, `TRAIL_LAMPS=1`. Lamp spots still keep plants and the spawn clear, so
+  the forest is unchanged. Interior and in-dome lamps stay. The fix job remains, with no target.
+- 2026-10-11 — Owner requested a master control panel; dev-only by owner's choice (editor and
+  debug builds, F1 / Guide): set the time (half-hour steps or a part of the day) and freeze food,
+  water and oxygen (`SurvivalState.frozen`). Not part of the shipped HUD. PixelFont gains `<` `>`.
