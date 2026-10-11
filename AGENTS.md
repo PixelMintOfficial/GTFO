@@ -1233,3 +1233,6 @@ Write one line per decision: date — decision (who approved it).
   angle assignment. This visual clearance is test-only; the physical cone remains unchanged.
   Generated capture stands now select level ground in the base spawn's walk component,
   with `solar_field_gen.py --stands-only` available to refresh anchors without rerendering art.
+- 2026-10-11 — Owner requested keeping the solar wall display clear of the battery cabinets.
+  Its paired mounts move along the wall to 30/210 degrees and up to 26 units, below the coral
+  trim, with housing/lenses and anchors regenerated for all views and machine-repair variants.

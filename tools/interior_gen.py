@@ -93,6 +93,7 @@ KICK = 3.4                        # dark kick plate
 EMERG = (2.0, 2.7)                # emergency light line in it
 CORAL = (31.0, 33.0)              # coral accent strip
 WIN = (37.0, 49.0)                # the window band
+SOLAR_INLET_ANGLE = 30.0          # empty wall beside the battery bank (which starts at 52 degrees)
 LIGHT_IN = A.nz([0.62, -0.42, -0.66])   # sunlight through the holes: across to the right, forward, down
 SUN_IN = A.nz([-0.42, -0.62, 0.66])     # key light on the furniture (from the front left, above)
 HOLES = [('burst', 66.0), ('crescent', 114.0),    # storage window band (angle round the room, degrees)
@@ -1489,10 +1490,10 @@ def refresh_repair_metadata():
 
 
 def solar_input_info():
-    """A physical inlet repeater on the standing diagonal wall, clear of the reactor."""
-    angle = 45.0 if label_visible(45.0) else 225.0
-    center = room_pt('power', angle, r_in('power') - 1.0, 21.0)
-    return dict(anchor=pxl(center), world=center.tolist(), panel_id='ne' if angle == 45 else 'sw',
+    """A wall inlet beside the battery bank, above its cabinets and below the coral trim."""
+    angle = SOLAR_INLET_ANGLE if label_visible(SOLAR_INLET_ANGLE) else SOLAR_INLET_ANGLE + 180.0
+    center = room_pt('power', angle, r_in('power') - 1.0, 26.0)
+    return dict(anchor=pxl(center), world=center.tolist(), panel_id='ne' if angle == SOLAR_INLET_ANGLE else 'sw',
                 housing=f'solar_input/housing{M.view_sfx(M.VIEW)}.png',
                 lights=f'solar_input/lights{M.view_sfx(M.VIEW)}.png')
 
@@ -1510,7 +1511,7 @@ def export_solar_input():
         M.AX, M.AY = meta['origin_px']
         info = solar_input_info()
         c = np.array(info['world'])
-        angle = math.radians(45 if info['panel_id'] == 'ne' else 225)
+        angle = math.atan2(c[1] - ROOMS['power']['Y'], c[0] - ROOMS['power']['X'])
         R = A.rz(angle - math.pi / 2)
         normal = np.array([math.cos(angle), math.sin(angle), 0])
         parts = [P_('inletframe', A.RoundBox(c, [9.3, .6, 4], .45, R), 'steel', 'inlet'),
