@@ -1,7 +1,8 @@
 # Solar field
 
 The approved Sunthread web study is now a world interaction beside the main base.
-Three closed beacons feed Amber/Jade/Coral routes with 4/5/4 reflectors. Walk up
+Three closed hilltop beacons feed Amber/Jade/Coral routes with 3/3/4 reflectors
+(three yellow, three blue/teal, four red). Walk up
 and use F/X to open or close a feed, or turn a mirror clockwise 22.5 degrees.
 Q does not operate solar equipment; left shoulder retains hotbar cycling.
 Walking, survival and the clock continue. The web study's
@@ -40,31 +41,36 @@ every assigned reflector, so neither an early hit nor another channel's mirror
 can substitute for a missing reflector. Receiver radius derives from the actual
 frustum section at beam height. The authored layout physically keeps every incomplete
 path away from the receiver, including cross-channel bounces; completion gating is a
-second guard. Mirror placements/mounts prevent the reported Amber, B3 and C2 shortcuts.
+second guard. Placement checks cover all reachable orientations, including cross-channel bounces.
 
 ## Generated art and four views
 
-The receiver occupies the former array clearing at (-880, 2070), with reflectors and
-feeds around the existing red-dust terrain north of the base. Optical bounds never clear
-landscape. `mars_map_gen.py` preserves the original terrain/random-placement rules, then
-levels small equipment pads and the narrow authored Amber access path after plant placement.
-Each color's reflectors cross several parts of the clearing, including behind the receiver;
-equipment centers stay at least 80 units apart and clear of the receiver footprint.
-All original forest instances
-remain in the same positions, verified by four baseline fingerprints.
+The receiver occupies the former array clearing at (-715, 2015), farther right/down from
+the previous site. Amber's feed sits on the capped western plateau at (-1130, 2000), height
+54; Jade's feed sits on the right-hand hill at (-470, 1915), height 34; Coral's feed sits on
+the upper cliff at (-715, 2410), height 60. Ten relays spread between hilltops and the
+clearing, following shorter descending routes. Equipment centers stay at least 80 units
+apart and clear of the receiver footprint. Optical bounds never clear landscape.
 
-The Coral feed sits on the existing reachable mountain ledge at (-640, 2180), elevation
-58.28. Its natural ground is retained. It sends sunlight down to C1; C1 has a fixed tilt
-that reflects the descending beam horizontally into the remaining route. F still controls
-yaw only. Fixed mounting offsets let mirror positions follow the landscape without limiting
-the paths to a square grid; player rotation remains eight 22.5-degree steps. Finite mirror
-rectangles and the capped receiver are intersected in 3D. Source elevation and mirror mount
-math are shared with generated art; offset/tilted mirrors have one sheet per view to preserve
-their actual orientation through camera turns.
+`mars_map_gen.py` retains the original terrain/random-placement stream, then shapes the
+authored peak caps, flat plateau tops, equipment pads and graded access paths. Original
+plants retain their X/Y, variants and phases and settle onto the new ground. Four placement
+fingerprints verify the forest remains intact. `terrain.peak_caps` owns rectangular cap
+regions; `terrain.plateaus` owns elliptical tops; each has a target height and blend width.
+`access_paths.points` may include Z for a graded ramp; older X/Y points stay at ground level.
+
+Routes declare `source_elevation` and a parallel `mirror_elevations` list. The source aims
+at the first mirror's actual 3D center. Each mirror's fixed pitch and yaw offset derive
+from the incoming and outgoing elevation changes. F still controls only yaw in eight
+22.5-degree steps. Finite mirror rectangles and the capped receiver are intersected in
+3D. Elevation and mounting math are shared with generated art; offset/tilted mirrors have
+one sheet per view to preserve their actual orientation through camera turns.
 
 `tools/solar_field_gen.py` uses the existing SDF renderer, camera and ramps for eight
 mirror orientations with four reflection frames, and four feed directions with nine
-crystal deployment frames. Sprite frame selection subtracts the current camera heading.
+crystal deployment frames. Terraced beacon sheets face the actual outgoing ray; generated
+`yaw_offset` identifies the first row's world angle. Sprite frame selection subtracts the
+current camera heading while retaining that mounting angle.
 Inactive beacons have sealed metal lids. The lids open before a short faceted crystal rises
 from its socket; shutting down conceals it again. Generated `feed_visual` metadata owns the
 crystal offset, closed/open tip heights and emergence phase used by the sunlight funnels.
@@ -77,6 +83,8 @@ verification, avoiding the receiver's footprint while retaining free approaches 
 without rerendering equipment; a placement with no reachable approach fails generation.
 The prior baked array remains available for art comparisons with `SOLAR_DESIGN=array`.
 The earlier plate feed remains available with `SOLAR_FEED_DESIGN=shield`.
+The previous approved layout is retained in `data/solar_field_v1.json` with
+`SOLAR_FIELD_LAYOUT=v1`; v2 is the default. Use the same layout for generation and runtime.
 
 `interior_gen.py --solar-input-only` renders two physical inlet repeaters on opposite
 diagonal power-room walls, exporting the standing wall's housing/lens sprite and anchors
@@ -96,10 +104,10 @@ changes alone, then `make import`. No generated PNG or JSON is hand edited.
 ## Verification
 
 `make check` includes `tests/solar_field_test.tscn`: closed feeds, complete routes,
-every B4 angle, bypass guards, real keyboard/gamepad controls, modal priority,
+every mirror angle, bypass guards, real keyboard/gamepad controls, modal priority,
 physical reach/blocking, four native camera turns and cross-scene engine power.
 `tests/solar_route_search.gd` explores every physically reachable path with the actual
-finite optics, retaining consistent angle domains for all thirteen mirrors. It branches
+finite optics, retaining consistent angle domains for all ten mirrors. It branches
 only at possible hits and rejects any receiver strike missing an assigned reflector,
 covering all eight-angle combinations, cross-channel detours and revisited mirrors.
 The test pads the cone by four world units to keep unfinished rays visibly clear of its edge.
@@ -114,7 +122,10 @@ For rendered evidence, run that scene without `--headless` and append
 field through four native turns, and the engine before repair, online and losing input.
 Crystal deployment/retraction, charge/loss, Q doing nothing, normal shoulder cycling and
 individual wall-lens states are also checked. `--model-only` runs the fast optical suite.
-The mountain route also checks the descending first segment and horizontal reflected path.
+Every solved segment is checked against the actual elevated mirror center and must not
+climb. The live player walks all authored access ramps without jumping, and elevated
+controls are checked against the baked terrain height. Solved beams must clear that terrain,
+and each beacon's drawn outlet must face its actual optical ray through all four turns.
 
 Overworld capture hooks, after `--`:
 

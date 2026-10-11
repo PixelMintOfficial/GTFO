@@ -2,11 +2,13 @@ class_name SolarFieldState
 extends RefCounted
 ## Session solar controls and evaluated routes. GameState owns this through scene changes.
 ## Controls are explicit mutations; evaluation runs only after a change, never every frame.
-## All three complete 4/5/4 paths are required for electrical output. Feeds start closed.
+## All three complete authored paths are required for electrical output. Feeds start closed.
+## SOLAR_FIELD_LAYOUT=v1 retains the previous 4/5/4 layout for comparisons.
 
 signal changed
 
 const DATA := "res://data/solar_field.json"
+const DATA_V1 := "res://data/solar_field_v1.json"
 
 var field: Dictionary
 var mirrors: Array[Dictionary] = []
@@ -16,7 +18,7 @@ var routes: Array[Dictionary] = []
 
 
 func _init() -> void:
-	field = JSON.parse_string(FileAccess.get_file_as_string(DATA))
+	field = JSON.parse_string(FileAccess.get_file_as_string(DATA_V1 if OS.get_environment("SOLAR_FIELD_LAYOUT") == "v1" else DATA))
 	for group in field["routes"].size():
 		var route: Dictionary = field["routes"][group]
 		for index in route["mirrors"].size():
@@ -26,7 +28,8 @@ func _init() -> void:
 			var after := SolarOptics.point(field["collector"]["world"] if index + 1 == route["mirrors"].size() else route["mirrors"][index + 1])
 			var angle := SolarOptics.alignment(world - before, after - world)
 			orientations[id] = posmod(angle + 1 + (index + group * 3) % 7, 8)
-			var mirror := {"id": id, "world": world, "group": group, "index": index}
+			var mirror := {"id": id, "world": world, "group": group, "index": index,
+					"elevation": SolarOptics.mirror_elevation(route, index)}
 			mirror["mount"] = SolarOptics.mount(field, mirror)
 			mirrors.append(mirror)
 	_evaluate()

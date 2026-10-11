@@ -4,10 +4,12 @@
 The map generator calls static_models() to bake the collector and ground cable into
 all four maps/depth masks. This tool renders eight physical mirror orientations and
 mirror glint and crystal-deployment sheets, exports optical data and per-view pixel anchors.
+Terraced beacon sheets face their actual outgoing ray; source yaw_offset anchors four-view frames.
 Receiver masks come from the same SDF surfaces as the baked cone, for pixel-exact shine
 and energizing waves. Wall-panel art/anchors belong to interior_gen.py.
 No authored solution is stored in runtime metadata. Run through make solar (after map).
-Writes assets/maps/red_planet/solar/* and solar_field.json. No hand-edited images.
+Writes assets/maps/red_planet/solar/* and solar_field.json with the map's atomic exporters.
+No hand-edited images.
 SOLAR_FEED_DESIGN=shield retains the previous plate feed; beacon is the approved revision.
 --stands-only refreshes reachable capture/validation approaches from the current walk grid.
 """
@@ -21,7 +23,7 @@ from PIL import Image
 from scipy import ndimage
 
 import astronaut_sprite_gen as A
-from solar_layout import load_field, mirror_mount
+from solar_layout import equipment, load_field, mirror_mount
 
 
 class CollectorShell(A.RoundCone):
@@ -177,7 +179,7 @@ def sheet(M, name, frames):
     box = M.sprite_box(frames, pad=3)
     rgba = np.concatenate([M.sprite_rgba(M.render_sprite(parts, box)) for parts in frames], axis=1)
     path = f'solar/{name}.png'
-    Image.fromarray(rgba).save(os.path.join(M.OUT, path))
+    M.save_png(Image.fromarray(rgba), os.path.join(M.OUT, path))
     return dict(file=path, frames=len(frames), size=[box[2], box[3]],
                 anchor=[round(M.AX - box[0]), round(M.AY - box[1])])
 
@@ -196,21 +198,18 @@ def reachable_stands(field, meta, directory):
         raise ValueError('Solar approaches require a walkable main-base spawn')
     center = np.array(field['collector']['world'])
     stands = {}
-    for route in field['routes']:
-        controls = [(route['id'] + ' SUN', route['source'], route.get('source_elevation', 0))]
-        controls.extend((route['id'] + str(i + 1), point, 0) for i, point in enumerate(route['mirrors']))
-        for name, point, elevation in controls:
-            for offset in [(18, -12), (-18, -12), (18, 12), (-18, 12), (22, 0), (-22, 0), (0, -22), (0, 22)]:
-                stand = np.array(point) + offset
-                row, column = cell(stand)
-                height = (walk[row, column, 0] * 256 + walk[row, column, 1]) / meta['game']['height_scale'] - meta['game']['height_offset']
-                if (np.linalg.norm(stand - center) >= field['collector']['radius'] + 8
-                        and np.linalg.norm(offset) < field['reach'] and labels[row, column] == spawn
-                        and abs(height - elevation) < (1 if elevation else .02)):
-                    stands[name] = stand.tolist()
-                    break
-            else:
-                raise ValueError(name + ' has no reachable level approach; adjust its authored placement')
+    for name, point, elevation in equipment(field):
+        for offset in [(18, -12), (-18, -12), (18, 12), (-18, 12), (22, 0), (-22, 0), (0, -22), (0, 22)]:
+            stand = np.array(point) + offset
+            row, column = cell(stand)
+            height = (walk[row, column, 0] * 256 + walk[row, column, 1]) / meta['game']['height_scale'] - meta['game']['height_offset']
+            if (np.linalg.norm(stand - center) >= field['collector']['radius'] + 8
+                    and np.linalg.norm(offset) < field['reach'] and labels[row, column] == spawn
+                    and abs(height - elevation) < (1 if elevation else .02)):
+                stands[name] = stand.tolist()
+                break
+        else:
+            raise ValueError(name + ' has no reachable level approach; adjust its authored placement')
     return stands
 
 
@@ -232,20 +231,20 @@ def main():
         if art['routes'] != field['routes'] or art['collector'] != field['collector']:
             raise ValueError('Regenerate solar art before refreshing its approaches')
         art['stands'] = field['stands']
-        with open(path, 'w') as stream:
-            json.dump(art, stream, indent=2)
-        print('solar field: refreshed 16 reachable approaches', flush=True)
+        M.save_text(json.dumps(art, indent=2), path)
+        print(f'solar field: refreshed {len(field["stands"])} reachable approaches', flush=True)
         return
     field['sheets'] = {}
     field['special_mirrors'] = {}
     for route in field['routes']:
         ramp = route['ramp']
+        source_yaw = math.atan2(route['direction'][1], route['direction'][0]) if field.get('terrain') else 0
         print('rendering solar equipment:', route['label'], flush=True)
         field['sheets'][route['id']] = {
             'mirror': dict(sheet(M, 'mirror_' + route['id'].lower(),
                                  [mirror(M, a * math.pi / 8, ramp, shine) for a in range(8) for shine in range(4)]), shine_frames=4),
             'source': dict(sheet(M, 'source_' + route['id'].lower(),
-                                 [sun_feed(M, a * math.pi / 2, ramp, step / 8) for a in range(4) for step in range(9)]), deploy_frames=9)}
+                                 [sun_feed(M, source_yaw + a * math.pi / 2, ramp, step / 8) for a in range(4) for step in range(9)]), deploy_frames=9, yaw_offset=source_yaw)}
         for index in range(len(route['mirrors'])):
             yaw, pitch = mirror_mount(route, field, index)
             if abs(yaw) < 1e-6 and abs(pitch) < 1e-6:
@@ -279,12 +278,11 @@ def main():
         mask[..., 2] = np.clip((yy - center[1] + field['collector']['radius']) / (2 * field['collector']['radius']) * 255, 0, 255).astype(np.uint8)
         mask[..., 3] = np.where(fr['filled'] & (zz > 4) & (zz < field['collector']['height'] - 2), 255, 0)
         filename = f'solar/receiver_mask{M.view_sfx(k)}.png'
-        Image.fromarray(mask).save(os.path.join(M.OUT, filename))
+        M.save_png(Image.fromarray(mask), os.path.join(M.OUT, filename))
         field['views'].append({'indicator_px': [round(v) for v in M.project(*p)],
                                'receiver_mask': {'file': filename, 'position': list(box[:2]), 'size': list(box[2:])}})
-    with open(os.path.join(M.OUT, 'solar_field.json'), 'w') as stream:
-        json.dump(field, stream, indent=2)
-    print('solar field: 4 / 5 / 4 reflectors, three closed feeds, four views', flush=True)
+    M.save_text(json.dumps(field, indent=2), os.path.join(M.OUT, 'solar_field.json'))
+    print(f'solar field: {[len(r["mirrors"]) for r in field["routes"]]} reflectors, three closed feeds, four views', flush=True)
 
 
 if __name__ == '__main__':

@@ -4,6 +4,7 @@ extends Node2D
 ## funnels and the cone's energizing wave. No input or optical/state mutations live here.
 ## Deployment/charge phases survive view changes; entering a powered field does not replay
 ## completion. SDF receiver masks and all positions are regenerated for each of four views.
+## Source sheets use generated yaw_offset so the beacon outlet faces its actual world ray.
 
 const RECEIVER := preload("res://shaders/solar_receiver.gdshader")
 const BEAM := preload("res://shaders/solar_beam.gdshader")
@@ -106,7 +107,7 @@ func _process(delta: float) -> void:
 	for group in 3:
 		var route: Dictionary = _state.field["routes"][group]
 		var world := SolarOptics.point(route["source"])
-		var direction := SolarOptics.point(route["direction"])
+		var direction := SolarOptics.point(route["direction"]).normalized()
 		var visual: Dictionary = _art["feed_visual"]
 		var local := SolarOptics.point(visual["crystal_offset"])
 		var crystal := world + direction * local.x + direction.orthogonal() * local.y
@@ -130,7 +131,7 @@ func refresh() -> void:
 		var prop := entry["prop"] as WorldProp
 		if entry["source"]:
 			var direction := _terrain.view_dir(SolarOptics.point(_state.field["routes"][group]["direction"]))
-			var quadrant := posmod(roundi(direction.angle() / (PI / 2)), 4)
+			var quadrant := posmod(roundi((direction.angle() - float(sheets["source"].get("yaw_offset", 0.0))) / (PI / 2)), 4)
 			var count: int = sheets["source"]["deploy_frames"]
 			prop.sprite.frame = quadrant * count + roundi(deployment[group] * (count - 1))
 		else:

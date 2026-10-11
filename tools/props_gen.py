@@ -18,7 +18,7 @@ Each prop is drawn for every view of the map (the camera turns round the world i
 props/<name>.png for view 0, props/<name>_r1.png ... for the others, listed in sprites_views. The
 dead lamps' heads are given in every view's pixels (head_px_views).
 
-Writes assets/maps/red_planet/props/*.png and red_planet_props.json.
+Writes assets/maps/red_planet/props/*.png and red_planet_props.json using the map's atomic exporters.
 """
 import json
 import math
@@ -141,7 +141,7 @@ def sheet(name, frames_parts, k=0):
     box = M.sprite_box(frames_parts, pad=3)
     strip = np.concatenate([M.sprite_rgba(M.render_sprite(fp, box)) for fp in frames_parts], axis=1)
     fn = f'props/{name}{M.view_sfx(k)}.png'
-    Image.fromarray(strip).save(os.path.join(OUT, fn))
+    M.save_png(Image.fromarray(strip), os.path.join(OUT, fn))
     return dict(file=fn, frames=len(frames_parts), frame_size=[box[2], box[3]],
                 anchor=[round(M.AX - box[0], 1), round(M.AY - box[1], 1)])
 
@@ -232,8 +232,7 @@ def main():
                note='Props the multitool works on. world = [X, Y] ground position (view 0 frame); anchor = the foot '
                     'point in each frame (frames side by side). job: mine / gather / lift. lamps: dead path lamps '
                     'to fix. sprites_views / head_px_views: the same for each view of the map.')
-    with open(os.path.join(OUT, 'red_planet_props.json'), 'w') as fh:
-        json.dump(out, fh, indent=1)
+    M.save_text(json.dumps(out, indent=1), os.path.join(OUT, 'red_planet_props.json'))
     print(f'{len(objects)} test props, {len(lamp_out)} dead lamps -> {OUT}')
 
 

@@ -2,11 +2,11 @@ class_name SolarOptics
 extends RefCounted
 ## Stateless optics in canonical world coordinates. Finite mirror planes reflect rays;
 ## the receiver is the actual capped cone. Fixed mounting offsets allow landscape-aware
-## placements; elevated feeds aim down to a tilted first mirror. Other mirrors are upright.
-## An incomplete path
-## stops at the cone but cannot energize it. Views never participate in this calculation.
+## placements; fixed mirror pitch follows each descent between plateaus and ground.
+## An incomplete path stops at the cone but cannot energize it. Views never participate
+## in this calculation.
 ## tests/solar_field_test.gd searches all reachable angle combinations for early receiver hits,
-## including cross-channel paths, and covers cycles, shutoff and full 4/5/4 routes.
+## including cross-channel paths, and covers cycles, shutoff and the full authored routes.
 
 const STEP := PI / 8.0
 const EPSILON := .03
@@ -21,15 +21,39 @@ static func alignment(incoming: Vector2, outgoing: Vector2) -> int:
 	return posmod(roundi((incoming.angle() + outgoing.angle()) / (2.0 * STEP)), 8)
 
 
+static func mirror_elevation(route: Dictionary, index: int) -> float:
+	return float(route["mirror_elevations"][index]) if route.has("mirror_elevations") else 0.0
+
+
+static func mirror_center(field: Dictionary, mirror: Dictionary) -> Vector3:
+	var world: Vector2 = mirror["world"]
+	return Vector3(world.x, world.y, float(field["beam_height"]) + float(mirror["elevation"]))
+
+
+static func source_origin(field: Dictionary, group: int) -> Vector3:
+	var route: Dictionary = field["routes"][group]
+	var world := point(route["source"])
+	return Vector3(world.x, world.y, float(field["beam_height"]) + float(route.get("source_elevation", 0.0)))
+
+
+static func source_direction(field: Dictionary, group: int) -> Vector3:
+	var route: Dictionary = field["routes"][group]
+	var first := point(route["mirrors"][0])
+	var target := Vector3(first.x, first.y, float(field["beam_height"]) + mirror_elevation(route, 0))
+	return (target - source_origin(field, group)).normalized()
+
+
 static func mount(field: Dictionary, mirror: Dictionary) -> Vector2:
 	var route: Dictionary = field["routes"][mirror["group"]]
 	var index: int = mirror["index"]
-	var elevation := float(route.get("source_elevation", 0.0)) if index == 0 else 0.0
 	var center := point(route["mirrors"][index])
 	var before := point(route["source"] if index == 0 else route["mirrors"][index - 1])
 	var after := point(field["collector"]["world"] if index + 1 == route["mirrors"].size() else route["mirrors"][index + 1])
-	var incoming := Vector3(center.x - before.x, center.y - before.y, -elevation).normalized()
-	var outgoing := Vector3(after.x - center.x, after.y - center.y, 0).normalized()
+	var z := mirror_elevation(route, index)
+	var before_z := float(route.get("source_elevation", 0.0)) if index == 0 else mirror_elevation(route, index - 1)
+	var after_z := 0.0 if index + 1 == route["mirrors"].size() else mirror_elevation(route, index + 1)
+	var incoming := Vector3(center.x - before.x, center.y - before.y, z - before_z).normalized()
+	var outgoing := Vector3(after.x - center.x, after.y - center.y, after_z - z).normalized()
 	var normal := (incoming - outgoing).normalized()
 	var yaw := atan2(-normal.x, normal.y)
 	if yaw < 0:
@@ -51,8 +75,7 @@ static func mirror_distance(origin: Vector3, direction: Vector3, mirror: Diction
 	var denominator := direction.dot(normal)
 	if absf(denominator) < .000001:
 		return INF
-	var world: Vector2 = mirror["world"]
-	var center := Vector3(world.x, world.y, field["beam_height"])
+	var center := mirror_center(field, mirror)
 	var distance := (center - origin).dot(normal) / denominator
 	var yaw: float = angle * STEP + mirror["mount"].x
 	var tangent := Vector3(cos(yaw), sin(yaw), 0)
@@ -109,14 +132,8 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 	if not active:
 		return result
 	var route: Dictionary = field["routes"][route_index]
-	var source := point(route["source"])
-	var elevation := float(route.get("source_elevation", 0.0))
-	var origin := Vector3(source.x, source.y, float(field["beam_height"]) + elevation)
-	var flat := point(route["direction"]).normalized()
-	var direction := Vector3(flat.x, flat.y, 0)
-	if elevation > 0:
-		var first := point(route["mirrors"][0])
-		direction = (Vector3(first.x, first.y, field["beam_height"]) - origin).normalized()
+	var origin := source_origin(field, route_index)
+	var direction := source_direction(field, route_index)
 	var spec: Dictionary = field["collector"]
 	var box: Array = field["bounds"]
 	var bounds := Rect2(box[0], box[1], box[2], box[3])

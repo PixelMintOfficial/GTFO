@@ -1,7 +1,7 @@
 extends RefCounted
 ## Search actual ray paths with consistent per-mirror angle domains. A domain retains every
 ## orientation that can avoid blocking each preceding segment. Branch only when a ray can
-## physically strike a mirror; this covers all 8^13 settings without enumerating misses.
+## physically strike a mirror; this covers all angle combinations without enumerating misses.
 ## Each witness is replayed through SolarOptics.trace. The same bounce limit and cycle
 ## signature as production terminate paths. Used only by tests/solar_field_test.gd.
 
@@ -22,15 +22,8 @@ class Search:
 		stop_after = limit
 		var box: Array = field["bounds"]
 		bounds = Rect2(box[0], box[1], box[2], box[3])
-		var route: Dictionary = field["routes"][group]
-		var p := SolarOptics.point(route["source"])
-		var height := float(route.get("source_elevation", 0.0))
-		var origin := Vector3(p.x, p.y, field["beam_height"] + height)
-		var flat := SolarOptics.point(route["direction"]).normalized()
-		var direction := Vector3(flat.x, flat.y, 0)
-		if height > 0:
-			var first := SolarOptics.point(route["mirrors"][0])
-			direction = (Vector3(first.x, first.y, field["beam_height"]) - origin).normalized()
+		var origin := SolarOptics.source_origin(field, group)
+		var direction := SolarOptics.source_direction(field, group)
 		var domains: Array[int] = []
 		domains.resize(mirrors.size())
 		domains.fill(255)
