@@ -68,7 +68,7 @@ func load_view(meta_path: String) -> void:
 	_socket = Vector2.ZERO
 	for a in [_shafts, _motes, _leds, _tanks, _spark_points, _sparks, _flashes, _vents, _puffs, _rooms]:
 		a.clear()
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	var fx: Dictionary = meta["fx"]
 	for s in fx["shafts"]:
 		if GameState.window_repair.fixed.has(s["pane"]):

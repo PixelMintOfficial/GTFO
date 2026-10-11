@@ -20,21 +20,36 @@ signal turned(heading: int)
 @export var turn_time := 0.42
 
 var terrain: MapTerrain
+## The window the view is stitched into; a turn waits for the view it is turning to.
+var stream: MapStream
 var player: Player
 var camera: GameCamera
 ## (heading: int, world_facing: Vector2) -> void: switch the scene to that view.
 var apply: Callable
 ## () -> Array of things standing in the world to show in the swing (see TurnOverlay._board).
 var boards: Callable
+## True from the moment a turn is accepted until its swing has finished - including the moment
+## it may spend waiting for the next view's pictures. Anything that waits for a turn to be over
+## waits on this.
 var busy := false
+
+## How long a turn waits for its view's pictures to arrive in the background before it gives up
+## and loads them itself, seconds. Only reached if the disk is very slow or the press came
+## straight after another turn.
+const WISH_PATIENCE := 8.0
 
 var _pending := 0
 var _keep := {}                  # resource path -> resource: views kept loaded
+var _paths_of := {}              # view JSON -> the files that view needs
 var _overlay: TurnOverlay
+var _wish := 0                   # a press waiting for its view's pictures to load
+var _wish_left := 0.0
 
 
-func setup(t: MapTerrain, p: Player, apply_view: Callable, board_source := Callable()) -> void:
+func setup(t: MapTerrain, p: Player, apply_view: Callable, board_source := Callable(),
+		map_stream: MapStream = null) -> void:
 	terrain = t
+	stream = map_stream
 	player = p
 	camera = p.camera
 	apply = apply_view
@@ -45,9 +60,10 @@ func setup(t: MapTerrain, p: Player, apply_view: Callable, board_source := Calla
 	_preload_around(terrain.heading)
 	var args := {}
 	for a in OS.get_cmdline_user_args():
-		args[a.trim_prefix("--").split("=", true, 1)[0]] = true
+		var kv := a.trim_prefix("--").split("=", true, 1)
+		args[kv[0]] = kv[1] if kv.size() > 1 else ""
 	if args.has("turn-left") or args.has("turn-right"):
-		get_tree().create_timer(1.0).timeout.connect(request.bind(-1 if args.has("turn-left") else 1))
+		get_tree().create_timer(float(args.get("turn-at", "1.0"))).timeout.connect(request.bind(-1 if args.has("turn-left") else 1))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -60,14 +76,53 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 ## Turn a quarter turn: -1 to the left, +1 to the right.
+##
+## A press whose view is not in memory yet is kept, not waited for. The turn used to force the
+## load, which froze the frame for up to two seconds when two turns came close together: a
+## view's pictures are hundreds of MB and the background load has not finished that soon after
+## the last turn. The press fires from _process once the pictures are there, or is dropped if
+## they take so long that the player has plainly moved on.
 func request(step: int) -> void:
 	if terrain == null or terrain.views.size() < 4:
 		return
 	if busy:
 		_pending = step
 		return
-	if can_turn():
-		_turn(step)
+	if not can_turn():
+		return
+	busy = true
+	_wish = step
+	_wish_left = WISH_PATIENCE
+	_start_wish()
+
+
+## Start the waiting turn if its view's pictures have arrived. Returns whether it started.
+func _start_wish() -> bool:
+	if _wish == 0 or not _loaded(posmod(terrain.heading + _wish, 4)):
+		return false
+	if not can_turn():
+		return false                         # mid-jump or in a modal: hold it a moment longer
+	_turn(_wish)
+	return true
+
+
+## Load a view's pictures here and now. The last resort when the background load has not come
+## through: a turn the player asked for must happen, so a hitch is better than losing it.
+func _force_loaded(k: int) -> void:
+	for path in _paths(k):
+		if _keep.get(path) == null:
+			_keep[path] = ResourceLoader.load_threaded_get(path) \
+					if ResourceLoader.load_threaded_get_status(path) != ResourceLoader.THREAD_LOAD_INVALID_RESOURCE \
+					else load(path)
+
+
+## Play a press that came in while a turn was running.
+func _replay_pending() -> void:
+	if _pending == 0:
+		return
+	var again := _pending
+	_pending = 0
+	request(again)
 
 
 func can_turn() -> bool:
@@ -77,13 +132,12 @@ func can_turn() -> bool:
 
 
 func _turn(step: int) -> void:
-	busy = true
+	_wish = 0
 	player.turning = true
 	var to_k := posmod(terrain.heading + step, 4)
 	var from := TurnOverlay.view_info(terrain, camera, player)
 	var pivot := Vector3(player.world_pos.x, player.world_pos.y, terrain.height_at(player.world_pos))
 	var things: Array = boards.call() if boards.is_valid() else []
-	_ensure_loaded(to_k)
 	_overlay.begin(from, from, step, pivot, things, player, turn_time)
 	apply.call(to_k, player.facing_dir())                 # the world switches under the overlay
 	GameState.heading = to_k
@@ -94,26 +148,60 @@ func _turn(step: int) -> void:
 	busy = false
 	turned.emit(to_k)
 	_preload_around(to_k)
-	if _pending != 0:
-		var again := _pending
-		_pending = 0
-		request(again)
+	_replay_pending()
 
 
 # ---------------------------------------------------------------- loading the views ahead
-## The pictures a view needs (map, depth, light, sun).
+## Every picture a view needs: the map's own four, and each system's sprite sheets.
+##
+## A turn calls every system's load_view() in one frame, and each of those used to load() its own
+## sheets off the disk then and there - 44 flora sheets, the dome's animated parts (the comms dish
+## alone is 5976x249), the crash wreck, the minimap, the doors. Loading them ahead with the map
+## keeps the disk out of the turn entirely. It is not where most of the turn's time went (that was
+## the forced load this file used to do, and rebinding the map's own huge textures), but it is the
+## part that was unbounded: a cold cache could add a hundred milliseconds of PNG decode.
 func _paths(k: int) -> Array[String]:
-	var out: Array[String] = []
+	# Keyed by the view's own JSON, not by its heading: the interior swaps every view for a
+	# repaired one (MapTerrain.replace_variant), and those are different files.
 	var path := terrain.views[posmod(k, terrain.views.size())]
-	var meta = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if meta == null:
-		return out
+	if _paths_of.has(path):
+		return _paths_of[path]               # worked out once: a view's files do not change
+	var out: Array[String] = []
+	var meta := ViewData.get_json(path)
+	if meta.is_empty():
+		return out                           # not cached: a missing view may just be a slow disk
 	var dir := path.get_base_dir()
-	out.append(dir.path_join(meta["image"]))
 	var game: Dictionary = meta["game"]
-	for key in ["depth_png", "light_png", "sun_png"]:
-		if game.has(key):
-			out.append(dir.path_join(game[key]))
+	if not terrain.streaming:
+		# A streamed map's picture, depth and light are stitched from tiles by MapStream, which
+		# keeps only a window of them. Loading the whole ones here would put back the gigabyte
+		# the streaming is there to remove.
+		if meta.has("image"):
+			out.append(dir.path_join(meta["image"]))
+		for key in ["depth_png", "light_png"]:
+			if game.has(key):
+				out.append(dir.path_join(game[key]))
+	if game.has("sun_png"):
+		out.append(dir.path_join(game["sun_png"]))
+	if meta.has("minimap"):
+		out.append(dir.path_join(meta["minimap"]["file"]))
+	for s in meta.get("animated", {}).get("sprites", []):
+		out.append(dir.path_join(s["file"]))
+	var fx := ViewData.fx_of(path, meta)
+	for s in fx.get("flora", {}).get("sheets", []):
+		out.append(dir.path_join(s["file"]))
+	if fx.has("halos"):
+		out.append(dir.path_join(fx["halos"]["file"]))
+	var crash: Dictionary = fx.get("crash", {})
+	for key in ["before", "satellite"]:
+		if crash.has(key):
+			out.append(dir.path_join(crash[key]["file"]))
+	for d in fx.get("doors", []):
+		if d.has("file"):
+			out.append(dir.path_join(d["file"]))
+	if meta.has("door"):                       # the interior's one door is named in its meta
+		out.append(dir.path_join(meta["door"]["file"]))
+	_paths_of[path] = out
 	return out
 
 
@@ -131,34 +219,61 @@ func _preload_around(k: int) -> void:
 				ResourceLoader.load_threaded_request(path)
 				_keep[path] = null
 	for path in _keep.keys():
-		if not want.has(path):
-			_keep.erase(path)
+		if want.has(path):
+			continue
+		if _keep[path] == null and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			continue                         # still coming: taking it now would block. Prune it next time.
+		_collect(path)                       # a finished load must be taken before it is let go
+		_keep.erase(path)
 
 
 ## Collect background loads as they finish (and any still going when the scene ends), so none
 ## is left hanging.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	for path in _keep:
 		if _keep[path] == null and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_LOADED:
 			_keep[path] = ResourceLoader.load_threaded_get(path)
+	if _wish == 0:
+		return
+	_wish_left -= delta
+	if not _start_wish() and _wish_left <= 0.0:
+		_force_loaded(posmod(terrain.heading + _wish, 4))      # a hitch, but never a lost press
+		_start_wish()
 
 
 func _exit_tree() -> void:
 	for path in _keep:
-		if _keep[path] == null and ResourceLoader.load_threaded_get_status(path) != ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
-			ResourceLoader.load_threaded_get(path)
+		_collect(path)
 	_keep.clear()
 
 
-## Make sure a view's pictures are in memory (waits only if the background load hasn't finished).
-func _ensure_loaded(k: int) -> void:
+## Take a background load's result, if one is outstanding for this path. A threaded request that
+## is never collected is reported as a leak when the engine shuts down, so every path that leaves
+## _keep goes through this first. It waits if the load is still running, which is why pruning
+## skips those and the scene's end is the only place that lets it wait.
+func _collect(path: String) -> void:
+	if _keep.get(path) != null:
+		return
+	if ResourceLoader.load_threaded_get_status(path) != ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+		ResourceLoader.load_threaded_get(path)
+
+
+## Is every picture this view needs in memory? Never waits: a background load that has not
+## finished means "not yet", and the press that wanted it is kept (see request()).
+func _loaded(k: int) -> bool:
+	if stream != null and not stream.ready_for(k):
+		return false
 	for path in _paths(k):
 		if _keep.get(path) != null:
 			continue
-		if ResourceLoader.load_threaded_get_status(path) != ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+		var status := ResourceLoader.load_threaded_get_status(path)
+		if status == ResourceLoader.THREAD_LOAD_LOADED:
 			_keep[path] = ResourceLoader.load_threaded_get(path)
+		elif status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			_keep[path] = load(path)       # never asked for in the background; the cache has it
 		else:
-			_keep[path] = load(path)
+			return false
+	return true
 
 
 static func _ensure_actions() -> void:

@@ -21,6 +21,8 @@ extends Node2D
 ##   --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ##   --dev-panel / --dev-freeze=hunger,thirst,oxygen   master control panel (F1; see DevPanel)
 ##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
+##   --perf                 print texture memory, draw calls and frame times once a second
+##   --perf-every=SECONDS   how often --perf prints (default 1.0)
 ##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
 ##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
 ##   --turn-left / --turn-right   turn the camera once after a second (see ViewTurn)
@@ -35,6 +37,7 @@ const INTERIOR := "res://scenes/interior.tscn"
 var terrain: MapTerrain
 var doors: Array[AirlockDoor] = []
 var view_turn: ViewTurn
+var stream: MapStream
 var solar: SolarField
 
 @onready var player: Player = $Actors/Player
@@ -54,19 +57,25 @@ func _ready() -> void:
 	if _args().has("turn"):
 		GameState.heading = posmod(int(_args()["turn"]), 4)
 	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
-	$Map.texture = terrain.map_texture
 	var view := terrain.view_json
-	player.setup(terrain, terrain.depth_map)
+	player.setup(terrain)
 	player.camera.frames = terrain.frames
-	player.camera.setup(player, $Map, terrain.max_view_px)
+	player.camera.setup(player, $Map, terrain.max_view_px, terrain.streaming)
+	# The window has to exist before anything that samples the depth map is set up, and it is
+	# built around where the camera is, so it comes straight after the camera.
+	stream = MapStream.new()
+	add_child(stream)
+	stream.setup(terrain, $Map, player.camera, player)
+	stream.published.connect(_window_moved)
+	$Map.texture = terrain.map_texture
 	wind.setup(player.camera, _biome_here)
 	map_screen.setup(view, player)
 	dome_fx.setup(view)
-	biome_fx.setup(view, player.camera, terrain.depth_map, terrain.map_size, player)
+	biome_fx.setup(view, player.camera, terrain, player)
 	crash.setup(view, player.camera, player, biome_fx)
 	ambience.setup(view, player.camera, player, _biome_here)
 	player.step_source = _step_sound
-	multitool.setup(PROPS_JSON, player, terrain, $Actors, terrain.depth_map)
+	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	day_night.setup(player, $Map, terrain.light_mask)
 	_setup_doors()
 	solar = SolarField.new()
@@ -74,7 +83,7 @@ func _ready() -> void:
 	solar.setup(player, multitool, terrain, $Actors)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
-	view_turn.setup(terrain, player, _apply_view, _turn_boards)
+	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
 	inventory_ui.setup(player, multitool)
@@ -126,22 +135,32 @@ func _step_sound() -> String:
 ## (positions, props, the clock, sounds) carries on; only how it is drawn changes.
 func _apply_view(k: int, world_facing: Vector2) -> void:
 	terrain.load_view(k)
-	$Map.texture = terrain.map_texture
 	var view := terrain.view_json
 	player.refresh_view(world_facing)
 	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
+	stream.refresh(true)                                 # the window, once the camera is where
+	$Map.texture = terrain.map_texture                   # this view puts it - not before
 	day_night.set_masks(terrain.light_mask)
 	map_screen.load_view(view)
 	dome_fx.load_view(view)
-	biome_fx.load_view(view, terrain.depth_map, terrain.map_size)
+	biome_fx.load_view(view)
 	crash.load_view(view)
 	ambience.load_view(view)
-	multitool.set_view(terrain.depth_map)
+	multitool.set_view()
 	solar.load_view()
 	for d in doors:
 		d.queue_free()
 	doors.clear()
 	_setup_doors()
+
+
+## The window has moved under the world (MapStream): everything that samples the depth map has
+## to be told where it is now. Same fan-out as a view switch, and for the same reason.
+func _window_moved(_heading: int) -> void:
+	player.refresh_window()
+	biome_fx.refresh_window()
+	multitool.refresh_window()
+	solar.refresh_window()
 
 
 ## What stands in the world, for the camera's swing: the plants in view, the loose props and
@@ -160,11 +179,10 @@ func _turn_boards() -> Array:
 
 ## The base's airlock doors: F to go inside.
 func _setup_doors() -> void:
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	var meta := ViewData.get_json(terrain.view_json)
 	if not meta.has("fx"):
 		return
-	var fx_path := terrain.view_json.get_base_dir().path_join(meta["fx"])
-	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(fx_path))
+	var fx := ViewData.fx_of(terrain.view_json, meta)
 	for info in fx.get("doors", []):
 		var d := AirlockDoor.new()
 		$Actors.add_child(d)
@@ -198,6 +216,7 @@ func _quit_after(seconds: float) -> void:
 
 
 func _run_test_hooks(args: Dictionary) -> void:
+	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
 	if args.has("solar-active") or args.has("solar-solved"):
@@ -253,8 +272,8 @@ func _run_test_hooks(args: Dictionary) -> void:
 	if args.has("debug"):
 		var p := player.world_pos
 		var depth_img := terrain.depth_map.get_image()
-		var sp := Vector2i(player.position)
-		var c := depth_img.get_pixelv(sp)
+		var sp := Vector2i(player.position) - terrain.window.position
+		var c := depth_img.get_pixelv(sp.clamp(Vector2i.ZERO, terrain.window.size - Vector2i.ONE))
 		var map_depth := (roundf(c.r * 255.0) * 256.0 + roundf(c.g * 255.0)) / terrain.depth_scale
 		print("fps ", Engine.get_frames_per_second(), " player world ", p, " ground z ", terrain.height_at(p),
 				" biome ", terrain.biome_at(p),

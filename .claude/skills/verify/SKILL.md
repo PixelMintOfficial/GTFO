@@ -49,6 +49,9 @@ Everything after `--` goes to the scene. The authoritative lists are the header 
 | `--zoom=L` `--open-map` `--debug` | zoom level; open the map screen; print position/height/depth |
 | `--jump-every=S` | jump on a timer |
 | `--audio-debug` | print every sound event as it plays (`[audio] name …`) |
+| `--perf` `--perf-every=S` | texture memory, draw calls, mean/worst frame time once a second |
+| `--stream-debug` | every map window as MapStream stitches it (§4.10) |
+| `--turn-at=S` | when `--turn-left` / `--turn-right` fires (default 1 s) |
 | `--turn=N` | start with the camera turned N quarter turns round (both scenes) |
 | `--turn-left` / `--turn-right` | turn once after a second; burst-capture the swing |
 | `--time=H` | the time of day (`--time=22` for night) |

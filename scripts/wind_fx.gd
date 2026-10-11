@@ -92,6 +92,9 @@ func setup(camera: Camera2D, biome_source: Callable = Callable()) -> void:
 	_apply_weights()
 
 
+var _extents := Vector2.ZERO
+
+
 func _process(delta: float) -> void:
 	if _camera == null:
 		return
@@ -100,8 +103,11 @@ func _process(delta: float) -> void:
 	var seen := get_viewport_rect().size / _camera.zoom
 	_gusts.set_shader_parameter("view_origin", center - seen * 0.5)
 	_gusts.set_shader_parameter("view_scale", 1.0 / _camera.zoom.x)
-	for l in _layers:
-		l.emission_rect_extents = seen * 0.5 + Vector2(40, 30)
+	var extents := seen * 0.5 + Vector2(40, 30)
+	if extents != _extents:                   # only changes when the window or the zoom does
+		_extents = extents
+		for l in _layers:
+			l.emission_rect_extents = extents
 	if _biome_source.is_valid():
 		var w: Vector3 = _biome_source.call()
 		_weights = _weights.lerp(w, 1.0 - exp(-1.5 * delta))

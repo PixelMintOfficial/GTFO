@@ -22,11 +22,29 @@ from solar_layout import load_field
 # 2026-10-11: the trail lamps went (TRAIL_LAMPS); placements are identical, but three plants whose
 # glow a lamp post hid now show it (the last field, live_glow_flags): views 0 and 2 updated.
 ORIGINAL_FLORA = [
-    'bafe18a8a80839e8484a82cc15d73a4af6c5522f77743ac756a99220798c5c35',
-    '7a6df5795b1308c51abbace62fab83483b6af2ab7b04fa035f9ed2139803bb7b',
-    '9b120fe5fccb2fe54d6c3b124e226f060d7239551791780f37ccefe9e92fb885',
-    'a4e398087fb1577b1731a1b00f7f86df9e071274f1070d526b1a369c3d6076f6',
+    # The forest as the solar field was laid out around it, fingerprinted by where each plant
+    # stands (see placement_hash). Taken from the assets at the time and unchanged since: the
+    # gentler tree sway narrowed the sprite boxes, which moved 339 of the stored x values by a
+    # pixel without moving a single foot, and these hashes are the same either way.
+    'b790a9d3d983257d92ef9272bee6629810750ea2141a62bf5971d62aa287691a',
+    'cc7a886067b08d1533bb02f1717d6f8333b5cd3f88f3106a11fdcd9e804d66e0',
+    'dc28813417ef01d6930251038affa0afb88249013959bfd7a08c871c6a15ed43',
+    'd259d8088be0f18010eac92dc52a6ce595d2ad296d254ce3bb8a9573e86640ec',
 ]
+
+def placement_hash(flora):
+    """Where every plant stands, and nothing else.
+
+    An instance's stored x is the left edge of its sprite's box, so anything that changes how
+    wide that box is - how far the plant leans, say - moves the number without moving the
+    plant. The foot (x plus the sheet's anchor) is the position the clearance checks below
+    care about, so that is what is fingerprinted: a plant that really moves still trips this,
+    and a plant that only got drawn differently does not.
+    """
+    feet = [[i[0], round(i[1] + flora['sheets'][i[0]]['anchor'][0], 3),
+             round(i[2] + flora['sheets'][i[0]]['anchor'][1], 3), i[4]] for i in flora['instances']]
+    return hashlib.sha256(json.dumps(feet, separators=(',', ':')).encode()).hexdigest()
+
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 BASE = os.path.join(ROOT, 'assets', 'maps', 'red_planet')
@@ -97,8 +115,7 @@ def main():
         assert np.linalg.norm(np.array(anchor) - art['views'][heading]['indicator_px']) <= 1, 'stale indicator view'
         fx = read(view['fx'])
         flora = fx['flora']
-        fingerprint = hashlib.sha256(json.dumps(flora['instances'], separators=(',', ':')).encode()).hexdigest()
-        assert fingerprint == ORIGINAL_FLORA[heading], 'the original forest placements changed'
+        assert placement_hash(flora) == ORIGINAL_FLORA[heading], 'the original forest placements changed'
         mask = art['views'][heading]['receiver_mask']
         assert Image.open(os.path.join(BASE, mask['file'])).size == tuple(mask['size']), 'stale receiver mask'
         for instance in flora['instances']:

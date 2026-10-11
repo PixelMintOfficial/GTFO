@@ -126,7 +126,8 @@ func _overworld() -> void:
 		_check(overlay.screen_point(points[i], 1.0).distance_to(after[i]) < 1.0, "the swing ends where the view is (%s)" % points[i])
 	await _settle(world)
 	world.queue_free()
-	await get_tree().process_frame
+	for i in 4:                                          # let the scene and its textures go
+		await get_tree().process_frame
 
 
 func _interior() -> void:
@@ -148,7 +149,8 @@ func _interior() -> void:
 				_check(m["progress_px"] == info["progress_px"], "the %s bar moves to this view" % info["id"])
 	_check(is_instance_valid(base.door) and base.door.get_parent() != null, "the exit door is rebuilt")
 	base.queue_free()
-	await get_tree().process_frame
+	for i in 4:
+		await get_tree().process_frame
 	GameState.heading = 0
 
 

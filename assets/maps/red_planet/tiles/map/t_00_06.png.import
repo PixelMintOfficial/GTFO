@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://tvsurnhfprwc"
+path="res://.godot/imported/t_00_06.png-4d508d19fd716713a8b8492994fef0c2.image"
+
+[deps]
+
+source_file="res://assets/maps/red_planet/tiles/map/t_00_06.png"
+dest_files=["res://.godot/imported/t_00_06.png-4d508d19fd716713a8b8492994fef0c2.image"]
+
+[params]
+
