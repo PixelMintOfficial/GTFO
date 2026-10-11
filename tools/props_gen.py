@@ -8,6 +8,10 @@ chunks and metal scrap to gather, cargo crates to lift - in the map's art style 
 renderer, sun, palette and outlines as tools/mars_map_gen.py), places a test set of them on
 open ground near the spawn, and lists the dead path lamps by the base that can be fixed.
 
+The test set is off: the owner removed it from the world (the sheets stay - the base interior
+reuses them for its scrap). TEST_PROPS=1 places it again; the dead lamps come back with the
+trail lamps themselves (TRAIL_LAMPS=1, see mars_map_gen.py).
+
     python tools/props_gen.py          (run after mars_map_gen.py: it reads the map's data)
 
 Each prop is drawn for every view of the map (the camera turns round the world in quarter turns):
@@ -32,6 +36,7 @@ import astronaut_sprite_gen as A  # noqa: E402
 OUT = M.OUT
 PROPS = os.path.join(OUT, 'props')
 TEST_AREA = (-690.0, 1340.0)       # open ground just past the base's airlock, beside the road
+TEST_PROPS = os.environ.get('TEST_PROPS', '0') == '1'
 
 M.O_RAMPS.update({
     'rocky':   ['#24181f', '#43303a', '#6a4c50', '#937066'],
@@ -193,7 +198,7 @@ def main():
     solid = dict(ore_rock=True, ore_chunk=False, scrap=False, crate=True, crate_small=True)
 
     # the test set, around a spot beside the road
-    want = [('ore_rock', -40, 30, 0), ('ore_rock', 12, 58, 0), ('ore_rock', 52, 18, 0),
+    want = [] if not TEST_PROPS else [('ore_rock', -40, 30, 0), ('ore_rock', 12, 58, 0), ('ore_rock', 52, 18, 0),
             ('scrap', -18, -22, 0), ('scrap', 30, -30, 1), ('scrap', -58, -6, 2), ('scrap', 70, -8, 0), ('scrap', 6, 6, 1),
             ('crate', -64, 60, 0), ('crate_small', -40, 78, 0), ('crate', 78, 46, 0)]
     rs = np.random.default_rng(9)
@@ -211,7 +216,7 @@ def main():
 
     lamps, dead = M.path_lamps()
     lamp_out = []
-    for i in sorted(dead):
+    for i in sorted(dead) if M.TRAIL_LAMPS else []:
         X, Y = lamps[i]
         z = ground.z(X, Y)
         head = M.scale_pt(M.cam(X, Y, z) + np.array([0, 0, 14.4]), M.cam(X, Y, z), M.LAMP_SCALE)

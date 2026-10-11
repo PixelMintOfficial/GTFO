@@ -156,16 +156,15 @@ func _ready() -> void:
 	GameState.swap_slots(0, 6)
 	GameState.select_slot(0)
 	player.set_tool_out(true)
-	var scrap: WorldProp
-	var rock: WorldProp
-	var crate: WorldProp
-	for prop in tool._props:
-		if prop.kind == "scrap":
-			scrap = prop
-		elif prop.kind == "ore_rock":
-			rock = prop
-		elif prop.job == "lift":
-			crate = prop
+	# The world has no test props any more: bring a scrap, an ore rock, a crate and a dead lamp to
+	# the open ground where the old test set stood, with ledger IDs the scene owns (so they reload).
+	var props_json: String = world.PROPS_JSON
+	var scrap := tool._spawn_prop("scrap", Vector2(-708, 1318), 0, "gather", 4.0, false)
+	scrap.set_meta("inventory_id", props_json + ":test/scrap")
+	var rock := tool._spawn_prop("ore_rock", Vector2(-730, 1370), 0, "mine", 8.0, true)
+	rock.set_meta("inventory_id", props_json + ":test/rock")
+	var crate := tool._spawn_prop("crate", Vector2(-612, 1386), 0, "lift", 7.0, true)
+	tool.add_lamp({"world": [-655.32, 1387.01], "head_px": [2362.1, 2405.4]})
 	player.teleport(scrap.world + Vector2(0, -10))
 	tool._target = scrap
 	tool._working = true
@@ -208,7 +207,7 @@ func _ready() -> void:
 	GameState.inventory[1] = {"kind": "scrap", "count": 4}
 	GameState.select_slot(1)
 	var removed_count := GameState.removed_props.size()
-	var prop_count := tool._props.size()
+	var prop_count := _ledgered(tool).size()
 	var door: AirlockDoor = world.doors[0]
 	player.teleport(door.stand_point())
 	await _tap(KEY_E)
@@ -238,6 +237,11 @@ func _ready() -> void:
 	await get_tree().process_frame
 	var returned := get_tree().current_scene
 	var returned_tool: Multitool = returned.get_node("Multitool")
-	_check(GameState.removed_props.size() == removed_count and returned_tool._props.size() == prop_count, "world ledger reconstructs chunks without duplicates")
+	_check(GameState.removed_props.size() == removed_count and _ledgered(returned_tool).size() == prop_count, "world ledger reconstructs chunks without duplicates")
 	print("INVENTORY TESTS: %d checks, %d failures" % [_checks, _failures])
 	await Audio.quit(0 if _failures == 0 else 1)
+
+
+## Props the session ledger brings back after an airlock (the test's own crate is not one).
+func _ledgered(tool: Multitool) -> Array:
+	return tool._props.filter(func(p: Variant) -> bool: return is_instance_valid(p) and not p.gone and p.has_meta("inventory_id"))

@@ -245,6 +245,9 @@ def canon_unit(name):
 # ================================================================== layout (camera X/Y, world units)
 DOME_SCALE = 2.5                  # bases are designed at R0 and scaled as a whole (doors ~1.6x the astronaut)
 LAMP_SCALE = 1.5                  # path lamps ~22 units: as tall as the astronaut
+# Lamps along the trails: off (the owner removed them). Their spots still keep plants and the
+# spawn clear, so the forest is unchanged; TRAIL_LAMPS=1 draws them, their posts and light again.
+TRAIL_LAMPS = os.environ.get('TRAIL_LAMPS', '0') == '1'
 SOLAR_SCALE = 1.6
 SOLAR_DESIGN = os.environ.get('SOLAR_DESIGN', 'field')  # approved field; 'array' retains the old panels
 DOMES = {
@@ -988,7 +991,7 @@ def build_world():
     glow = np.zeros((N, N), np.float32)
     pool = 19.0 * LAMP_SCALE
     for li, (X, Y) in enumerate(lamps):
-        if li in dead_lamps:
+        if li in dead_lamps or not TRAIL_LAMPS:
             continue
         u0, v0 = to_grid(X, Y)
         r_ = int(pool) + 2
@@ -4402,7 +4405,7 @@ def export_game_data(G, D, kind, debris=(), body=None, world=True):
     else:
         for u, v in solar_panels():
             solid |= np.hypot(U - u, V - v) < 9.5 * SOLAR_SCALE
-    for X, Y in G['lamps']:
+    for X, Y in (G['lamps'] if TRAIL_LAMPS else []):
         solid |= np.hypot(Xg - X, Yg - Y) < 2.5 * LAMP_SCALE
     solid |= (U <= 6) | (U >= N - 6) | (V <= 6) | (V >= N - 6)
     walk &= ~solid
@@ -4614,7 +4617,7 @@ def render_view(G, G0, k):
     for lk in locks:
         gb = render_groups(turned(lk), img, D, kind, gid, gb)
     gb = render_groups(turned(solar), img, D, kind, gid, gb)
-    for i, (X, Y) in enumerate(G0['lamps']):
+    for i, (X, Y) in enumerate(G0['lamps'] if TRAIL_LAMPS else []):
         u, v = to_grid(X, Y)
         z = float(G0['H'][int(u), int(v)])
         on = i not in G0['dead_lamps']
