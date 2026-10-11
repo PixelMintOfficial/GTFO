@@ -2,13 +2,11 @@ class_name GameCamera
 extends Camera2D
 ## Follows the player with smoothing that stays snapped to whole map pixels, and steps
 ## through zoom levels: I zooms in, O zooms out. The default view is the closest. The
-## furthest shows the whole main base and never more (its size comes from the map data).
+## furthest shows a base-sized area (from the map data), still centered on the astronaut.
 ## At 1080p the in-between levels land on whole-pixel scales, so they stay pixel-perfect.
 
 @export var follow_speed := 6.0
 @export var zoom_time := 0.3
-## Gap kept between the player and the screen edge while framing a dome.
-@export var frame_margin := 48.0
 ## How quickly the camera pans to a cutscene focus and back to the player.
 @export var pan_speed := 2.2
 
@@ -20,8 +18,6 @@ var zoom_locked := false
 ## How much more of the world each level shows than the default view.
 var levels: Array[float] = [1.0]
 var level := 0
-## At the furthest zoom, nearby domes are framed whole while the player stays in view.
-var frames: Array[Rect2] = []
 
 var _target: Node2D
 var _map: CanvasItem
@@ -47,11 +43,9 @@ func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2) -> void:
 	snap()
 
 
-## The camera turned round the world: the new view's furthest zoom and dome boxes. Keeps the
-## zoom level and jumps to where it wants to be in this view (at the furthest zoom, on a dome).
-func set_view_limits(max_view_px: Vector2, view_frames: Array[Rect2]) -> void:
+## The camera turned round the world: keep the zoom level and follow the reprojected target.
+func set_view_limits(max_view_px: Vector2) -> void:
 	_max_view = max_view_px
-	frames = view_frames
 	_build_levels()
 	if _target != null:
 		_pos = _goal()
@@ -121,24 +115,11 @@ func _focus() -> Vector2:
 	return _target.camera_focus() if _target.has_method("camera_focus") else _target.global_position
 
 
-## Where the camera wants to be: on the player, or at the furthest zoom on a nearby dome
-## (as far toward its centre as possible while the player stays on screen).
+## Normal play follows the astronaut at every zoom level; only cutscenes override the focus.
 func _goal() -> Vector2:
 	if focus_override != null:
 		return focus_override - offset
-	var goal := _focus()
-	if level < levels.size() - 1 or frames.is_empty():
-		return goal
-	var half := view_size() * 0.5 - Vector2(frame_margin, frame_margin)
-	var best := goal
-	var best_d := INF
-	for r in frames:
-		var c := r.get_center() - offset
-		var d := goal.distance_to(c)
-		if d < best_d and d < view_size().length() * 0.6:
-			best_d = d
-			best = c.clamp(goal - half, goal + half)
-	return best
+	return _focus()
 
 
 func _unhandled_input(event: InputEvent) -> void:

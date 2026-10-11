@@ -431,7 +431,7 @@ consts in the named files.
   - Holding jump goes higher (about 30 units: enough for the 14.4-unit cargo box); a tap does not.
   - There's a floaty hang near the top, plus crouch and land squash.
 - **Camera** (`game_camera.gd`):
-  - Overworld: 4 zoom levels; the furthest frames the whole main base and never more.
+  - Overworld: 4 zoom levels; all follow the astronaut. The furthest shows a main-base-sized area.
     In-between levels land on whole-pixel scales at 1080p.
   - Interior: `zoom_locked = true` (no zooming).
   - Cutscenes use `focus_override`, `snap_to` and `release_focus`.
@@ -1236,3 +1236,7 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-11 — Owner requested keeping the solar wall display clear of the battery cabinets.
   Its paired mounts move along the wall to 30/210 degrees and up to 26 units, below the coral
   trim, with housing/lenses and anchors regenerated for all views and machine-repair variants.
+- 2026-10-11 — Owner requested that the astronaut remain the camera's focal point at maximum
+  zoom-out. Normal follow no longer selects a nearby dome; the existing zoom range, smoothing,
+  torso offset, cutscene focus and indoor zoom lock remain. Real-scene camera tests cover walking
+  at widest zoom, all four headings, swing endpoints and zooming back in.
