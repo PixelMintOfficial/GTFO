@@ -1258,3 +1258,14 @@ Write one line per decision: date — decision (who approved it).
   access ramps are applied after scattering; original plant X/Y, variants and phases remain.
   Source/mirror elevations drive shared 3D optics and generated mounting pitch/yaw. Keep the
   previous field as `SOLAR_FIELD_LAYOUT=v1`; the approved terraced layout is v2/default.
+- 2026-10-12 — Owner requested visible mirror bounces, no mid-air cutoffs or rays through
+  surfaces, and slightly thicker light. Canonical `SolarWorldGeometry` intersects the existing
+  bilinear ground grid before downstream optics; unblocked rays extend beyond every view's
+  map/viewport rather than the placement bounds or an arbitrary Z ceiling. Empty-sky depth
+  (65535) never occludes light. Mirror-owned y-sorted contact meshes draw the incoming/outgoing
+  light over their faces without moving the whole beam layer above foreground actors. Core/halo
+  widths become 2.25/6 pixels, with matching swing thickness; small ground glints mark physical
+  impacts. MapTerrain shares explicit-view point/direction projection for the escape envelope.
+  The beam suite covers individual
+  and seeded mixed yaw settings, terrain/endpoints, native four-view contact pixels and shader
+  sky/solid fixtures. No equipment placements, terrain or generated assets change.

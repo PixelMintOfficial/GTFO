@@ -10,6 +10,7 @@ extends CanvasLayer
 ## dither), and at the end the overlay fades into the live, pre-rendered view underneath.
 ##
 ## It sits above the world and below the UI, so the time panel and the backpack stay put.
+## Solar beam billboards supply their world radius so thickness remains consistent in a swing.
 
 signal finished
 
@@ -277,8 +278,8 @@ func _beam(info: Dictionary) -> MeshInstance3D:
 	var start := _godot(info["beam"][0])
 	var end := _godot(info["beam"][1])
 	var cylinder := CylinderMesh.new()
-	cylinder.top_radius = .35
-	cylinder.bottom_radius = .35
+	cylinder.top_radius = info.get("radius", .35)
+	cylinder.bottom_radius = cylinder.top_radius
 	cylinder.height = start.distance_to(end)
 	cylinder.radial_segments = 6
 	var material := StandardMaterial3D.new()

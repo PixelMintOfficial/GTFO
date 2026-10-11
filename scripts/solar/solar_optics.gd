@@ -3,8 +3,8 @@ extends RefCounted
 ## Stateless optics in canonical world coordinates. Finite mirror planes reflect rays;
 ## the receiver is the actual capped cone. Fixed mounting offsets allow landscape-aware
 ## placements; fixed mirror pitch follows each descent between plateaus and ground.
-## An incomplete path stops at the cone but cannot energize it. Views never participate
-## in this calculation.
+## An incomplete path stops at the cone but cannot energize it. Optional canonical world
+## geometry stops rays at terrain and lets unblocked light escape past every visible view.
 ## tests/solar_field_test.gd searches all reachable angle combinations for early receiver hits,
 ## including cross-channel paths, and covers cycles, shutoff and the full authored routes.
 
@@ -127,8 +127,8 @@ static func edge_distance(origin: Vector3, direction: Vector3, bounds: Rect2) ->
 	return distance
 
 
-static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: Dictionary, route_index: int, active: bool) -> Dictionary:
-	var result := {"segments": [], "hits": [], "connected": false, "hit_collector": false}
+static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: Dictionary, route_index: int, active: bool, world: SolarWorldGeometry = null) -> Dictionary:
+	var result := {"segments": [], "hits": [], "connected": false, "hit_collector": false, "termination": "closed"}
 	if not active:
 		return result
 	var route: Dictionary = field["routes"][route_index]
@@ -140,7 +140,7 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 	var previous := ""
 	var visited := {}
 	for bounce in MAX_BOUNCES:
-		var distance := edge_distance(origin, direction, bounds)
+		var distance := world.escape_distance(origin, direction) if world != null else edge_distance(origin, direction, bounds)
 		var chosen := ""
 		var cone_distance := collector_distance(origin, direction, spec)
 		if cone_distance < distance:
@@ -154,11 +154,20 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 			if t < distance:
 				distance = t
 				chosen = id
+		if world != null:
+			var surface := world.surface_distance(origin, direction, distance)
+			if surface < distance:
+				distance = surface
+				chosen = "terrain"
 		if is_inf(distance):
 			break
 		var end := origin + direction * distance
 		result["segments"].append([origin, end])
+		if chosen == "terrain":
+			result["termination"] = "terrain"
+			break
 		if chosen == "collector":
+			result["termination"] = "collector"
 			result["hit_collector"] = true
 			result["connected"] = true
 			for index in route["mirrors"].size():
@@ -166,10 +175,12 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 					result["connected"] = false
 			break
 		if chosen.is_empty():
+			result["termination"] = "escape"
 			break
 		result["hits"].append(chosen)
 		var signature := "%s:%d:%d:%d" % [chosen, roundi(direction.x * 1000), roundi(direction.y * 1000), roundi(direction.z * 1000)]
 		if visited.has(signature):
+			result["termination"] = "cycle"
 			break
 		visited[signature] = true
 		for mirror in mirrors:
@@ -179,4 +190,5 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 				break
 		origin = end + direction * (EPSILON * 2)
 		previous = chosen
+		result["termination"] = "bounce_limit"
 	return result

@@ -21,8 +21,11 @@ with the existing DayNight daylight value. No new time-based power balance is ad
 
 - `data/solar_field.json`: authored canonical world positions, bounds, hardware
   dimensions, cable, three channel identities and optical routes.
-- `SolarOptics`: finite ray/plane and ray/cone intersections, reflection, bounds
+- `SolarOptics`: finite ray/plane and ray/cone intersections, reflection, escape
   and cycle termination. No nodes, rendering, input or view state.
+- `SolarWorldGeometry`: canonical terrain intersections using MapTerrain's bilinear
+  ground heights. It solves each crossed grid cell's quadratic clearance rather than
+  skipping thin ridges, and extends escaped light past all four maps plus their viewports.
 - `SolarFieldState`: feed/angle mutations and cached optical results, owned by
   `GameState.solar_field` through turns, airlocks and rescue.
 - `SolarField`: proximity/input ownership, generated WorldProp equipment, optical
@@ -98,6 +101,20 @@ depth into `solar_beam.gdshader`, allowing the baked receiver and scenery to occ
 rays. Equipment reuses WorldProp's depth shader and y sorting. The camera's existing
 relief swing includes mirror/feed billboards and the beams' actual height changes.
 
+On entering the overworld, `SolarFieldState.bind_world` supplies the terrain geometry
+before evaluating routes. The first terrain hit stops the ray and its downstream
+reflections; depth shading only handles foreground occlusion. An unblocked ray continues
+off-screen instead of stopping at the puzzle's placement bounds or an arbitrary height.
+Depth value 65535 is empty sky and cannot block light. Closed feeds still emit nothing.
+A tiny terrain-following glint marks physical impacts, including stops on flat soil.
+Cached routes describe their endpoint with `termination`: `closed`, `terrain`, `collector`,
+`escape`, `cycle` or `bounce_limit`; only a complete assigned route energizes a channel.
+Beam cores are 2.25 map pixels wide with a six-pixel low-opacity halo, and the camera
+swing derives its cylinder radius from the same core width. Each struck reflector owns
+short incoming/outgoing contact meshes above its face, within its existing y-sorted prop.
+These preserve the originating beam's color, deployment/daylight fade, terrain occlusion
+and foreground actor order, including when a beam strikes another channel's mirror.
+
 Use `make map` to regenerate map/props/solar together, `make solar` for equipment
 changes alone, then `make import`. No generated PNG or JSON is hand edited.
 
@@ -136,3 +153,10 @@ Overworld capture hooks, after `--`:
   and `--turn-right` exercise the same running game.
 
 Normal play never applies these developer hooks and starts with all feeds closed.
+
+`make check` also runs `tests/solar_beam_test.tscn`: all ten mirrors' individual yaw
+settings, 64 seeded mixed configurations, exact reported terrain/cutoff fixtures and
+narrow/grazing height-patch intersections. Native runs compare reflector-face pixels
+with feeds off/on in all four views and test the actual shader against empty sky and
+opaque depth. Append `-- --gallery=shots/beams --time=12|22` for mirror contacts,
+cliff impacts and escaping-ray evidence.

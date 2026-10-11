@@ -2,6 +2,25 @@ class_name SolarBeamVisuals
 extends RefCounted
 ## Shared depth-carrying beam geometry for reflected rays and crystal sunlight funnels.
 ## World-space Vector3 segment endpoints are projected only through MapTerrain.
+## contacts isolates the incoming/outgoing ends for light drawn on a struck mirror's face.
+
+const WIDTHS := [6.0, 2.25]
+
+
+static func contacts(route: Dictionary, id: String, reach: float) -> Array:
+	var segments := []
+	for index in route["hits"].size():
+		if route["hits"][index] != id:
+			continue
+		var incoming: Array = route["segments"][index]
+		var hit: Vector3 = incoming[1]
+		var start: Vector3 = incoming[0]
+		segments.append([hit.move_toward(start, reach), hit])
+		if index + 1 < route["segments"].size():
+			var outgoing: Array = route["segments"][index + 1]
+			segments.append([hit, hit.move_toward(outgoing[1], reach)])
+	return segments
+
 
 static func mesh(terrain: MapTerrain, segments: Array, width: float) -> ArrayMesh:
 	var result := ArrayMesh.new()

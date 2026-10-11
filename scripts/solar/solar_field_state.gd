@@ -4,6 +4,7 @@ extends RefCounted
 ## Controls are explicit mutations; evaluation runs only after a change, never every frame.
 ## All three complete authored paths are required for electrical output. Feeds start closed.
 ## SOLAR_FIELD_LAYOUT=v1 retains the previous 4/5/4 layout for comparisons.
+## bind_world supplies canonical terrain collisions/off-screen ray extents when entering the field.
 
 signal changed
 
@@ -15,6 +16,7 @@ var mirrors: Array[Dictionary] = []
 var orientations: Dictionary = {}
 var feeds: Array[bool] = [false, false, false]
 var routes: Array[Dictionary] = []
+var _world: SolarWorldGeometry
 
 
 func _init() -> void:
@@ -32,6 +34,11 @@ func _init() -> void:
 					"elevation": SolarOptics.mirror_elevation(route, index)}
 			mirror["mount"] = SolarOptics.mount(field, mirror)
 			mirrors.append(mirror)
+	_evaluate()
+
+
+func bind_world(terrain: MapTerrain) -> void:
+	_world = SolarWorldGeometry.new(terrain)
 	_evaluate()
 
 
@@ -78,4 +85,4 @@ func lit_count(group: int) -> int:
 func _evaluate() -> void:
 	routes.clear()
 	for group in feeds.size():
-		routes.append(SolarOptics.trace(field, mirrors, orientations, group, feeds[group]))
+		routes.append(SolarOptics.trace(field, mirrors, orientations, group, feeds[group], _world))
