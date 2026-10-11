@@ -1224,3 +1224,12 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-11 — Owner requested a master control panel; dev-only by owner's choice (editor and
   debug builds, F1 / Guide): set the time (half-hour steps or a part of the day) and freeze food,
   water and oxygen (`SurvivalState.frozen`). Not part of the shipped HUD. PixelFont gains `<` `>`.
+- 2026-10-11 — Owner reported premature receiver strikes from Amber, B3 and C2, and asked
+  to check untested angles too. Reflector positions/mounts are adjusted so incomplete paths
+  physically miss the cone, while the full 4/5/4 paths, interleaved spacing, mountain feed
+  and original vegetation remain. The solar regression suite now searches all reachable
+  mirror-angle combinations with consistent orientations, including cross-channel bounces;
+  any incomplete path within four world units of the receiver fails with a replayable
+  angle assignment. This visual clearance is test-only; the physical cone remains unchanged.
+  Generated capture stands now select level ground in the base spawn's walk component,
+  with `solar_field_gen.py --stands-only` available to refresh anchors without rerendering art.

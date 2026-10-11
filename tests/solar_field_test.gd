@@ -1,10 +1,12 @@
 extends Node
-## Solar regression suite: finite optics, no skipped reflectors, the B4 157.5-degree
+## Solar regression suite: finite optics, all-angle physical shortcut search, the B4 157.5-degree
 ## bypass, real F/gamepad input, independent suppression, all four camera turns,
 ## physical footprints/reach and solar/engine state through scene replacement.
 ## Layout regressions also check equipment clearance and each color spanning three sectors.
 ## Run: godot --headless --path . res://tests/solar_field_test.tscn
 ## Optional rendered evidence: omit --headless and append -- --gallery=shots/solar --audio-debug.
+
+const RouteSearch = preload("res://tests/solar_route_search.gd")
 
 var _checks := 0
 var _failures := 0
@@ -50,6 +52,8 @@ func _tap(code: int, pad := false) -> void:
 			key.pressed = pressed
 			event = key
 		Input.parse_input_event(event)
+		# Deliver this synthetic press/release before advancing a rendered-frame test.
+		Input.flush_buffered_events()
 		await get_tree().process_frame
 		await get_tree().process_frame
 		await _frames()
@@ -86,6 +90,14 @@ func _model() -> void:
 			_check(hardware[index].distance_to(hardware[other]) >= 80.0, "equipment has room to breathe")
 	for route in state.routes:
 		_check(route["segments"].is_empty() and not route["connected"], "closed feed emits no random light")
+	# A small geometric margin keeps the beam's drawn width/glow from grazing the surface.
+	var receiver: Dictionary = state.field["collector"].duplicate()
+	state.field["collector"]["radius"] += 4.0
+	state.field["collector"]["top_radius"] += 4.0
+	for group in 3:
+		var shortcuts: Dictionary = RouteSearch.inspect(state, group)
+		_check(shortcuts["witnesses"].is_empty(), "%s incomplete paths clear the receiver by four units across all mirror settings: %s" % [state.field["routes"][group]["id"], shortcuts["witnesses"]])
+	state.field["collector"] = receiver
 	var solution := _solution(state)
 	for id in solution:
 		while state.orientations[id] != solution[id]:
@@ -182,7 +194,9 @@ func _integration() -> void:
 		await _tap(KEY_Q)
 		_check(state.orientations[id] == initial, "Q cannot rotate nearby " + id)
 		for step in posmod(int(solution[id]) - int(state.orientations[id]), 8):
+			var prior: int = state.orientations[id]
 			await _tap(KEY_F)
+			_check(state.orientations[id] == posmod(prior + 1, 8), "each F press turns nearby " + id)
 	_check(state.supplies_power(), "real F inputs solve the whole field")
 	if not _gallery.is_empty():
 		player.teleport(SolarOptics.point(state.field["collector"]["world"]) + Vector2(-50, -50))

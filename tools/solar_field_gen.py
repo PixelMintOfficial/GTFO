@@ -9,13 +9,16 @@ and energizing waves. Wall-panel art/anchors belong to interior_gen.py.
 No authored solution is stored in runtime metadata. Run through make solar (after map).
 Writes assets/maps/red_planet/solar/* and solar_field.json. No hand-edited images.
 SOLAR_FEED_DESIGN=shield retains the previous plate feed; beacon is the approved revision.
+--stands-only refreshes reachable capture/validation approaches from the current walk grid.
 """
 import json
 import math
 import os
+import sys
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 import astronaut_sprite_gen as A
 from solar_layout import load_field, mirror_mount
@@ -179,6 +182,38 @@ def sheet(M, name, frames):
                 anchor=[round(M.AX - box[0]), round(M.AY - box[1])])
 
 
+def reachable_stands(field, meta, directory):
+    """Choose level approaches in the spawn's walk component, clear of the receiver."""
+    walk = np.asarray(Image.open(os.path.join(directory, meta['game']['walk_png']))).astype(np.int32)
+    labels, _ = ndimage.label(walk[..., 2] > 191, np.ones((3, 3)))
+
+    def cell(point):
+        x, y = point
+        return round((y - x) / math.sqrt(2) - .5), round((y + x) / math.sqrt(2) - .5)
+
+    spawn = labels[cell(meta['game']['spawn_world'])]
+    if not spawn:
+        raise ValueError('Solar approaches require a walkable main-base spawn')
+    center = np.array(field['collector']['world'])
+    stands = {}
+    for route in field['routes']:
+        controls = [(route['id'] + ' SUN', route['source'], route.get('source_elevation', 0))]
+        controls.extend((route['id'] + str(i + 1), point, 0) for i, point in enumerate(route['mirrors']))
+        for name, point, elevation in controls:
+            for offset in [(18, -12), (-18, -12), (18, 12), (-18, 12), (22, 0), (-22, 0), (0, -22), (0, 22)]:
+                stand = np.array(point) + offset
+                row, column = cell(stand)
+                height = (walk[row, column, 0] * 256 + walk[row, column, 1]) / meta['game']['height_scale'] - meta['game']['height_offset']
+                if (np.linalg.norm(stand - center) >= field['collector']['radius'] + 8
+                        and np.linalg.norm(offset) < field['reach'] and labels[row, column] == spawn
+                        and abs(height - elevation) < (1 if elevation else .02)):
+                    stands[name] = stand.tolist()
+                    break
+            else:
+                raise ValueError(name + ' has no reachable level approach; adjust its authored placement')
+    return stands
+
+
 def main():
     import mars_map_gen as M
     meta = json.load(open(os.path.join(M.OUT, 'red_planet_map.json')))
@@ -190,16 +225,17 @@ def main():
                            if os.environ.get('SOLAR_FEED_DESIGN', 'beacon') == 'shield' else
                            {'crystal_offset': [0, 0], 'tip_closed': 39, 'tip_open': 53.3, 'emerge': .25})
     # Reach anchors for capture/validation; actual play can approach from any side.
-    field['stands'] = {}
-    center = np.array(field['collector']['world'])
-    for route in field['routes']:
-        controls = [(route['id'] + ' SUN', route['source'])]
-        controls.extend((route['id'] + str(i + 1), point) for i, point in enumerate(route['mirrors']))
-        for name, point in controls:
-            stand = np.array(point) + [18, -12]
-            if np.linalg.norm(stand - center) < field['collector']['radius'] + 8:
-                stand = np.array(point) + [-18, -12]
-            field['stands'][name] = stand.tolist()
+    field['stands'] = reachable_stands(field, meta, M.OUT)
+    if '--stands-only' in sys.argv:
+        path = os.path.join(M.OUT, 'solar_field.json')
+        art = json.load(open(path))
+        if art['routes'] != field['routes'] or art['collector'] != field['collector']:
+            raise ValueError('Regenerate solar art before refreshing its approaches')
+        art['stands'] = field['stands']
+        with open(path, 'w') as stream:
+            json.dump(art, stream, indent=2)
+        print('solar field: refreshed 16 reachable approaches', flush=True)
+        return
     field['sheets'] = {}
     field['special_mirrors'] = {}
     for route in field['routes']:

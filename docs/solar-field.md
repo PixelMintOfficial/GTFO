@@ -38,7 +38,9 @@ with the existing DayNight daylight value. No new time-based power balance is ad
 Physical hits always stop at the cone. A hit earns a channel only after visiting
 every assigned reflector, so neither an early hit nor another channel's mirror
 can substitute for a missing reflector. Receiver radius derives from the actual
-frustum section at beam height. B4 is positioned outside the 157.5-degree shortcut.
+frustum section at beam height. The authored layout physically keeps every incomplete
+path away from the receiver, including cross-channel bounces; completion gating is a
+second guard. Mirror placements/mounts prevent the reported Amber, B3 and C2 shortcuts.
 
 ## Generated art and four views
 
@@ -69,8 +71,10 @@ crystal offset, closed/open tip heights and emergence phase used by the sunlight
 Receiver masks encode surface height, cell interiors and local depth; the shader animates
 shine and energizing waves on the actual triangular cells. Each view's masks and indicator
 are exported into `assets/maps/red_planet/solar_field.json`.
-Its `stands` map exports reachable canonical approach points for capture and placement
+Its `stands` map exports level canonical approach points in the base spawn's walk component for capture and placement
 verification, avoiding the receiver's footprint while retaining free approaches in play.
+`solar_field_gen.py --stands-only` refreshes these anchors against the current walk grid
+without rerendering equipment; a placement with no reachable approach fails generation.
 The prior baked array remains available for art comparisons with `SOLAR_DESIGN=array`.
 The earlier plate feed remains available with `SOLAR_FEED_DESIGN=shield`.
 
@@ -94,8 +98,15 @@ changes alone, then `make import`. No generated PNG or JSON is hand edited.
 `make check` includes `tests/solar_field_test.tscn`: closed feeds, complete routes,
 every B4 angle, bypass guards, real keyboard/gamepad controls, modal priority,
 physical reach/blocking, four native camera turns and cross-scene engine power.
-Native event tests wait for both idle and physics frames before moving to another
-target, so accumulated key events cannot be delivered at the next target.
+`tests/solar_route_search.gd` explores every physically reachable path with the actual
+finite optics, retaining consistent angle domains for all thirteen mirrors. It branches
+only at possible hits and rejects any receiver strike missing an assigned reflector,
+covering all eight-angle combinations, cross-channel detours and revisited mirrors.
+The test pads the cone by four world units to keep unfinished rays visibly clear of its edge.
+Every failure returns a concrete orientation assignment replayed through `SolarOptics.trace`.
+This is test-only search; it adds no work to normal play.
+Native event tests flush each synthetic press/release and wait for both idle and physics
+frames before moving to another target, so accumulated events stay on the intended target.
 State-observer checks also wait for idle processing after physics, because a rendered
 frame can contain several physics ticks before proximity and audio update.
 For rendered evidence, run that scene without `--headless` and append

@@ -5,7 +5,8 @@ extends RefCounted
 ## placements; elevated feeds aim down to a tilted first mirror. Other mirrors are upright.
 ## An incomplete path
 ## stops at the cone but cannot energize it. Views never participate in this calculation.
-## tests/solar_field_test.gd covers bypasses, cycles, shutoff and all B4 orientations.
+## tests/solar_field_test.gd searches all reachable angle combinations for early receiver hits,
+## including cross-channel paths, and covers cycles, shutoff and full 4/5/4 routes.
 
 const STEP := PI / 8.0
 const EPSILON := .03
