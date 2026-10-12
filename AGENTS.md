@@ -78,6 +78,9 @@ scripts/
   world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
   inventory_ui.gd      six-slot hotbar and paused backpack; draws existing sprites and PixelFont
   map_terrain.gd       MapTerrain: walkability, ground height, biome, the views, world<->pixel projection
+  map_stream.gd        MapStream: the window of the map that is in memory (§4.10)
+  view_data.gd         ViewData: the map JSONs, parsed once
+  perf_probe.gd        PerfProbe: --perf, what the game costs as it runs
   view_turn.gd         ViewTurn: G / H turn the camera round the world; loads the next views ahead
   turn_overlay.gd      TurnOverlay: the turn's swing, the world stood up in 3D for a moment
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
@@ -140,13 +143,22 @@ assets/                (lowercase, always)
 ## 4. How the game is built
 
 ### 4.1 Pre-rendered world plus data layers
-The world is not made of tiles or 3D meshes. Each map is **one big pre-rendered image**, plus
-data images and JSON written by the same generator so they always match the picture exactly:
+The world is not made of tiles or 3D meshes in the usual sense: nothing is assembled out of
+repeated art. Each map is **one big pre-rendered image**, plus data images and JSON written by
+the same generator so they always match the picture exactly.
+
+A view of the overworld is 7751x4350, and its picture, depth map and light mask come to about
+240 MB. Keeping three views for the camera's turns meant over a gigabyte of **texture** memory,
+so each of those three layers is also **cut into 512 px tiles**, and the game keeps only a
+window of them around the camera (§4.10). That is GPU memory: it is what the frame rate and an
+integrated GPU care about, and it is not the number a task manager shows for the process. The
+whole-picture PNGs are still written - they are what the browser viewer and the previews use,
+and the tiles are cut from them - but the game never loads them.
 
 | File | Contents |
 |---|---|
 | `*_map.png` / `base_interior.png` | the picture |
-| `*_depth.png` | per map pixel: camera depth (world Y × `depth_scale`) as 16 bits in R (high) and G (low); **B = 255** means dome glass, **B = 96** means a live plant (overworld) |
+| `*_depth.png` | per map pixel: camera depth (world Y × `depth_scale`) as 16 bits in R (high) and G (low); **B = 255** means dome glass, **B = 96** means a live plant (overworld). Three channels: there is no alpha to read |
 | `*_walk.png` | a 1-world-unit grid, pixel (u, v): R, G = 16-bit ground height `(z + height_offset) × height_scale`; **B = 255** walkable, **128** too steep (you can jump over, onto or down it), **0** solid |
 | `red_planet_biome.png` | RGB = how much red dust / forest / ice (sums to 255) |
 | `*_light.png` | grey: how much of each map pixel is its own light (lamps, lit windows, LEDs, glowing plants, pools and crystals, the light pooling round them, the stars). Kept lit at night |
@@ -155,6 +167,7 @@ data images and JSON written by the same generator so they always match the pict
 | `*_map.json` / `base_interior.json` | projection constants (`game`, incl. `light_png` / `sun_png`), spawn, domes, zoom frames, door, fx |
 | `red_planet_fx.json` | plants, glows, halos, crash scene, dome cracks, airlock doors |
 | `red_planet_props.json` | sprite sheets and placements of the multitool test props, dead lamps |
+| `tiles/<layer><_rk>/t_XX_YY.png` | the picture, depth and light of view k in 512 px tiles. A tile of one colour throughout (over half of every map is sky) is not written: the view JSON's `tiles` block gives the grid, which tiles exist and what a missing one is filled with. Imported as **Image**, never as a texture, so they can be stitched on a worker thread |
 
 Scripts must **read positions from this data** (door positions, LED pixels, crack outlines and
 so on). Never hard-code a map pixel position in a script. If you need one, the generator
@@ -408,8 +421,40 @@ the scene from one view to the next.
   and the game's own orthographic camera swings round. The view left dissolves into the view
   arrived at (a pixel dither), then the overlay fades into the live view. It sits above the
   world (layer 3) and below every UI layer. Turns wait for a calm moment: not in a cutscene, a
-  modal, mid-jump, or while the tool is being drawn or at work. The next views' textures load
-  in the background ahead of time, so a turn never waits for the disk.
+  modal, mid-jump, or while the tool is being drawn or at work. The next views' sprite sheets
+  load in the background ahead of time and their windows are kept stitched (§4.10), so a turn
+  never waits for the disk. A press whose view is not ready yet is kept and played as soon as
+  it is, rather than freezing the frame.
+
+
+### 4.10 The map window: only what you can see is in memory
+
+`MapStream` (`scripts/map_stream.gd`) stitches a window of each resident view out of the tiles
+§4.1 describes, and that window is what the game actually draws and samples. **Texture** memory
+then follows the zoom instead of the size of the world: 1097 MB down to 200 MB at the default
+zoom on an Intel UHD 620 (`--no-stream` loads the whole pictures instead, so the two can be
+compared in one build). This is GPU memory. It is not what a task manager shows for the
+process, which moves by about 11 MB - see §12.
+
+- **What it covers**: what the camera shows, grown by the margin the turn's swing lays out
+  (`TurnOverlay.MARGIN`) and then by `PAD`, so walking does not restitch every step. It is
+  sized from the zoom level being tweened *to*, so a zoom stitches once.
+- **Where it is**: `MapTerrain.window` (map pixels), with `map_texture`, `depth_map` and
+  `light_mask` holding that rect and nothing else. `map_size` still means the whole map - the
+  camera's limits and `to_screen()` depend on it. **Do not let the two merge.**
+- **Three views at a time**, as before, so a turn never waits: the one you are looking at and
+  the two you could turn to. Only one is restitched per frame, the current one first, and the
+  old windows stay on screen until the new one is ready - a rebuild is never visible. A turn
+  waits for its view's window (`ViewTurn.request`) rather than stitching on the spot.
+- **Anything that samples the depth map** must sample the window: `(map_pos - map_win.xy)`,
+  with a bounds test, and **a pixel outside the window counts as sky** so a sprite there draws
+  whole instead of being wrongly hidden. `MapStream.bind(material, terrain)` points a material
+  at the current window; re-point on the scene's `_window_moved` as well as on a view switch.
+- **Small maps are not streamed.** The interior has no `tiles` block, so `MapTerrain.streaming`
+  is false, its layers are loaded whole, and its window is the whole map - the same shaders and
+  the same code path, with the window simply never moving.
+- `--stream-debug` prints every window as it is stitched; `tests/map_stream_test.tscn` checks
+  that the window always covers what the camera shows and that its pixels are the generator's.
 
 ---
 
@@ -586,7 +631,7 @@ the existing renderer (`render_groups` / `render_sprite`).
 | Generator | Writes | Run it when | Time |
 |---|---|---|---|
 | `python tools/astronaut_sprite_gen.py` then `python tools/godot_spriteframes.py` | `assets/characters/astronaut/*` | you change the astronaut, the multitool or any animation | slow (about 1,000 frames); `--quick` writes only the contact sheet |
-| `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 8 minutes for the four views (~1.5 per view), several GB of RAM |
+| `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | ~35 min for the four views (~9 each, measured on an 8-core laptop), several GB of RAM. `--tiles-only` re-cuts the tiles from the pictures already on disk in a couple of minutes |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
 | `python tools/solar_field_gen.py` | `assets/maps/red_planet/solar/*`, `solar_field.json` | after every map regeneration or equipment change; `make map` includes it | seconds |
 | `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about 25 seconds (four views) |
@@ -774,7 +819,9 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
 - **Lands:**
   - **red dust** around the main base: dunes, mesas, craters, spiky ranges;
   - **alien forest** around the nursery dome: violet-teal moss, glowing pools, crystal
-    spires, swaying alien plants;
+    spires, alien plants leaning in the wind (a slow gust rolls across a grove at a time, so
+    the forest breathes rather than thrashes - `BiomeFX`'s `sway_rate` and `gust_*`, and the
+    lean itself in the generator's `lantern_tree`);
   - **ice** around the comms dome: snowfields, frozen lakes, charcoal peaks and cliffs
     under snow.
   - The comms dome sits on a stepped charcoal massif reached by ramped trails.
@@ -879,6 +926,10 @@ godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
 - `--quit=SECONDS`, `--audio-debug`, `--equip`, `--use`, `--face=DX,DY` (both scenes)
+- `--perf` / `--perf-every=S`: texture memory, draw calls and mean/worst frame time, once a
+  second. There is no screenshot for memory, so this is how a change to it is shown (both scenes)
+- `--stream-debug`: every map window as it is stitched (both scenes, §4.10)
+- `--turn=N`, `--turn-left` / `--turn-right`, `--turn-at=SECONDS` (when the turn fires, default 1)
 - `--dev-panel` (open the master control panel), `--dev-freeze=hunger,thirst,oxygen` (both, debug builds)
 - overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`,
   `--dome-mended=ROOM` (that room's dome glass whole again; `command` = storage's)
@@ -941,6 +992,9 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **A day/night cycle** with four parts of the day; lights stay lit at night.
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
+- **The map is stored as tiles and only a window of it is in memory** (§4.10). The art,
+  the projection and the four pre-rendered views are unchanged: this is how the pictures
+  are stored and loaded, not how they are drawn.
 - **The camera turns in quarter turns** (G / H), indoors and out, in a short eased swing;
   the sun stays on the same side of the screen in every view.
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
@@ -1293,3 +1347,30 @@ Write one line per decision: date — decision (who approved it).
   routes revisiting a mirror from opposite sides. Real back-side contact pixel checks extend
   the all-angle suite; the focused Jade reproduction fails before the fix. No routing,
   equipment or terrain changes.
+- 2026-10-12 — Performance, against three reported issues (#7, #8, #11), measured with a new
+  `--perf` hook rather than by feel, and with `--no-stream` so both map paths can be compared in
+  one build. **What each change is actually worth, measured on an Intel UHD 620:**
+  - *the map window* (§4.10): texture memory 1097 MB → 200 MB, VRAM 1122 MB → 232 MB. Frame
+    rate unchanged (both 60), and **process RSS 306 MB → 295 MB**. Nearly all of its benefit is
+    GPU memory, which on an integrated GPU is system memory but is not in the process's
+    resident set - so it does **not** show in a task manager, and #11 is not answered by it.
+  - *redrawing only what changed* (the clock dial, the four survival meters, the flora list):
+    this is what took the frame rate from 30 to a locked 60.
+  - *the turn* no longer freezes: it kept a press rather than forcing its view into memory on
+    the frame of the press, which cost up to 1965 ms when one turn followed another.
+  - *the forest*: trees lean about half as far (crown travel ±6.1 px → ±2.8 px) on a slow gust
+    that rolls through a grove at a time; the screen changing between frames fell 27% → 6%.
+  Of the ~300 MB a task manager shows, ~177 MB is an empty Godot window on the same machine,
+  20 MB the walk grid and 8 MB the audio. **Say which memory you mean when you report a
+  number**; the three in play here (process RSS, texture memory, VRAM) move independently.
+  Also: the map's layers are stored as 512 px tiles, the depth map dropped its unused alpha
+  channel, and the map JSONs are parsed once with one view's fx held at a time - parsed, 350 KB
+  of JSON costs 4.2 MB of heap (agent, from the owner's three issues).
+- 2026-10-12 — Merge performance main into the solar branch: streamed depth windows bind to
+  world beams, reflector replays, impacts and receiver FX; initialize player occlusion after the
+  first window publishes. Neighbor-window prediction keeps the astronaut centered at every zoom.
+  Regenerate all four maps/tiles with the terraced field and calmer tree sway; forest clearance
+  checks fingerprint canonical feet so narrower sprite boxes do not count as moved plants.
+  Native contact comparisons wait for zoom to settle. Headless texture preloads run serially
+  because the Godot dummy renderer races concurrent texture allocations; a preload/window
+  upload stress regression guards the workaround. Displayed game preloads remain asynchronous.

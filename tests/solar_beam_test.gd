@@ -3,7 +3,7 @@ extends Node
 ## settings, first terrain contacts and escaped rays outside every view's visible envelope.
 ## Native mode compares mirror-face pixels in the real world and replays the production
 ## reflector layer with front/behind rays at the face, collar and post, all 320 poses.
-## Actual uploaded mesh attributes and sky/opaque shader fixtures guard depth precision.
+## Actual uploaded mesh attributes and shifted depth-window shader fixtures guard precision.
 ## Real back-side reflections must not expose buried bounce vertices as face dots.
 ## --contact-probe isolates the reported Jade dot in a small native render.
 ## godot --headless --path . res://tests/solar_beam_test.tscn
@@ -168,20 +168,32 @@ func _shader() -> void:
 	mesh.mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	var material := ShaderMaterial.new()
 	material.shader = BEAM
-	material.set_shader_parameter("map_size", Vector2(16, 16))
+	material.set_shader_parameter("map_win", Vector4(0, 0, 16, 16))
 	material.set_shader_parameter("beam_color", Color("#4fc6b4"))
 	mesh.material = material
 	viewport.add_child(mesh)
 	add_child(viewport)
 	for empty_sky in [true, false]:
-		var depth := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		var depth := Image.create(16, 16, false, Image.FORMAT_RGBA8)
 		depth.fill(Color(1, 1, 0) if empty_sky else Color(200.0 / 255.0, 0, 0))
 		material.set_shader_parameter("depth_map", ImageTexture.create_from_image(depth))
 		await _frames()
 		await RenderingServer.frame_post_draw
 		var pixel := viewport.get_texture().get_image().get_pixel(8, 8)
 		_check(pixel.g > .6 if empty_sky else pixel.a < .01, "sky sentinel lets light pass" if empty_sky else "foreground solid depth still hides light")
-	material.set_shader_parameter("map_size", Vector2(2, 2))
+	# Move the same mesh and window away from the map origin: sampling must stay local.
+	mesh.position = Vector2(100, 200)
+	viewport.canvas_transform = Transform2D(0, Vector2(-100, -200))
+	material.set_shader_parameter("map_win", Vector4(100, 200, 16, 16))
+	for empty_sky in [true, false]:
+		var depth := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+		depth.fill(Color(1, 1, 0) if empty_sky else Color(200.0 / 255.0, 0, 0))
+		material.set_shader_parameter("depth_map", ImageTexture.create_from_image(depth))
+		await _frames()
+		await RenderingServer.frame_post_draw
+		var pixel := viewport.get_texture().get_image().get_pixel(8, 8)
+		_check(pixel.g > .6 if empty_sky else pixel.a < .01, "shifted depth window passes sky" if empty_sky else "shifted depth window hides light behind solid ground")
+	material.set_shader_parameter("map_win", Vector4(100, 200, 2, 2))
 	await _frames()
 	await RenderingServer.frame_post_draw
 	_check(viewport.get_texture().get_image().get_pixel(8, 8).g > .6, "rays outside the map do not collide with clamped edge pixels")
@@ -220,8 +232,7 @@ func _reflectors(terrain: MapTerrain) -> void:
 	var base := MeshInstance2D.new()
 	var material := ShaderMaterial.new()
 	material.shader = BEAM
-	material.set_shader_parameter("depth_map", terrain.depth_map)
-	material.set_shader_parameter("map_size", terrain.map_size)
+	MapStream.bind(material, terrain)
 	material.set_shader_parameter("depth_scale", terrain.depth_scale)
 	material.set_shader_parameter("beam_color", Color("#4fc6b4"))
 	base.material = material
@@ -243,7 +254,9 @@ func _reflectors(terrain: MapTerrain) -> void:
 			var group: int = mirror["group"]
 			var sheet: Dictionary = art["special_mirrors"][id][heading] if art["special_mirrors"].has(id) else art["sheets"][state.field["routes"][group]["id"]]["mirror"]
 			var prop := WorldProp.new()
-			prop.setup({"tex": load(SolarField.ART.get_base_dir().path_join(sheet["file"])), "frames": sheet["frames"], "anchor": SolarOptics.point(sheet["anchor"])}, 0, terrain, sky_texture)
+			prop.setup({"tex": load(SolarField.ART.get_base_dir().path_join(sheet["file"])), "frames": sheet["frames"], "anchor": SolarOptics.point(sheet["anchor"])}, 0, terrain)
+			(prop.sprite.material as ShaderMaterial).set_shader_parameter("depth_map", sky_texture)
+			(prop.sprite.material as ShaderMaterial).set_shader_parameter("map_win", Vector4(0, 0, 1, 1))
 			viewport.add_child(prop)
 			prop.place(mirror["world"])
 			camera.position = prop.position + Vector2(0, -50)
@@ -254,7 +267,9 @@ func _reflectors(terrain: MapTerrain) -> void:
 			base.set_meta("group", group)
 			overlay.setup(terrain, prop, sheet, beams, state, mirror)
 			(base.material as ShaderMaterial).set_shader_parameter("depth_map", sky_texture)
+			(base.material as ShaderMaterial).set_shader_parameter("map_win", Vector4(0, 0, 1, 1))
 			(overlay.meshes[0].material as ShaderMaterial).set_shader_parameter("depth_map", sky_texture)
+			(overlay.meshes[0].material as ShaderMaterial).set_shader_parameter("map_win", Vector4(0, 0, 1, 1))
 			var atlas := (load(SolarField.ART.get_base_dir().path_join(sheet["depth"]["file"])) as Texture2D).get_image()
 			for angle in 8:
 				if _contact_probe and angle != solution[id]: continue
@@ -361,16 +376,22 @@ func _native() -> void:
 		world.player.teleport(world.solar.interaction_point("C1"))
 		world.player.camera.set_level(1)
 		world.player.camera.snap_to(world.player.position)
+		# A fixed frame count can leave the zoom tween running on a faster build.
+		# Compare the same screen pixels only once zoom and its depth window have settled.
+		await get_tree().create_timer(world.player.camera.zoom_time + .05).timeout
+		world.stream.refresh(true)
 		for group in 3:
 			state.toggle_feed(group)
 		await _frames()
 		await RenderingServer.frame_post_draw
 		var dark := get_viewport().get_texture().get_image()
+		var dark_transform := get_viewport().get_canvas_transform()
 		for group in 3:
 			state.toggle_feed(group)
 		await _frames()
 		await RenderingServer.frame_post_draw
 		var lit := get_viewport().get_texture().get_image()
+		_check(get_viewport().get_canvas_transform() == dark_transform, "contact pixel comparison uses a settled camera in view %d" % heading)
 		var mirror: Dictionary = state.mirrors.filter(func(m): return m["id"] == "C1")[0]
 		var center := SolarOptics.mirror_center(state.field, mirror)
 		var pixel: Vector2 = get_viewport().get_stretch_transform() * (get_viewport().get_canvas_transform() * world.terrain.to_screen(Vector2(center.x, center.y), center.z))

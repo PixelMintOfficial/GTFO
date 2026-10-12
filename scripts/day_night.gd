@@ -72,7 +72,7 @@ var _pending: Array[Node] = []
 
 
 ## map: the scene's pre-rendered map sprite. light_mask / sun_mask: its light and sun masks.
-func setup(player: Player, map: Sprite2D, light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
+func setup(player: Player, map: CanvasItem, light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
 	_player = player
 	_map_mat = ShaderMaterial.new()
 	_map_mat.shader = MAP_SHADER

@@ -81,7 +81,7 @@ func _make_equipment(id: String, world: Vector2, group: int, source: bool, actor
 	prop.solid = true
 	var entry := {"id": id, "prop": prop, "group": group, "source": source, "world": world}
 	equipment[id] = entry
-	prop.setup(_sheet(entry), 0, _terrain, _terrain.depth_map)
+	prop.setup(_sheet(entry), 0, _terrain)
 	actors.add_child(prop)
 	prop.place(world)
 	if not source:
@@ -127,20 +127,30 @@ func _sheet(entry: Dictionary) -> Dictionary:
 			"anchor": SolarOptics.point(sheet["anchor"])}
 
 
+## The depth window has moved (MapStream): point every beam and cable at where it is now.
+func refresh_window() -> void:
+	for mesh in _all_beams:
+		MapStream.bind(mesh.material as ShaderMaterial, _terrain)
+	if _cable != null and _cable.material != null:
+		MapStream.bind(_cable.material as ShaderMaterial, _terrain)
+	for entry in equipment.values():
+		(entry["prop"] as WorldProp).refresh_window()
+	if fx != null:
+		fx.refresh_window()
+
+
 func load_view() -> void:
 	_indicator = SolarOptics.point(_info["views"][_terrain.heading]["indicator_px"])
 	for entry in equipment.values():
-		(entry["prop"] as WorldProp).set_view(_sheet(entry), _terrain.depth_map)
+		(entry["prop"] as WorldProp).set_view(_sheet(entry))
 		if not entry["source"]:
 			(_reflectors[entry["id"]] as SolarReflectorLight).load_view(_art_sheet(entry))
 	for mesh in _all_beams:
 		var mat := mesh.material as ShaderMaterial
-		mat.set_shader_parameter("depth_map", _terrain.depth_map)
-		mat.set_shader_parameter("map_size", _terrain.map_size)
+		MapStream.bind(mat, _terrain)
 		mat.set_shader_parameter("depth_scale", _terrain.depth_scale)
 	var cable_material := _cable.material as ShaderMaterial
-	cable_material.set_shader_parameter("depth_map", _terrain.depth_map)
-	cable_material.set_shader_parameter("map_size", _terrain.map_size)
+	MapStream.bind(cable_material, _terrain)
 	cable_material.set_shader_parameter("depth_scale", _terrain.depth_scale)
 	var segments := []
 	var cable: Array = state.field["cable"]

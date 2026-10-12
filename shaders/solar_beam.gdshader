@@ -5,7 +5,9 @@ render_mode unshaded;
 // Baked cone/cliffs occlude light; 65535 means sky. Optional generated reflector
 // depth clips a replay of the identical mesh above its y-sorted hardware silhouette.
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
-uniform vec2 map_size;
+// The depth map holds only the part of the view that is in memory (MapStream): x, y where the
+// window starts in map pixels, z, w how big it is. Outside it counts as sky, so nothing hides.
+uniform vec4 map_win = vec4(0.0, 0.0, 1.0, 1.0);
 uniform float depth_scale = 20.0;
 uniform vec4 beam_color : source_color;
 uniform float daylight = 1.0;
@@ -28,12 +30,13 @@ void vertex() {
 	front_contact = UV.y;
 }
 void fragment() {
-	vec4 d = texture(depth_map, (floor(map_pos) + 0.5) / map_size);
+	ivec2 dp = ivec2(floor(map_pos) - map_win.xy);
+	bool inside = all(greaterThanEqual(dp, ivec2(0))) && all(lessThan(dp, ivec2(map_win.zw)));
+	vec4 d = inside ? texelFetch(depth_map, dp, 0) : vec4(1.0, 1.0, 0.0, 1.0);
 	float encoded = round(d.r * 255.0) * 256.0 + round(d.g * 255.0);
 	float depth = encoded / depth_scale;
-	bool in_map = all(greaterThanEqual(map_pos, vec2(0.0))) && all(lessThan(map_pos, map_size));
 	bool plant = abs(d.b * 255.0 - 96.0) < 12.0;
-	if (in_map && encoded < 65534.5 && !plant && d.b < 0.5 && depth < ray_depth - 1.0) discard;
+	if (inside && encoded < 65534.5 && !plant && d.b < 0.5 && depth < ray_depth - 1.0) discard;
 	if (reflector_clip) {
 		vec2 local = floor(map_pos) + 0.5 - reflector_position;
 		if (any(lessThan(local, vec2(0.0))) || any(greaterThanEqual(local, reflector_size))) discard;

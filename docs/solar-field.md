@@ -132,6 +132,13 @@ UV.y annotates the front-side incident/reflected segment pair per hit without ch
 vertices, widths or endpoints. Other segments use the solid panel surface. Revisited
 mirrors can therefore show a front-side hit while hiding a back-side hit in the same route.
 
+All depth materials sample `MapTerrain.window` through `MapStream.bind`, including
+reflector replays, terrain impacts, receiver effects and the cable. The scene refreshes
+these bindings when a window moves as well as when the view turns. Pixel fixtures cover
+nonzero window origins; the map streaming suite checks every world depth material after
+spawn, movement, zoom and turns. Streamed neighboring views follow the astronaut's focus
+at every zoom, preserving the solar branch's camera behavior.
+
 Use `make map` to regenerate map/props/solar together, `make solar` for equipment
 changes alone, then `make import`. No generated PNG or JSON is hand edited.
 

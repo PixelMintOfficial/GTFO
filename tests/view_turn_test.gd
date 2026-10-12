@@ -4,6 +4,7 @@ extends Node
 ## doesn't move when the view does (the astronaut's place and facing, props, doors, repair bars),
 ## the widest zoom follows the astronaut in every view, a turn waits for a calm moment,
 ## and a press during a swing is kept.
+## View preloads overlap streamed-window texture uploads and release cleanly at scene teardown.
 ## Run: godot --headless --path . res://tests/view_turn_test.tscn  (failures exit nonzero)
 
 var _checks := 0
@@ -41,6 +42,7 @@ func _ready() -> void:
 	GameState.intro_done = true
 	GameState.heading = 0
 	_projection()
+	await _preload_windows()
 	await _overworld()
 	await _interior()
 	print("VIEW TURN TESTS: %d checks, %d failures" % [_checks, _failures])
@@ -67,6 +69,24 @@ func _projection() -> void:
 	_check(t.world_dir(Vector2(1, 0)).distance_to(Vector2(0, 1)) < 0.001, "view 1: screen right is world +Y")
 	# the world is 2 * view_center.y deep from every side; the 16-bit depth map must reach all of it
 	_check(t.view_center.y * 2.0 * t.depth_scale < 65534.0, "the depth map reaches the far side of the world")
+
+
+## Exercise the same preload/window-upload overlap that exposed the dummy renderer's RID race.
+func _preload_windows() -> void:
+	var turn := ViewTurn.new()
+	turn.terrain = MapTerrain.new("res://assets/maps/red_planet/red_planet_map.json")
+	add_child(turn)
+	var image := Image.create(32, 32, false, Image.FORMAT_RGB8)
+	image.fill(Color.WHITE)
+	for step in 32:
+		turn._preload_around(step % 4)
+		for i in 40:
+			var texture := ImageTexture.create_from_image(image)
+			var uploaded := texture.get_image()
+			_check(uploaded != null and not uploaded.is_empty() and uploaded.get_pixel(0, 0).is_equal_approx(Color.WHITE), "window texture remains valid while view sprites preload")
+		await get_tree().process_frame
+	turn.queue_free()
+	for i in 4: await get_tree().process_frame
 
 
 func _overworld() -> void:
@@ -153,7 +173,8 @@ func _overworld() -> void:
 	await get_tree().create_timer(2.5).timeout
 	_camera_centered(player, "releasing cutscene focus returns to the astronaut")
 	world.queue_free()
-	await get_tree().process_frame
+	for i in 4:                                          # let the scene and its textures go
+		await get_tree().process_frame
 
 
 func _interior() -> void:
@@ -176,7 +197,8 @@ func _interior() -> void:
 				_check(m["progress_px"] == info["progress_px"], "the %s bar moves to this view" % info["id"])
 	_check(is_instance_valid(base.door) and base.door.get_parent() != null, "the exit door is rebuilt")
 	base.queue_free()
-	await get_tree().process_frame
+	for i in 4:
+		await get_tree().process_frame
 	GameState.heading = 0
 
 

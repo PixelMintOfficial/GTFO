@@ -21,6 +21,7 @@ var level := 0
 
 var _target: Node2D
 var _map: CanvasItem
+var _streamed := false
 var _max_view := Vector2.ZERO
 var _pos := Vector2.ZERO
 var _factor := 1.0
@@ -31,7 +32,8 @@ var _shake_left := 0.0
 var _shake_len := 1.0
 
 
-func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2) -> void:
+func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2, streamed := false) -> void:
+	_streamed = streamed
 	_target = target
 	_map = map
 	_max_view = max_view_px
@@ -83,6 +85,12 @@ func view_size() -> Vector2:
 	return _base_view() / zoom
 
 
+## How much the camera will show once a zoom has finished. The map window is sized from this,
+## not from view_size(), so a zoom stitches once instead of on every frame of its tween.
+func target_view_size() -> Vector2:
+	return _base_view() * maxf(_factor, levels[level])
+
+
 func set_level(i: int) -> void:
 	i = clampi(i, 0, levels.size() - 1)
 	if i == level:
@@ -122,6 +130,23 @@ func _goal() -> Vector2:
 	return _focus()
 
 
+## Where the camera would sit if the world were drawn the way view k draws it.
+##
+## MapStream has to stitch a window for the two views the player might turn to next, and a
+## window is built around where the camera will be, not where it is. This has to agree with
+## _goal() exactly for the view the player is already in, or the first frame of a turn would
+## land on ground the window does not cover. Both views follow the astronaut at every zoom.
+func centre_in(terrain: MapTerrain, k: int, player: Player) -> Vector2:
+	if posmod(k, 4) == terrain.heading:
+		return _goal() + offset
+	# The same point _sync() draws the astronaut at, as view k would draw it.
+	var feet := terrain.to_screen_in(k, player.world_pos, terrain.height_at(player.world_pos)).round()
+	var goal := feet + (player.sprite.position + player.shadow.position) * 0.5 - offset
+	var half := view_size() * 0.5
+	var size := Vector2(terrain.size_in(k))
+	return goal.clamp(half - offset, size - half - offset) + offset
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if zoom_locked:
 		return
@@ -134,10 +159,16 @@ func _unhandled_input(event: InputEvent) -> void:
 func _apply_factor(f: float) -> void:
 	_factor = f
 	zoom = Vector2.ONE / f
-	# Once a map pixel gets smaller than a screen pixel, let mipmaps shrink it smoothly.
+	# Once a map pixel gets smaller than a screen pixel, let mipmaps shrink it smoothly. A
+	# streamed map has none: its picture is a window stitched afresh as the camera moves, and a
+	# mip pyramid whose phase shifts with the window would shimmer at every restitch.
 	var screen_px_per_map_px := _base_scale() / f
-	_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if screen_px_per_map_px < 0.999 \
-			else CanvasItem.TEXTURE_FILTER_NEAREST
+	if screen_px_per_map_px >= 0.999:
+		_map.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	elif _streamed:
+		_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	else:
+		_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 
 func _build_levels() -> void:

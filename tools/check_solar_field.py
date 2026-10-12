@@ -22,20 +22,39 @@ from solar_layout import access_profile, equipment, load_field
 # 2026-10-11: the trail lamps went (TRAIL_LAMPS); placements are identical, but three plants whose
 # glow a lamp post hid now show it (the last field, live_glow_flags): views 0 and 2 updated.
 ORIGINAL_FLORA = [
-    'bafe18a8a80839e8484a82cc15d73a4af6c5522f77743ac756a99220798c5c35',
-    '7a6df5795b1308c51abbace62fab83483b6af2ab7b04fa035f9ed2139803bb7b',
-    '9b120fe5fccb2fe54d6c3b124e226f060d7239551791780f37ccefe9e92fb885',
-    'a4e398087fb1577b1731a1b00f7f86df9e071274f1070d526b1a369c3d6076f6',
+    # The forest as the solar field was laid out around it, fingerprinted by where each plant
+    # stands (see placement_hash). Taken from the assets at the time and unchanged since: the
+    # gentler tree sway narrowed the sprite boxes, which moved 339 of the stored x values by a
+    # pixel without moving a single foot, and these hashes are the same either way.
+    'b790a9d3d983257d92ef9272bee6629810750ea2141a62bf5971d62aa287691a',
+    'cc7a886067b08d1533bb02f1717d6f8333b5cd3f88f3106a11fdcd9e804d66e0',
+    'dc28813417ef01d6930251038affa0afb88249013959bfd7a08c871c6a15ed43',
+    'd259d8088be0f18010eac92dc52a6ce595d2ad296d254ce3bb8a9573e86640ec',
 ]
 # Variant, horizontal foot, sway phase and view depth fix the original X/Y placement.
 # The approved terraces change vertical feet and terrain occlusion, so v2 checks those
 # placements independently of ground height and live-glow visibility.
 ORIGINAL_FLORA_PLACEMENTS = [
-    '9785d7c5d3e99cfdb7619515e15cdfc8db23306b6bf97ba7e66ad09431569087',
-    'c01b4d171b16a741984769461a34e4364de79132d666c1a7ac03c26bc4e26a30',
-    '36e8d4c88f6520363f5b129fc78083f17db6fc73cad5ff6d4da8b0f157f91455',
-    'cedad2fdb16759ab9f9cb95ab7acbc119556cc5c8ba196a0e1bd6ee36abca34d',
+    'c9597a53f020a2b5fbf9ea85cc24fc4110cfd031fd73e8b5f66adeb6e9375472',
+    '24b0b6a907f0a095b6861d5a34414456b1fa5f326edb0839d131cc821d587ce3',
+    '2bfbfe2139870537050ee00f448220711d22d554f10961e5edf0f7a9508c7fb2',
+    'a27ce2debd32bb45551b67ad02f87e0da4c3e1ae5ae035b56de493bb8f95bebb',
 ]
+
+def placement_hash(flora, terraced=False):
+    """Where every plant stands, and nothing else.
+
+    An instance's stored x is the left edge of its sprite's box, so anything that changes how
+    wide that box is - how far the plant leans, say - moves the number without moving the
+    plant. The foot (x plus the sheet's anchor) is the position the clearance checks below
+    care about, so that is what is fingerprinted: a plant that really moves still trips this,
+    and a plant that only got drawn differently does not.
+    """
+    feet = [[i[0], round(i[1] + flora['sheets'][i[0]]['anchor'][0], 3),
+             i[3] if terraced else round(i[2] + flora['sheets'][i[0]]['anchor'][1], 3),
+             i[4]] for i in flora['instances']]
+    return hashlib.sha256(json.dumps(feet, separators=(',', ':')).encode()).hexdigest()
+
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 BASE = os.path.join(ROOT, 'assets', 'maps', 'red_planet')
@@ -128,13 +147,9 @@ def main():
         assert np.linalg.norm(np.array(anchor) - art['views'][heading]['indicator_px']) <= 1, 'stale indicator view'
         fx = read(view['fx'])
         flora = fx['flora']
-        if field.get('terrain'):
-            instances = [[i[0], i[1], i[3], i[4]] for i in flora['instances']]
-            expected = ORIGINAL_FLORA_PLACEMENTS[heading]
-        else:
-            instances, expected = flora['instances'], ORIGINAL_FLORA[heading]
-        fingerprint = hashlib.sha256(json.dumps(instances, separators=(',', ':')).encode()).hexdigest()
-        assert fingerprint == expected, 'the original forest placements changed'
+        terraced = bool(field.get('terrain'))
+        expected = (ORIGINAL_FLORA_PLACEMENTS if terraced else ORIGINAL_FLORA)[heading]
+        assert placement_hash(flora, terraced) == expected, 'the original forest placements changed'
         mask = art['views'][heading]['receiver_mask']
         assert Image.open(os.path.join(BASE, mask['file'])).size == tuple(mask['size']), 'stale receiver mask'
         for instance in flora['instances']:

@@ -57,7 +57,21 @@ func active_segments() -> int:
 	return roundi(displayed_value() * SEGMENTS / 100.0)
 
 
+## Redraw only when something the dial shows has changed. A meter is ~200 draw_rect calls (the
+## recessed face, the ring, the twelve segments, the icon, the number) and there are four of
+## them, so redrawing every frame was most of the HUD's cost for a reading that moves a few
+## times a minute. The one thing that does animate is a 4x1 bar pulsing on `pulse`; six steps a
+## second is as much of that as anyone can see.
+const PULSE_HZ := 6.0
+
+var _drawn := Vector3(-1, -1, -1)
+
+
 func refresh() -> void:
+	var state := Vector3(active_segments(), roundi(displayed_value()), roundf(pulse * PULSE_HZ))
+	if state == _drawn:
+		return
+	_drawn = state
 	queue_redraw()
 
 

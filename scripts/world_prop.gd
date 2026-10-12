@@ -44,12 +44,11 @@ func _ready() -> void:
 	set_process(not _animation.is_empty())
 
 
-func setup(sheet: Dictionary, frame: int, terrain: MapTerrain, depth_map: Texture2D) -> void:
+func setup(sheet: Dictionary, frame: int, terrain: MapTerrain) -> void:
 	_terrain = terrain
 	_mat = ShaderMaterial.new()
 	_mat.shader = SHADER
-	_mat.set_shader_parameter("depth_map", depth_map)
-	_mat.set_shader_parameter("map_size", terrain.map_size)
+	MapStream.bind(_mat, terrain)
 	_mat.set_shader_parameter("depth_scale", terrain.depth_scale)
 	_mat.set_shader_parameter("tolerance", radius + 2.0)
 	shadow = Sprite2D.new()
@@ -76,11 +75,15 @@ func place(p: Vector2) -> void:
 	_update_blocker()
 
 
+## The depth map it hides behind is a moving window (MapStream): point the shader at it again.
+func refresh_window() -> void:
+	MapStream.bind(_mat, _terrain)
+
+
 ## The camera turned: this view's drawing of it, and its depth map.
-func set_view(sheet: Dictionary, depth_map: Texture2D) -> void:
+func set_view(sheet: Dictionary) -> void:
 	_set_sheet(sheet, sprite.frame if _animation.is_empty() else _variant_frame)
-	_mat.set_shader_parameter("depth_map", depth_map)
-	_mat.set_shader_parameter("map_size", _terrain.map_size)
+	refresh_window()
 	place(world)
 	set_lift(lift)
 

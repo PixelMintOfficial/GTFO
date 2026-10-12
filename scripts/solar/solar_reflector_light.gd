@@ -46,8 +46,7 @@ func load_view(sheet: Dictionary) -> void:
 		material.set_shader_parameter("reflector_scale", depth["scale"])
 		material.set_shader_parameter("reflector_offset", depth["offset"])
 		material.set_shader_parameter("skin_depth_span", depth["skin_depth_span"])
-		material.set_shader_parameter("depth_map", _terrain.depth_map)
-		material.set_shader_parameter("map_size", _terrain.map_size)
+		MapStream.bind(material, _terrain)
 		material.set_shader_parameter("depth_scale", _terrain.depth_scale)
 	refresh()
 

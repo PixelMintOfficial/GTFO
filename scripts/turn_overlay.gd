@@ -26,6 +26,7 @@ var _vp: SubViewport
 var _cam: Camera3D
 var _rect: TextureRect
 var _reliefs: Array[MeshInstance3D] = []   # [left, arrived at] front copies, then their back copies
+var _grids := {}                 # (subdivide_width, subdivide_depth) -> PlaneMesh, kept and reused
 var _boards: Node3D
 var _player_board: Sprite3D
 var _player: Player
@@ -81,6 +82,20 @@ func _ready() -> void:
 	add_child(_rect)
 
 
+func _exit_tree() -> void:
+	# The TextureRect holds the SubViewport's own texture. Which of the two is freed first when
+	# the scene goes away is not fixed, and if the rect outlives the viewport the texture's RID
+	# is reported as leaked at shutdown. Letting go of it here settles the order.
+	if _rect != null:
+		_rect.texture = null
+	for mi in _reliefs:
+		mi.material_override = null
+	_grids.clear()
+	_views.clear()           # the last turn's two views, and the window textures they point at
+	_player = null
+	_player_board = null
+
+
 ## What a relief needs from one view: its textures and projection, the part of its picture to lay
 ## out (round the camera), and where the astronaut and the camera are in it.
 static func view_info(terrain: MapTerrain, camera: Camera2D, player: Player) -> Dictionary:
@@ -89,7 +104,7 @@ static func view_info(terrain: MapTerrain, camera: Camera2D, player: Player) -> 
 	var centre := camera.get_screen_center_position()       # with the camera's offset (it looks above the feet)
 	var rect := Rect2(centre - view * (0.5 + MARGIN), view * (1.0 + 2.0 * MARGIN))
 	return {"map": terrain.map_texture, "depth": terrain.depth_map, "light": terrain.light_mask,
-			"sun": terrain.sun_mask, "size": terrain.map_size, "origin": terrain.origin,
+			"sun": terrain.sun_mask, "win": MapStream.win_vec(terrain), "origin": terrain.origin,
 			"upp": terrain.units_per_px, "dtp": terrain.depth_to_px, "ppu": terrain.px_per_unit,
 			"depth_scale": terrain.depth_scale, "heading": terrain.heading, "center": terrain.view_center,
 			"rect": rect, "view": view, "player_px": player.global_position,
@@ -214,15 +229,27 @@ func _face_player(psi: float) -> void:
 	_player_board.modulate = DayNight.light_mul
 
 
+## The relief's grid of vertices. Building one is tens of milliseconds at the sizes used here
+## (up to 600x600 subdivisions), and a turn lays out three of them, so they are kept: only the
+## subdivision counts vary, and there are only a handful of those (one per zoom level).
+func _grid(sw: int, sh: int) -> PlaneMesh:
+	var key := Vector2i(sw, sh)
+	if _grids.has(key):
+		return _grids[key]
+	var pm := PlaneMesh.new()
+	pm.size = Vector2.ONE
+	pm.subdivide_width = sw
+	pm.subdivide_depth = sh
+	_grids[key] = pm
+	return pm
+
+
 ## Lay view i (0 the view left, 1 the view arrived at) out on its two reliefs, front and back.
 func _setup_view(i: int) -> void:
 	var v: Dictionary = _views[i]
 	var rect: Rect2 = v["rect"]
 	var spacing: float = GRID_PX * v["view"].y / 216.0
-	var pm := PlaneMesh.new()
-	pm.size = Vector2.ONE
-	pm.subdivide_width = clampi(int(rect.size.x / spacing), 8, 600)
-	pm.subdivide_depth = clampi(int(rect.size.y / spacing), 8, 600)
+	var pm := _grid(clampi(int(rect.size.x / spacing), 8, 600), clampi(int(rect.size.y / spacing), 8, 600))
 	for front in [true, false]:
 		var mi := _reliefs[i if front else i + 2]
 		mi.mesh = pm
@@ -238,7 +265,7 @@ func _set_view_params(m: ShaderMaterial, v: Dictionary) -> void:
 	m.set_shader_parameter("depth_tex", v["depth"])
 	m.set_shader_parameter("light_tex", v["light"])
 	m.set_shader_parameter("sun_tex", v["sun"])
-	m.set_shader_parameter("map_size", v["size"])
+	m.set_shader_parameter("win", v["win"])
 	m.set_shader_parameter("origin", v["origin"])
 	m.set_shader_parameter("upp", v["upp"])
 	m.set_shader_parameter("dtp", v["dtp"])

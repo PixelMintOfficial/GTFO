@@ -12,7 +12,10 @@ shader_type canvas_item;
 #include "res://shaders/day_night.gdshaderinc"
 
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
-uniform vec2 map_size = vec2(1.0);
+// The depth map only holds the part of the view that is in memory (MapStream): x, y where that
+// window starts in map pixels, z, w how big it is. A pixel outside it is treated as sky, so a
+// sprite there draws whole rather than being wrongly hidden.
+uniform vec4 map_win = vec4(0.0, 0.0, 1.0, 1.0);
 uniform float depth_scale = 25.0;
 uniform float tolerance = 2.0;
 uniform vec2 player_px = vec2(-99999.0);   // the astronaut's feet, map px
@@ -42,10 +45,12 @@ void fragment() {
 	vec4 under = texture(TEXTURE, UV + vec2(0.0, 0.5));
 	float rel = under.r * 255.0 / 2.0 - 64.0;
 	float base = (round(inst.r * 255.0) * 256.0 + round(inst.g * 255.0)) / 16.0;
-	vec4 d = texture(depth_map, (floor(map_pos) + 0.5) / map_size);
+	ivec2 dp = ivec2(floor(map_pos) - map_win.xy);
+	bool inside = all(greaterThanEqual(dp, ivec2(0))) && all(lessThan(dp, ivec2(map_win.zw)));
+	vec4 d = inside ? texelFetch(depth_map, dp, 0) : vec4(1.0, 1.0, 0.0, 1.0);
 	float scene = (round(d.r * 255.0) * 256.0 + round(d.g * 255.0)) / depth_scale;
 	bool plant = abs(d.b * 255.0 - 96.0) < 12.0;
-	if (!plant && scene < base + rel - tolerance) {
+	if (inside && !plant && scene < base + rel - tolerance) {
 		discard;
 	}
 	vec2 q = (floor(map_pos) + 0.5 - (player_px - vec2(0.0, 20.0))) / fade_radius;

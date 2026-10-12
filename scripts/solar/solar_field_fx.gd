@@ -68,11 +68,17 @@ func load_view() -> void:
 	material.set_shader_parameter("radius", _state.field["collector"]["radius"])
 	for node in [_receiver, _crown, _pulse] + _funnels:
 		var shader := node.material as ShaderMaterial
-		shader.set_shader_parameter("depth_map", _terrain.depth_map)
-		shader.set_shader_parameter("map_size", _terrain.map_size)
+		MapStream.bind(shader, _terrain)
 		shader.set_shader_parameter("depth_scale", _terrain.depth_scale)
 	_crown.mesh = SolarBeamVisuals.mesh(_terrain, _ring(float(_state.field["collector"]["top_radius"]) + .5, float(_state.field["collector"]["height"]) + 2), 2.0)
 	refresh()
+
+## The depth window has moved: point the receiver and its beams at where it is now.
+func refresh_window() -> void:
+	for node in [_receiver, _crown, _pulse] + _funnels:
+		if node != null and node.material != null:
+			MapStream.bind(node.material as ShaderMaterial, _terrain)
+
 
 func _ring(radius: float, height: float) -> Array:
 	var world := SolarOptics.point(_state.field["collector"]["world"])
