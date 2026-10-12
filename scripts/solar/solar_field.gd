@@ -6,8 +6,8 @@ extends Node2D
 ## HUD. Independent solar_suppressed ownership protects the multitool and release transitions.
 ## load_view redraws equipment/meshes without mutating SolarFieldState. Test hooks live in
 ## overworld.gd (--solar-at=ID, --solar-solved, --solar-active); tests drive real F/pad input.
-## Small contact meshes belong to each mirror's y-sorted prop, above its face. They show the
-## bounce without moving world beams/receiver FX in front of the astronaut or foreground scenery.
+## Reflector-owned depth-clipped replays share the entire world beam mesh. This preserves
+## front/behind order at faces/posts without cropping rays or covering foreground actors.
 
 const ART := "res://assets/maps/red_planet/solar_field.json"
 const BEAM := preload("res://shaders/solar_beam.gdshader")
@@ -24,7 +24,7 @@ var _terrain: MapTerrain
 var _rays: Node2D
 var _meshes: Array[MeshInstance2D] = []
 var _impacts: Array[MeshInstance2D] = []
-var _contacts: Dictionary = {}
+var _reflectors: Dictionary = {}
 var _all_beams: Array[MeshInstance2D] = []
 var _cable: MeshInstance2D
 var _indicator := Vector2.ZERO
@@ -85,12 +85,11 @@ func _make_equipment(id: String, world: Vector2, group: int, source: bool, actor
 	actors.add_child(prop)
 	prop.place(world)
 	if not source:
-		_contacts[id] = []
-		for beam_group in state.routes.size():
-			for width in SolarBeamVisuals.WIDTHS:
-				var mesh := _beam_mesh(beam_group, width)
-				prop.add_child(mesh)
-				_contacts[id].append(mesh)
+		var reflector := SolarReflectorLight.new()
+		prop.add_child(reflector)
+		reflector.setup(_terrain, prop, _art_sheet(entry), _meshes)
+		_reflectors[id] = reflector
+		_all_beams.append_array(reflector.meshes)
 
 
 func _beam_mesh(group: int, width: float) -> MeshInstance2D:
@@ -113,11 +112,16 @@ func interaction_point(id: String) -> Vector2:
 	return SolarOptics.point(_info["stands"][id])
 
 
-func _sheet(entry: Dictionary) -> Dictionary:
+func _art_sheet(entry: Dictionary) -> Dictionary:
 	var route_id: String = state.field["routes"][entry["group"]]["id"]
 	var sheet: Dictionary = _info["sheets"][route_id]["source" if entry["source"] else "mirror"]
 	if _info.get("special_mirrors", {}).has(entry["id"]):
 		sheet = _info["special_mirrors"][entry["id"]][_terrain.heading]
+	return sheet
+
+
+func _sheet(entry: Dictionary) -> Dictionary:
+	var sheet := _art_sheet(entry)
 	return {"tex": load(ART.get_base_dir().path_join(sheet["file"])), "frames": sheet["frames"],
 			"anchor": SolarOptics.point(sheet["anchor"])}
 
@@ -126,6 +130,8 @@ func load_view() -> void:
 	_indicator = SolarOptics.point(_info["views"][_terrain.heading]["indicator_px"])
 	for entry in equipment.values():
 		(entry["prop"] as WorldProp).set_view(_sheet(entry), _terrain.depth_map)
+		if not entry["source"]:
+			(_reflectors[entry["id"]] as SolarReflectorLight).load_view(_art_sheet(entry))
 	for mesh in _all_beams:
 		var mat := mesh.material as ShaderMaterial
 		mat.set_shader_parameter("depth_map", _terrain.depth_map)
@@ -153,12 +159,8 @@ func _refresh() -> void:
 			mesh.mesh = SolarBeamVisuals.mesh(_terrain, state.routes[group]["segments"], mesh.get_meta("width"))
 			var impact := _impacts[group * 2 + layer]
 			impact.mesh = SolarBeamVisuals.mesh(_terrain, _impact_segments(state.routes[group]), impact.get_meta("width"))
-	for id in _contacts:
-		# A channel may physically strike another color's mirror. Keep the source's color.
-		for mesh in _contacts[id]:
-			var group: int = mesh.get_meta("group")
-			mesh.position = -(equipment[id]["prop"] as Node2D).position
-			mesh.mesh = SolarBeamVisuals.mesh(_terrain, SolarBeamVisuals.contacts(state.routes[group], id, 24.0), mesh.get_meta("width"))
+	for reflector in _reflectors.values():
+		(reflector as SolarReflectorLight).refresh()
 	queue_redraw()
 
 

@@ -1,8 +1,9 @@
 extends Node
 ## Beam regressions against the real field/map: all individual yaw settings, seeded mixed
 ## settings, first terrain contacts and escaped rays outside every view's visible envelope.
-## Native mode also compares mirror-face pixels with feeds off/on through all four views,
-## and renders the production shader against empty-sky/opaque-depth fixtures.
+## Native mode compares mirror-face pixels in the real world and replays the production
+## reflector layer with front/behind rays at the face, collar and post, all 320 poses.
+## Actual uploaded mesh attributes and sky/opaque shader fixtures guard depth precision.
 ## godot --headless --path . res://tests/solar_beam_test.tscn
 ## For visual evidence omit --headless and append -- --gallery=shots/beams --time=12|22.
 
@@ -158,7 +159,7 @@ func _shader() -> void:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(2, 7, 0), Vector3(14, 7, 0), Vector3(14, 10, 0), Vector3(2, 10, 0)])
-	arrays[Mesh.ARRAY_COLOR] = PackedColorArray([Color(1, 0, 0), Color(1, 0, 0), Color(1, 0, 0), Color(1, 0, 0)])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(3000, 0), Vector2(3000, 0), Vector2(3000, 0), Vector2(3000, 0)])
 	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2, 0, 2, 3])
 	mesh.mesh = ArrayMesh.new()
 	mesh.mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -181,6 +182,112 @@ func _shader() -> void:
 	await _frames()
 	await RenderingServer.frame_post_draw
 	_check(viewport.get_texture().get_image().get_pixel(8, 8).g > .6, "rays outside the map do not collide with clamped edge pixels")
+	viewport.queue_free()
+	await _frames()
+
+
+## Read the GPU-packed ArrayMesh attribute, rather than testing our encoding formula.
+func _depth_attributes(terrain: MapTerrain) -> void:
+	for heading in 4:
+		terrain.load_view(heading)
+		for y in [-2500.0, 1800.0, 1815.0, 1921.97, 2047.99, 2300.03, 9000.0]:
+			var a := Vector3(-530, y, 68)
+			var b := a + Vector3(50, 12.8, -10)
+			var mesh := SolarBeamVisuals.mesh(terrain, [[a, b]], 2.25)
+			var depths: PackedVector2Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]
+			for index in [0, 2]:
+				var point := a if index == 0 else b
+				var actual := depths[index].x
+				var expected := terrain.view_depth(Vector2(point.x, point.y))
+				_check(absf(actual - expected) < .027, "uploaded ray depth stays within map precision, view%d Y%.2f" % [heading, y])
+## Isolate only scenery occlusion with empty sky; reflector art, beam meshes and its
+## real production overlay are unchanged. +/-40 view units bracket the entire hardware.
+func _reflectors(terrain: MapTerrain) -> void:
+	var state := SolarFieldState.new()
+	var art: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SolarField.ART))
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(192, 160)
+	viewport.world_2d = World2D.new()
+	viewport.transparent_bg = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	var base := MeshInstance2D.new()
+	var material := ShaderMaterial.new()
+	material.shader = BEAM
+	material.set_shader_parameter("depth_map", terrain.depth_map)
+	material.set_shader_parameter("map_size", terrain.map_size)
+	material.set_shader_parameter("depth_scale", terrain.depth_scale)
+	material.set_shader_parameter("beam_color", Color("#4fc6b4"))
+	base.material = material
+	base.set_meta("group", 0)
+	base.set_meta("dn_unlit", true)
+	viewport.add_child(base)
+	var camera := Camera2D.new()
+	viewport.add_child(camera)
+	add_child(viewport)
+	var sky := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	sky.fill(Color(1, 1, 0))
+	var sky_texture := ImageTexture.create_from_image(sky)
+	for heading in 4:
+		terrain.load_view(heading)
+		for mirror in state.mirrors:
+			var id: String = mirror["id"]
+			var group: int = mirror["group"]
+			var sheet: Dictionary = art["special_mirrors"][id][heading] if art["special_mirrors"].has(id) else art["sheets"][state.field["routes"][group]["id"]]["mirror"]
+			var prop := WorldProp.new()
+			prop.setup({"tex": load(SolarField.ART.get_base_dir().path_join(sheet["file"])), "frames": sheet["frames"], "anchor": SolarOptics.point(sheet["anchor"])}, 0, terrain, sky_texture)
+			viewport.add_child(prop)
+			prop.place(mirror["world"])
+			camera.position = prop.position + Vector2(0, -50)
+			camera.reset_smoothing()
+			var overlay := SolarReflectorLight.new()
+			prop.add_child(overlay)
+			var beams: Array[MeshInstance2D] = [base]
+			overlay.setup(terrain, prop, sheet, beams)
+			(base.material as ShaderMaterial).set_shader_parameter("depth_map", sky_texture)
+			(overlay.meshes[0].material as ShaderMaterial).set_shader_parameter("depth_map", sky_texture)
+			var atlas := (load(SolarField.ART.get_base_dir().path_join(sheet["depth"]["file"])) as Texture2D).get_image()
+			for angle in 8:
+				var frame: int = angle if art["special_mirrors"].has(id) else posmod(angle - heading * 4, 8)
+				prop.sprite.frame = frame * int(sheet["shine_frames"])
+				base.visible = false
+				overlay.visible = false
+				await _frames()
+				await RenderingServer.frame_post_draw
+				var dark := viewport.get_texture().get_image()
+				for in_front in [true, false]:
+					var segments := []
+					var center := SolarOptics.mirror_center(state.field, mirror)
+					var viewed := terrain.view_point(Vector2(center.x, center.y))
+					var offset := -40.0 if in_front else 40.0
+					for height in [center.z, center.z - 12, center.z - 26]:
+						var a := terrain.world_point(viewed + Vector2(-36, offset))
+						var b := terrain.world_point(viewed + Vector2(36, offset))
+						segments.append([Vector3(a.x, a.y, height - offset * terrain.depth_to_px), Vector3(b.x, b.y, height - offset * terrain.depth_to_px)])
+					base.mesh = SolarBeamVisuals.mesh(terrain, segments, 2.25)
+					overlay.refresh()
+					base.visible = true
+					overlay.visible = true
+					await _frames()
+					await RenderingServer.frame_post_draw
+					var lit := viewport.get_texture().get_image()
+					var wrong := 0
+					var sampled := 0
+					var transform := viewport.get_canvas_transform()
+					for height in [center.z, center.z - 12, center.z - 26]:
+						var row := floori((transform * terrain.to_screen(mirror["world"], height)).y)
+						for x in range(15, viewport.size.x - 15):
+							var map_pixel := transform.affine_inverse() * Vector2(x + .5, row + .5)
+							var local := (map_pixel - prop.position - prop.sprite.offset).floor()
+							if local.x < 0 or local.y < 0 or local.x >= sheet["size"][0] or local.y >= sheet["size"][1]: continue
+							if atlas.get_pixel(int(local.x) + frame * int(sheet["size"][0]), int(local.y)).a < .5: continue
+							sampled += 1
+							var before := dark.get_pixel(x, row)
+							var after := lit.get_pixel(x, row)
+							var changed := absf(before.r - after.r) + absf(before.g - after.g) + absf(before.b - after.b) > .12
+							if changed != in_front: wrong += 1
+					_check(sampled > 5 and wrong == 0, "%s yaw%d view%d %s reflector (wrong %d/%d)" % [id, angle, heading, "in front of" if in_front else "behind", wrong, sampled])
+			prop.queue_free()
+			await _frames()
 	viewport.queue_free()
 	await _frames()
 
@@ -226,6 +333,11 @@ func _native() -> void:
 					changed += 1
 		_check(changed >= 4 if DayNight.daylight > .5 else changed == 0, "mirror contact follows sunlight in view %d (%d pixels)" % [heading, changed])
 		await _capture("mirror-view%d" % heading)
+		if not _gallery.is_empty():
+			for target in ["B2", "B3", "A2"]:
+				world.player.teleport(world.solar.interaction_point(target))
+				world.player.camera.snap_to(world.player.position)
+				await _capture("%s-view%d" % [target, heading])
 	for heading in [0, 2]:
 		world._apply_view(heading, Vector2.RIGHT)
 		world.player.teleport(world.solar.interaction_point("B1"))
@@ -266,7 +378,9 @@ func _ready() -> void:
 		_views.append(JSON.parse_string(FileAccess.get_file_as_string(path)))
 	_grid_size = _views[0]["game"]["grid_size"]
 	_model(terrain)
+	_depth_attributes(terrain)
 	if DisplayServer.get_name() != "headless":
 		await _native()
+		await _reflectors(terrain)
 	print("BEAM TEST: %d checks, %d failures" % [_checks, _failures])
 	await Audio.quit(1 if _failures else 0)

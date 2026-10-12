@@ -642,6 +642,12 @@ Generated `solar_field.json` adds `sheets` (file/size/frames/anchor, mirror `shi
 feed `deploy_frames`/`yaw_offset`, the first source row's canonical angle) and four `views`
 with receiver `indicator_px` and `receiver_mask`
 (file/position/size; RGBA = normalized height/cell interior/local view depth/surface).
+Mirror sheets add `depth` (file/frames/scale/offset), eight frames sharing the sprite's
+size/anchor and silhouette. RG16 encodes local view depth as `(depth + 32) * 1024`, B
+marks the finite reflective mid-plane and A includes the one-pixel outline. Hardware
+uses its actual rendered SDF depth. SolarReflectorLight clips identical world beam meshes
+over each y-sorted prop so front light shows and behind light stays hidden. Beam UV.x
+carries full float view depth; byte-packed vertex colors cannot preserve its precision.
 `feed_visual` owns `crystal_offset`, `tip_closed`, `tip_open` and `emerge` for the sunlight
 funnel's endpoint as a beacon opens. Closed beacons conceal the crystal under metal lids.
 Its `stands` map contains reachable canonical approach points for captures and placement
@@ -1269,3 +1275,12 @@ Write one line per decision: date — decision (who approved it).
   The beam suite covers individual
   and seeded mixed yaw settings, terrain/endpoints, native four-view contact pixels and shader
   sky/solid fixtures. No equipment placements, terrain or generated assets change.
+- 2026-10-12 — Owner clarified that light must meet the reflective face while parts
+  physically behind the reflector stay hidden, and requested other-angle checks. Replace
+  short, always-overlaid contact strips with shared full beam geometry, clipped using
+  generated per-pixel reflector depth/silhouette (including frame, pivots and post).
+  The reflective skin matches the existing finite optical plane; hardware keeps its SDF
+  depth. Float UV depth replaces byte-packed colors to avoid false occlusion and preserve
+  unbounded escaped endpoints. Native front/behind pixel checks cover all ten reflectors,
+  eight yaw settings and four views, with day/night world galleries. Layout and optics
+  remain unchanged; generator-owned depth strips are committed with their source.

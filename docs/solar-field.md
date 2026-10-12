@@ -37,6 +37,8 @@ with the existing DayNight daylight value. No new time-based power balance is ad
   receiver charge waves, crown light and completion pulse. View changes preserve animation
   phase. Re-entering an already powered field retains its charge without replaying completion.
 - `SolarBeamVisuals`: shared world-space, depth-carrying mesh construction.
+- `SolarReflectorLight`: identical beam geometry replayed over a reflector, clipped by
+  its generated silhouette and optical/body depth, within the prop's normal y sorting.
 - `SolarPowerInput`: wall inlet lenses and engine sound, reading generated wall metadata.
 
 Physical hits always stop at the cone. A hit earns a channel only after visiting
@@ -74,6 +76,12 @@ mirror orientations with four reflection frames, and four feed directions with n
 crystal deployment frames. Terraced beacon sheets face the actual outgoing ray; generated
 `yaw_offset` identifies the first row's world angle. Sprite frame selection subtracts the
 current camera heading while retaining that mounting angle.
+Each mirror sheet also exports `depth` (`file`, `frames`, `scale`, `offset`): eight
+orientation frames aligned with the color sheet's size and anchor. RG16 stores local
+view depth as `(depth + 32) * 1024`, B marks the reflective skin and A matches the
+sprite silhouette, including its one-pixel outline. The reflective skin uses the same
+finite mid-plane as SolarOptics; frame, pivots, collar and post retain their actual SDF
+surface depths. Shine frames share geometry and therefore share one depth frame.
 Inactive beacons have sealed metal lids. The lids open before a short faceted crystal rises
 from its socket; shutting down conceals it again. Generated `feed_visual` metadata owns the
 crystal offset, closed/open tip heights and emergence phase used by the sunlight funnels.
@@ -96,10 +104,12 @@ show connected channels independently of reactor repair; the engine hum remains 
 machine. No solar telemetry bar floats over the reactor.
 
 Optics always run in view 0's world coordinates. MapTerrain projects beam endpoints
-and equipment into the current view. Mesh vertex colors carry per-endpoint view
+and equipment into the current view. Float mesh UV.x carries per-endpoint view
 depth into `solar_beam.gdshader`, allowing the baked receiver and scenery to occlude
 rays. Equipment reuses WorldProp's depth shader and y sorting. The camera's existing
 relief swing includes mirror/feed billboards and the beams' actual height changes.
+Using a float attribute avoids ArrayMesh's byte-packed color precision loss and retains
+correct interpolation even when an escaped endpoint lies beyond the map's depth range.
 
 On entering the overworld, `SolarFieldState.bind_world` supplies the terrain geometry
 before evaluating routes. The first terrain hit stops the ray and its downstream
@@ -110,10 +120,12 @@ A tiny terrain-following glint marks physical impacts, including stops on flat s
 Cached routes describe their endpoint with `termination`: `closed`, `terrain`, `collector`,
 `escape`, `cycle` or `bounce_limit`; only a complete assigned route energizes a channel.
 Beam cores are 2.25 map pixels wide with a six-pixel low-opacity halo, and the camera
-swing derives its cylinder radius from the same core width. Each struck reflector owns
-short incoming/outgoing contact meshes above its face, within its existing y-sorted prop.
+swing derives its cylinder radius from the same core width. Each reflector replays the
+exact same mesh resources above its sprite, clipped to the full silhouette and depth.
+Light in front appears on the face or post; light physically behind stays hidden. There
+are no short overdraw patches, extra endpoints or changes of line direction at their edges.
 These preserve the originating beam's color, deployment/daylight fade, terrain occlusion
-and foreground actor order, including when a beam strikes another channel's mirror.
+and foreground actor order, including projected crossings that do not hit the mirror.
 
 Use `make map` to regenerate map/props/solar together, `make solar` for equipment
 changes alone, then `make import`. No generated PNG or JSON is hand edited.
@@ -156,7 +168,10 @@ Normal play never applies these developer hooks and starts with all feeds closed
 
 `make check` also runs `tests/solar_beam_test.tscn`: all ten mirrors' individual yaw
 settings, 64 seeded mixed configurations, exact reported terrain/cutoff fixtures and
-narrow/grazing height-patch intersections. Native runs compare reflector-face pixels
-with feeds off/on in all four views and test the actual shader against empty sky and
-opaque depth. Append `-- --gallery=shots/beams --time=12|22` for mirror contacts,
-cliff impacts and escaping-ray evidence.
+narrow/grazing height-patch intersections and actual uploaded mesh-depth precision,
+including distant/negative endpoints. Native runs compare reflector-face pixels in the
+real world and exercise the production reflector layer in all 320 poses (ten mirrors,
+eight settings, four views). Front/behind ray fixtures cross the face, collar and post;
+every covered pixel must respect the hardware depth. Empty sky and opaque-depth fixtures
+exercise the actual shader. Append `-- --gallery=shots/beams --time=12|22` for four-view
+Coral/Jade/Amber contacts, cliff impacts and escaping-ray evidence.

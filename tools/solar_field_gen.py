@@ -6,7 +6,10 @@ all four maps/depth masks. This tool renders eight physical mirror orientations 
 mirror glint and crystal-deployment sheets, exports optical data and per-view pixel anchors.
 Terraced beacon sheets face their actual outgoing ray; source yaw_offset anchors four-view frames.
 Receiver masks come from the same SDF surfaces as the baked cone, for pixel-exact shine
-and energizing waves. Wall-panel art/anchors belong to interior_gen.py.
+and energizing waves. Mirror depth strips share the sprite's exact silhouette/anchor:
+RG stores local view depth, B identifies the thin optical face, A includes its outline.
+Hardware keeps its rendered SDF depth; the reflective skin matches the finite optics plane.
+Wall-panel art/anchors belong to interior_gen.py.
 No authored solution is stored in runtime metadata. Run through make solar (after map).
 Writes assets/maps/red_planet/solar/* and solar_field.json with the map's atomic exporters.
 No hand-edited images.
@@ -175,13 +178,58 @@ def sun_feed(M, angle, ramp, deploy):
     return parts
 
 
-def sheet(M, name, frames):
+def mirror_depth(M, parts, fr, box):
+    """Depth of the finite reflective skin and its solid frame/post at each sprite pixel."""
+    jj, ii = np.mgrid[:box[3], :box[2]]
+    depth = fr['D'].copy()
+    filled = fr['filled']
+    x = (box[0] + ii[filled] + .5 - M.AX) * M.S
+    y = depth[filled]
+    z = (M.AY - box[1] - jj[filled] - .5) / M.PX - M.KY * y
+    points = np.stack([x, y, z], axis=1)
+    face_index = next(i for i, part in enumerate(parts) if part.name == 'face')
+    face = parts[face_index].sdf
+    visible_face = np.argmin(A.Scene(parts).dist_all(points), axis=0) == face_index
+    normal = face.R[:, 1]
+    denominator = normal[1] - M.KY * normal[2]
+    optical = np.zeros(filled.sum(), bool)
+    if abs(denominator) > 1e-5:
+        # The rendered panel has thickness for its edge; light reflects at its finite
+        # mid-plane, exactly as SolarOptics does. Do not flatten the frame or side edges.
+        plane_y = -(normal[0] * x + normal[2] * (z + M.KY * y - face.c[2])) / denominator
+        plane_z = z + M.KY * (y - plane_y)
+        local = face.local(np.stack([x, plane_y, plane_z], axis=1))
+        optical = visible_face & (np.abs(local[:, 0]) <= face.half[0]) & (np.abs(local[:, 2]) <= face.half[2])
+        y = np.where(optical, plane_y, y)
+    depth[filled] = y
+    skin = np.zeros_like(filled)
+    skin[filled] = optical
+    # Match sprite_rgba's one-pixel outline, using the closest real surface's depth.
+    nearest = ndimage.distance_transform_edt(~filled, return_distances=False, return_indices=True)
+    depth[fr['ring']] = depth[tuple(nearest[:, fr['ring']])]
+    skin[fr['ring']] = skin[tuple(nearest[:, fr['ring']])]
+    mask = filled | fr['ring']
+    assert np.all(np.abs(depth[mask]) < 32), 'mirror local depth exceeds RG16 range'
+    encoded = np.rint((np.where(mask, depth, 0) + 32) * 1024).astype(np.uint16)
+    return np.dstack([encoded >> 8, encoded & 255, np.where(skin, 255, 0), np.where(mask, 255, 0)]).astype(np.uint8)
+
+
+def sheet(M, name, frames, depth=False):
     box = M.sprite_box(frames, pad=3)
-    rgba = np.concatenate([M.sprite_rgba(M.render_sprite(parts, box)) for parts in frames], axis=1)
+    rendered = [M.render_sprite(parts, box) for parts in frames]
+    rgba = np.concatenate([M.sprite_rgba(fr) for fr in rendered], axis=1)
     path = f'solar/{name}.png'
     M.save_png(Image.fromarray(rgba), os.path.join(M.OUT, path))
-    return dict(file=path, frames=len(frames), size=[box[2], box[3]],
-                anchor=[round(M.AX - box[0]), round(M.AY - box[1])])
+    result = dict(file=path, frames=len(frames), size=[box[2], box[3]],
+                  anchor=[round(M.AX - box[0]), round(M.AY - box[1])])
+    if depth:
+        # Shine changes color only; all four glint frames share one geometric depth frame.
+        atlas = np.concatenate([mirror_depth(M, frames[i], rendered[i], box)
+                                for i in range(0, len(frames), 4)], axis=1)
+        path = f'solar/{name}_depth.png'
+        M.save_png(Image.fromarray(atlas), os.path.join(M.OUT, path))
+        result['depth'] = dict(file=path, frames=len(frames) // 4, scale=1024, offset=32)
+    return result
 
 
 def reachable_stands(field, meta, directory):
@@ -242,7 +290,7 @@ def main():
         print('rendering solar equipment:', route['label'], flush=True)
         field['sheets'][route['id']] = {
             'mirror': dict(sheet(M, 'mirror_' + route['id'].lower(),
-                                 [mirror(M, a * math.pi / 8, ramp, shine) for a in range(8) for shine in range(4)]), shine_frames=4),
+                                 [mirror(M, a * math.pi / 8, ramp, shine) for a in range(8) for shine in range(4)], depth=True), shine_frames=4),
             'source': dict(sheet(M, 'source_' + route['id'].lower(),
                                  [sun_feed(M, source_yaw + a * math.pi / 2, ramp, step / 8) for a in range(4) for step in range(9)]), deploy_frames=9, yaw_offset=source_yaw)}
         for index in range(len(route['mirrors'])):
@@ -252,7 +300,7 @@ def main():
             field['special_mirrors'][route['id'] + str(index + 1)] = [
                 dict(sheet(M, f'mirror_{route["id"].lower()}{index + 1}{M.view_sfx(k)}',
                            [mirror(M, a * math.pi / 8 + yaw - k * math.pi / 2, ramp, shine, pitch)
-                            for a in range(8) for shine in range(4)]), shine_frames=4)
+                            for a in range(8) for shine in range(4)], depth=True), shine_frames=4)
                 for k in range(4)]
     field['views'] = []
     for k, filename in enumerate(meta['views']):

@@ -2,7 +2,7 @@
 
 This checks shared walk components from the main-base spawn to every interaction,
 declared elevations at hardware, graded access paths, generous spacing, preserved vegetation,
-valid sprite strips and projected
+valid sprite/depth strips with matching silhouettes and projected
 four-view indicator positions. It reads generated assets; it never changes them.
 Run after make map: python tools/check_solar_field.py.
 """
@@ -101,6 +101,19 @@ def main():
     for sheet in strips:
         image = Image.open(os.path.join(BASE, sheet['file']))
         assert image.size == (sheet['size'][0] * sheet['frames'], sheet['size'][1]), 'malformed sprite strip'
+        if 'shine_frames' in sheet:
+            depth = sheet['depth']
+            atlas = np.asarray(Image.open(os.path.join(BASE, depth['file'])))
+            width, height = sheet['size']
+            assert atlas.shape == (height, width * depth['frames'], 4), 'malformed mirror depth strip'
+            assert depth['frames'] * sheet['shine_frames'] == sheet['frames'], 'depth/shine frames disagree'
+            rgba = np.asarray(image)
+            for frame in range(depth['frames']):
+                mask = atlas[:, frame * width:(frame + 1) * width, 3]
+                for shine in range(sheet['shine_frames']):
+                    start = (frame * sheet['shine_frames'] + shine) * width
+                    assert np.array_equal(mask, rgba[:, start:start + width, 3]), 'depth silhouette differs from mirror sprite'
+            assert np.any(atlas[..., 2] == 255), 'reflective optical skin missing'
     for heading, filename in enumerate(meta['views']):
         view = read(filename)
         assert view['game']['heading'] == heading

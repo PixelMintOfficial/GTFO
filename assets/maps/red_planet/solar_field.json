@@ -386,6 +386,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       "source": {
@@ -415,6 +421,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       "source": {
@@ -444,6 +456,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       "source": {
@@ -475,6 +493,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -488,6 +512,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a1_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -501,6 +531,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a1_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -514,6 +550,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a1_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -529,6 +571,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -542,6 +590,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a2_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -555,6 +609,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a2_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -568,6 +628,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a2_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -583,6 +649,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -596,6 +668,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a3_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -609,6 +687,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a3_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -622,6 +706,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_a3_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -637,6 +727,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -650,6 +746,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b1_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -663,6 +765,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b1_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -676,6 +784,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b1_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -691,6 +805,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -704,6 +824,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b2_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -717,6 +843,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b2_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -730,6 +862,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b2_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -745,6 +883,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -758,6 +902,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b3_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -771,6 +921,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b3_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -784,6 +940,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_b3_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -799,6 +961,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -812,6 +980,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c1_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -825,6 +999,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c1_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -838,6 +1018,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c1_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -853,6 +1039,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -866,6 +1058,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c2_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -879,6 +1077,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c2_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -892,6 +1096,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c2_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -907,6 +1117,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -920,6 +1136,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c3_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -933,6 +1155,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c3_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -946,6 +1174,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c3_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ],
@@ -961,6 +1195,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c4_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -974,6 +1214,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c4_r1_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -987,6 +1233,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c4_r2_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       },
       {
@@ -1000,6 +1252,12 @@
           44,
           113
         ],
+        "depth": {
+          "file": "solar/mirror_c4_r3_depth.png",
+          "frames": 8,
+          "scale": 1024,
+          "offset": 32
+        },
         "shine_frames": 4
       }
     ]
