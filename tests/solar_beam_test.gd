@@ -4,6 +4,8 @@ extends Node
 ## Native mode compares mirror-face pixels in the real world and replays the production
 ## reflector layer with front/behind rays at the face, collar and post, all 320 poses.
 ## Actual uploaded mesh attributes and sky/opaque shader fixtures guard depth precision.
+## Real back-side reflections must not expose buried bounce vertices as face dots.
+## --contact-probe isolates the reported Jade dot in a small native render.
 ## godot --headless --path . res://tests/solar_beam_test.tscn
 ## For visual evidence omit --headless and append -- --gallery=shots/beams --time=12|22.
 
@@ -17,6 +19,7 @@ var _grid_size := 0.0
 var _hill_angle := -1
 var _hill_distance := INF
 var _escape_angle := -1
+var _contact_probe := false
 
 
 func _check(ok: bool, label: String) -> void:
@@ -204,6 +207,10 @@ func _depth_attributes(terrain: MapTerrain) -> void:
 ## real production overlay are unchanged. +/-40 view units bracket the entire hardware.
 func _reflectors(terrain: MapTerrain) -> void:
 	var state := SolarFieldState.new()
+	var solution := _solution(state)
+	state.orientations = solution.duplicate()
+	state.feeds.fill(true)
+	state._evaluate()
 	var art: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SolarField.ART))
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(192, 160)
@@ -228,9 +235,11 @@ func _reflectors(terrain: MapTerrain) -> void:
 	sky.fill(Color(1, 1, 0))
 	var sky_texture := ImageTexture.create_from_image(sky)
 	for heading in 4:
+		if _contact_probe and heading != 0: continue
 		terrain.load_view(heading)
 		for mirror in state.mirrors:
 			var id: String = mirror["id"]
+			if _contact_probe and id != "B1": continue
 			var group: int = mirror["group"]
 			var sheet: Dictionary = art["special_mirrors"][id][heading] if art["special_mirrors"].has(id) else art["sheets"][state.field["routes"][group]["id"]]["mirror"]
 			var prop := WorldProp.new()
@@ -242,11 +251,15 @@ func _reflectors(terrain: MapTerrain) -> void:
 			var overlay := SolarReflectorLight.new()
 			prop.add_child(overlay)
 			var beams: Array[MeshInstance2D] = [base]
-			overlay.setup(terrain, prop, sheet, beams)
+			base.set_meta("group", group)
+			overlay.setup(terrain, prop, sheet, beams, state, mirror)
 			(base.material as ShaderMaterial).set_shader_parameter("depth_map", sky_texture)
 			(overlay.meshes[0].material as ShaderMaterial).set_shader_parameter("depth_map", sky_texture)
 			var atlas := (load(SolarField.ART.get_base_dir().path_join(sheet["depth"]["file"])) as Texture2D).get_image()
 			for angle in 8:
+				if _contact_probe and angle != solution[id]: continue
+				state.orientations[id] = angle
+				state._evaluate()
 				var frame: int = angle if art["special_mirrors"].has(id) else posmod(angle - heading * 4, 8)
 				prop.sprite.frame = frame * int(sheet["shine_frames"])
 				base.visible = false
@@ -286,6 +299,43 @@ func _reflectors(terrain: MapTerrain) -> void:
 							var changed := absf(before.r - after.r) + absf(before.g - after.g) + absf(before.b - after.b) > .12
 							if changed != in_front: wrong += 1
 					_check(sampled > 5 and wrong == 0, "%s yaw%d view%d %s reflector (wrong %d/%d)" % [id, angle, heading, "in front of" if in_front else "behind", wrong, sampled])
+				# A real back-side reflection must not expose its buried optical vertex as
+				# an isolated dot in the visible face. This is the owner's reported fixture.
+				var route: Dictionary = state.routes[group]
+				var hit: int = route["hits"].find(id)
+				if hit >= 0 and hit + 1 < route["segments"].size():
+					var normal := SolarOptics.mirror_normal(mirror, angle)
+					var toward_xy := terrain.world_dir(Vector2(0, -1))
+					var toward := Vector3(toward_xy.x, toward_xy.y, terrain.depth_to_px)
+					var incoming: Vector3 = route["segments"][hit][1] - route["segments"][hit][0]
+					if incoming.dot(normal) * toward.dot(normal) > .01:
+						base.visible = false
+						overlay.visible = false
+						await _frames()
+						await RenderingServer.frame_post_draw
+						var before := viewport.get_texture().get_image()
+						base.mesh = SolarBeamVisuals.mesh(terrain, route["segments"], 2.25)
+						overlay.refresh()
+						base.visible = true
+						overlay.visible = true
+						await _frames()
+						await RenderingServer.frame_post_draw
+						var after := viewport.get_texture().get_image()
+						var vertex: Vector3 = route["segments"][hit][1]
+						var pixel := viewport.get_canvas_transform() * terrain.to_screen(Vector2(vertex.x, vertex.y), vertex.z)
+						var dots := 0
+						for y in range(roundi(pixel.y) - 2, roundi(pixel.y) + 3):
+							for x in range(roundi(pixel.x) - 2, roundi(pixel.x) + 3):
+								var map_pixel := viewport.get_canvas_transform().affine_inverse() * Vector2(x + .5, y + .5)
+								var local := (map_pixel - prop.position - prop.sprite.offset).floor()
+								if local.x < 0 or local.y < 0 or local.x >= sheet["size"][0] or local.y >= sheet["size"][1]: continue
+								var surface := atlas.get_pixel(int(local.x) + frame * int(sheet["size"][0]), int(local.y))
+								if surface.a < .5 or surface.b < .001: continue
+								var a := after.get_pixel(x, y)
+								var b := before.get_pixel(x, y)
+								if absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b) > .12: dots += 1
+						_check(dots == 0, "%s yaw%d view%d back-side bounce has no ghost dot (%d pixels)" % [id, angle, heading, dots])
+			state.orientations[id] = solution[id]
 			prop.queue_free()
 			await _frames()
 	viewport.queue_free()
@@ -331,7 +381,12 @@ func _native() -> void:
 				var b := dark.get_pixel(x, y)
 				if absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b) > .12:
 					changed += 1
-		_check(changed >= 4 if DayNight.daylight > .5 else changed == 0, "mirror contact follows sunlight in view %d (%d pixels)" % [heading, changed])
+		var normal := SolarOptics.mirror_normal(mirror, state.orientations["C1"])
+		var toward_xy: Vector2 = world.terrain.world_dir(Vector2(0, -1))
+		var toward := Vector3(toward_xy.x, toward_xy.y, world.terrain.depth_to_px)
+		var incoming: Vector3 = state.routes[2]["segments"][0][1] - state.routes[2]["segments"][0][0]
+		var front := incoming.dot(normal) * toward.dot(normal) < 0
+		_check(changed >= 4 if DayNight.daylight > .5 and front else changed == 0, "mirror contact respects incident side/sunlight in view %d (%d pixels)" % [heading, changed])
 		await _capture("mirror-view%d" % heading)
 		if not _gallery.is_empty():
 			for target in ["B2", "B3", "A2"]:
@@ -370,10 +425,16 @@ func _ready() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--gallery="):
 			_gallery = argument.trim_prefix("--gallery=")
+		_contact_probe = _contact_probe or argument == "--contact-probe"
 	if not _gallery.is_empty():
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_gallery.get_base_dir()))
 	Audio.enter_scene()
 	var terrain := MapTerrain.new(MAP)
+	if _contact_probe:
+		await _reflectors(terrain)
+		print("BEAM CONTACT PROBE: %d checks, %d failures" % [_checks, _failures])
+		await Audio.quit(1 if _failures else 0)
+		return
 	for path in terrain.views:
 		_views.append(JSON.parse_string(FileAccess.get_file_as_string(path)))
 	_grid_size = _views[0]["game"]["grid_size"]

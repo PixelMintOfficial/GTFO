@@ -18,11 +18,14 @@ uniform float reflector_frame = 0.0;
 uniform float reflector_scale = 1024.0;
 uniform float reflector_offset = 32.0;
 uniform float reflector_depth = 0.0;
+uniform float skin_depth_span = 32.0;
 varying vec2 map_pos;
 varying float ray_depth;
+varying float front_contact;
 void vertex() {
 	map_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 	ray_depth = UV.x;
+	front_contact = UV.y;
 }
 void fragment() {
 	vec4 d = texture(depth_map, (floor(map_pos) + 0.5) / map_size);
@@ -37,6 +40,9 @@ void fragment() {
 		vec2 uv = vec2((local.x + reflector_frame * reflector_size.x) / (reflector_size.x * reflector_frames), local.y / reflector_size.y);
 		vec4 surface = texture(reflector_map, uv);
 		float body_depth = (round(surface.r * 255.0) * 256.0 + round(surface.g * 255.0)) / reflector_scale - reflector_offset + reflector_depth;
+		// Only an incident/reflected pair on the visible side may bridge the panel's
+		// thickness to its optical plane. Back-side contacts use the solid surface.
+		body_depth += surface.b * skin_depth_span * step(0.5, front_contact);
 		// A sub-pixel tolerance accommodates the core's radius and snapped sprite anchor.
 		if (surface.a < 0.5 || body_depth < ray_depth - 0.6) discard;
 	}

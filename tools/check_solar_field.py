@@ -113,7 +113,7 @@ def main():
                 for shine in range(sheet['shine_frames']):
                     start = (frame * sheet['shine_frames'] + shine) * width
                     assert np.array_equal(mask, rgba[:, start:start + width, 3]), 'depth silhouette differs from mirror sprite'
-            assert np.any(atlas[..., 2] == 255), 'reflective optical skin missing'
+            assert depth['skin_depth_span'] == 32 and np.any(atlas[..., 2] > 0), 'reflective optical skin gap missing'
     for heading, filename in enumerate(meta['views']):
         view = read(filename)
         assert view['game']['heading'] == heading

@@ -7,8 +7,8 @@ mirror glint and crystal-deployment sheets, exports optical data and per-view pi
 Terraced beacon sheets face their actual outgoing ray; source yaw_offset anchors four-view frames.
 Receiver masks come from the same SDF surfaces as the baked cone, for pixel-exact shine
 and energizing waves. Mirror depth strips share the sprite's exact silhouette/anchor:
-RG stores local view depth, B identifies the thin optical face, A includes its outline.
-Hardware keeps its rendered SDF depth; the reflective skin matches the finite optics plane.
+RG stores actual local surface depth, B its gap to the finite optical plane, A its outline.
+Only front-side incident/reflected segments may bridge that gap; hidden vertices stay hidden.
 Wall-panel art/anchors belong to interior_gen.py.
 No authored solution is stored in runtime metadata. Run through make solar (after map).
 Writes assets/maps/red_planet/solar/* and solar_field.json with the map's atomic exporters.
@@ -179,7 +179,7 @@ def sun_feed(M, angle, ramp, deploy):
 
 
 def mirror_depth(M, parts, fr, box):
-    """Depth of the finite reflective skin and its solid frame/post at each sprite pixel."""
+    """Actual solid surface depth, plus the reflective skin's finite mid-plane gap."""
     jj, ii = np.mgrid[:box[3], :box[2]]
     depth = fr['D'].copy()
     filled = fr['filled']
@@ -192,7 +192,7 @@ def mirror_depth(M, parts, fr, box):
     visible_face = np.argmin(A.Scene(parts).dist_all(points), axis=0) == face_index
     normal = face.R[:, 1]
     denominator = normal[1] - M.KY * normal[2]
-    optical = np.zeros(filled.sum(), bool)
+    gap = np.zeros_like(depth)
     if abs(denominator) > 1e-5:
         # The rendered panel has thickness for its edge; light reflects at its finite
         # mid-plane, exactly as SolarOptics does. Do not flatten the frame or side edges.
@@ -200,18 +200,15 @@ def mirror_depth(M, parts, fr, box):
         plane_z = z + M.KY * (y - plane_y)
         local = face.local(np.stack([x, plane_y, plane_z], axis=1))
         optical = visible_face & (np.abs(local[:, 0]) <= face.half[0]) & (np.abs(local[:, 2]) <= face.half[2])
-        y = np.where(optical, plane_y, y)
-    depth[filled] = y
-    skin = np.zeros_like(filled)
-    skin[filled] = optical
+        gap[filled] = np.where(optical, np.maximum(plane_y - y, 0), 0)
     # Match sprite_rgba's one-pixel outline, using the closest real surface's depth.
     nearest = ndimage.distance_transform_edt(~filled, return_distances=False, return_indices=True)
     depth[fr['ring']] = depth[tuple(nearest[:, fr['ring']])]
-    skin[fr['ring']] = skin[tuple(nearest[:, fr['ring']])]
     mask = filled | fr['ring']
     assert np.all(np.abs(depth[mask]) < 32), 'mirror local depth exceeds RG16 range'
+    assert np.all(gap < 32), 'optical skin gap exceeds byte range'
     encoded = np.rint((np.where(mask, depth, 0) + 32) * 1024).astype(np.uint16)
-    return np.dstack([encoded >> 8, encoded & 255, np.where(skin, 255, 0), np.where(mask, 255, 0)]).astype(np.uint8)
+    return np.dstack([encoded >> 8, encoded & 255, np.rint(gap * 255 / 32), np.where(mask, 255, 0)]).astype(np.uint8)
 
 
 def sheet(M, name, frames, depth=False):
@@ -228,7 +225,7 @@ def sheet(M, name, frames, depth=False):
                                 for i in range(0, len(frames), 4)], axis=1)
         path = f'solar/{name}_depth.png'
         M.save_png(Image.fromarray(atlas), os.path.join(M.OUT, path))
-        result['depth'] = dict(file=path, frames=len(frames) // 4, scale=1024, offset=32)
+        result['depth'] = dict(file=path, frames=len(frames) // 4, scale=1024, offset=32, skin_depth_span=32)
     return result
 
 

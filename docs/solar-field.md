@@ -76,12 +76,14 @@ mirror orientations with four reflection frames, and four feed directions with n
 crystal deployment frames. Terraced beacon sheets face the actual outgoing ray; generated
 `yaw_offset` identifies the first row's world angle. Sprite frame selection subtracts the
 current camera heading while retaining that mounting angle.
-Each mirror sheet also exports `depth` (`file`, `frames`, `scale`, `offset`): eight
+Each mirror sheet also exports `depth` (`file`, `frames`, `scale`, `offset`, `skin_depth_span`): eight
 orientation frames aligned with the color sheet's size and anchor. RG16 stores local
-view depth as `(depth + 32) * 1024`, B marks the reflective skin and A matches the
-sprite silhouette, including its one-pixel outline. The reflective skin uses the same
-finite mid-plane as SolarOptics; frame, pivots, collar and post retain their actual SDF
-surface depths. Shine frames share geometry and therefore share one depth frame.
+surface depth as `(depth + 32) * 1024`, B encodes the visible face's gap to its finite
+optical plane (normalized by `skin_depth_span = 32`) and A matches the sprite silhouette,
+including its one-pixel outline. RG retains actual SDF depth on every part, including the
+face. Only incident/reflected segments striking the camera-visible side can bridge the
+skin gap; a back-side bounce cannot expose a buried vertex as a dot. Shine frames share
+geometry and therefore share one depth frame.
 Inactive beacons have sealed metal lids. The lids open before a short faceted crystal rises
 from its socket; shutting down conceals it again. Generated `feed_visual` metadata owns the
 crystal offset, closed/open tip heights and emergence phase used by the sunlight funnels.
@@ -121,11 +123,14 @@ Cached routes describe their endpoint with `termination`: `closed`, `terrain`, `
 `escape`, `cycle` or `bounce_limit`; only a complete assigned route energizes a channel.
 Beam cores are 2.25 map pixels wide with a six-pixel low-opacity halo, and the camera
 swing derives its cylinder radius from the same core width. Each reflector replays the
-exact same mesh resources above its sprite, clipped to the full silhouette and depth.
+exact same geometry above its sprite, clipped to the full silhouette and depth.
 Light in front appears on the face or post; light physically behind stays hidden. There
 are no short overdraw patches, extra endpoints or changes of line direction at their edges.
 These preserve the originating beam's color, deployment/daylight fade, terrain occlusion
 and foreground actor order, including projected crossings that do not hit the mirror.
+UV.y annotates the front-side incident/reflected segment pair per hit without changing
+vertices, widths or endpoints. Other segments use the solid panel surface. Revisited
+mirrors can therefore show a front-side hit while hiding a back-side hit in the same route.
 
 Use `make map` to regenerate map/props/solar together, `make solar` for equipment
 changes alone, then `make import`. No generated PNG or JSON is hand edited.
@@ -172,6 +177,8 @@ narrow/grazing height-patch intersections and actual uploaded mesh-depth precisi
 including distant/negative endpoints. Native runs compare reflector-face pixels in the
 real world and exercise the production reflector layer in all 320 poses (ten mirrors,
 eight settings, four views). Front/behind ray fixtures cross the face, collar and post;
-every covered pixel must respect the hardware depth. Empty sky and opaque-depth fixtures
+every covered pixel must respect the hardware depth. Actual routes also check back-side
+contacts for isolated face pixels, including the reported Jade dot. `--contact-probe`
+runs that focused native reproduction alone. Empty sky and opaque-depth fixtures
 exercise the actual shader. Append `-- --gallery=shots/beams --time=12|22` for four-view
 Coral/Jade/Amber contacts, cliff impacts and escaping-ray evidence.

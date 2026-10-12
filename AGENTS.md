@@ -642,10 +642,12 @@ Generated `solar_field.json` adds `sheets` (file/size/frames/anchor, mirror `shi
 feed `deploy_frames`/`yaw_offset`, the first source row's canonical angle) and four `views`
 with receiver `indicator_px` and `receiver_mask`
 (file/position/size; RGBA = normalized height/cell interior/local view depth/surface).
-Mirror sheets add `depth` (file/frames/scale/offset), eight frames sharing the sprite's
+Mirror sheets add `depth` (file/frames/scale/offset/skin_depth_span), eight frames sharing the sprite's
 size/anchor and silhouette. RG16 encodes local view depth as `(depth + 32) * 1024`, B
-marks the finite reflective mid-plane and A includes the one-pixel outline. Hardware
-uses its actual rendered SDF depth. SolarReflectorLight clips identical world beam meshes
+encodes the surface-to-optical-plane gap normalized by skin_depth_span (32), and A includes
+the one-pixel outline. All parts, including faces, retain actual rendered SDF depth in RG.
+Only camera-facing incident/reflected segment pairs may bridge the skin gap (UV.y = 1);
+back-side contacts and other projected crossings keep solid surface depth. SolarReflectorLight clips identical world beam geometry
 over each y-sorted prop so front light shows and behind light stays hidden. Beam UV.x
 carries full float view depth; byte-packed vertex colors cannot preserve its precision.
 `feed_visual` owns `crystal_offset`, `tip_closed`, `tip_open` and `emerge` for the sunlight
@@ -1284,3 +1286,10 @@ Write one line per decision: date — decision (who approved it).
   unbounded escaped endpoints. Native front/behind pixel checks cover all ten reflectors,
   eight yaw settings and four views, with day/night world galleries. Layout and optics
   remain unchanged; generator-owned depth strips are committed with their source.
+- 2026-10-12 — Owner reported isolated light dots inside every reflector. Keeping optical
+  plane depth on both faces exposed the buried bounce vertex even from behind. RG now
+  retains the actual SDF face depth; B stores the finite skin gap. Per-hit UV.y annotation
+  permits that gap only for incident/reflected segments on the camera-visible side, including
+  routes revisiting a mirror from opposite sides. Real back-side contact pixel checks extend
+  the all-angle suite; the focused Jade reproduction fails before the fix. No routing,
+  equipment or terrain changes.

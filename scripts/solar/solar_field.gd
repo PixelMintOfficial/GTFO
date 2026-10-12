@@ -87,7 +87,8 @@ func _make_equipment(id: String, world: Vector2, group: int, source: bool, actor
 	if not source:
 		var reflector := SolarReflectorLight.new()
 		prop.add_child(reflector)
-		reflector.setup(_terrain, prop, _art_sheet(entry), _meshes)
+		var mirror: Dictionary = state.mirrors.filter(func(m): return m["id"] == id)[0]
+		reflector.setup(_terrain, prop, _art_sheet(entry), _meshes, state, mirror)
 		_reflectors[id] = reflector
 		_all_beams.append_array(reflector.meshes)
 
