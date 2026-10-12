@@ -2,10 +2,11 @@ class_name SolarOptics
 extends RefCounted
 ## Stateless optics in canonical world coordinates. Finite mirror planes reflect rays;
 ## the receiver is the actual capped cone. Fixed mounting offsets allow landscape-aware
-## placements; elevated feeds aim down to a tilted first mirror. Other mirrors are upright.
-## An incomplete path
-## stops at the cone but cannot energize it. Views never participate in this calculation.
-## tests/solar_field_test.gd covers bypasses, cycles, shutoff and all B4 orientations.
+## placements; fixed mirror pitch follows each descent between plateaus and ground.
+## An incomplete path stops at the cone but cannot energize it. Optional canonical world
+## geometry stops rays at terrain and lets unblocked light escape past every visible view.
+## tests/solar_field_test.gd searches all reachable angle combinations for early receiver hits,
+## including cross-channel paths, and covers cycles, shutoff and the full authored routes.
 
 const STEP := PI / 8.0
 const EPSILON := .03
@@ -20,15 +21,39 @@ static func alignment(incoming: Vector2, outgoing: Vector2) -> int:
 	return posmod(roundi((incoming.angle() + outgoing.angle()) / (2.0 * STEP)), 8)
 
 
+static func mirror_elevation(route: Dictionary, index: int) -> float:
+	return float(route["mirror_elevations"][index]) if route.has("mirror_elevations") else 0.0
+
+
+static func mirror_center(field: Dictionary, mirror: Dictionary) -> Vector3:
+	var world: Vector2 = mirror["world"]
+	return Vector3(world.x, world.y, float(field["beam_height"]) + float(mirror["elevation"]))
+
+
+static func source_origin(field: Dictionary, group: int) -> Vector3:
+	var route: Dictionary = field["routes"][group]
+	var world := point(route["source"])
+	return Vector3(world.x, world.y, float(field["beam_height"]) + float(route.get("source_elevation", 0.0)))
+
+
+static func source_direction(field: Dictionary, group: int) -> Vector3:
+	var route: Dictionary = field["routes"][group]
+	var first := point(route["mirrors"][0])
+	var target := Vector3(first.x, first.y, float(field["beam_height"]) + mirror_elevation(route, 0))
+	return (target - source_origin(field, group)).normalized()
+
+
 static func mount(field: Dictionary, mirror: Dictionary) -> Vector2:
 	var route: Dictionary = field["routes"][mirror["group"]]
 	var index: int = mirror["index"]
-	var elevation := float(route.get("source_elevation", 0.0)) if index == 0 else 0.0
 	var center := point(route["mirrors"][index])
 	var before := point(route["source"] if index == 0 else route["mirrors"][index - 1])
 	var after := point(field["collector"]["world"] if index + 1 == route["mirrors"].size() else route["mirrors"][index + 1])
-	var incoming := Vector3(center.x - before.x, center.y - before.y, -elevation).normalized()
-	var outgoing := Vector3(after.x - center.x, after.y - center.y, 0).normalized()
+	var z := mirror_elevation(route, index)
+	var before_z := float(route.get("source_elevation", 0.0)) if index == 0 else mirror_elevation(route, index - 1)
+	var after_z := 0.0 if index + 1 == route["mirrors"].size() else mirror_elevation(route, index + 1)
+	var incoming := Vector3(center.x - before.x, center.y - before.y, z - before_z).normalized()
+	var outgoing := Vector3(after.x - center.x, after.y - center.y, after_z - z).normalized()
 	var normal := (incoming - outgoing).normalized()
 	var yaw := atan2(-normal.x, normal.y)
 	if yaw < 0:
@@ -50,8 +75,7 @@ static func mirror_distance(origin: Vector3, direction: Vector3, mirror: Diction
 	var denominator := direction.dot(normal)
 	if absf(denominator) < .000001:
 		return INF
-	var world: Vector2 = mirror["world"]
-	var center := Vector3(world.x, world.y, field["beam_height"])
+	var center := mirror_center(field, mirror)
 	var distance := (center - origin).dot(normal) / denominator
 	var yaw: float = angle * STEP + mirror["mount"].x
 	var tangent := Vector3(cos(yaw), sin(yaw), 0)
@@ -103,26 +127,20 @@ static func edge_distance(origin: Vector3, direction: Vector3, bounds: Rect2) ->
 	return distance
 
 
-static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: Dictionary, route_index: int, active: bool) -> Dictionary:
-	var result := {"segments": [], "hits": [], "connected": false, "hit_collector": false}
+static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: Dictionary, route_index: int, active: bool, world: SolarWorldGeometry = null) -> Dictionary:
+	var result := {"segments": [], "hits": [], "connected": false, "hit_collector": false, "termination": "closed"}
 	if not active:
 		return result
 	var route: Dictionary = field["routes"][route_index]
-	var source := point(route["source"])
-	var elevation := float(route.get("source_elevation", 0.0))
-	var origin := Vector3(source.x, source.y, float(field["beam_height"]) + elevation)
-	var flat := point(route["direction"]).normalized()
-	var direction := Vector3(flat.x, flat.y, 0)
-	if elevation > 0:
-		var first := point(route["mirrors"][0])
-		direction = (Vector3(first.x, first.y, field["beam_height"]) - origin).normalized()
+	var origin := source_origin(field, route_index)
+	var direction := source_direction(field, route_index)
 	var spec: Dictionary = field["collector"]
 	var box: Array = field["bounds"]
 	var bounds := Rect2(box[0], box[1], box[2], box[3])
 	var previous := ""
 	var visited := {}
 	for bounce in MAX_BOUNCES:
-		var distance := edge_distance(origin, direction, bounds)
+		var distance := world.escape_distance(origin, direction) if world != null else edge_distance(origin, direction, bounds)
 		var chosen := ""
 		var cone_distance := collector_distance(origin, direction, spec)
 		if cone_distance < distance:
@@ -136,11 +154,20 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 			if t < distance:
 				distance = t
 				chosen = id
+		if world != null:
+			var surface := world.surface_distance(origin, direction, distance)
+			if surface < distance:
+				distance = surface
+				chosen = "terrain"
 		if is_inf(distance):
 			break
 		var end := origin + direction * distance
 		result["segments"].append([origin, end])
+		if chosen == "terrain":
+			result["termination"] = "terrain"
+			break
 		if chosen == "collector":
+			result["termination"] = "collector"
 			result["hit_collector"] = true
 			result["connected"] = true
 			for index in route["mirrors"].size():
@@ -148,10 +175,12 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 					result["connected"] = false
 			break
 		if chosen.is_empty():
+			result["termination"] = "escape"
 			break
 		result["hits"].append(chosen)
 		var signature := "%s:%d:%d:%d" % [chosen, roundi(direction.x * 1000), roundi(direction.y * 1000), roundi(direction.z * 1000)]
 		if visited.has(signature):
+			result["termination"] = "cycle"
 			break
 		visited[signature] = true
 		for mirror in mirrors:
@@ -161,4 +190,5 @@ static func trace(field: Dictionary, mirrors: Array[Dictionary], orientations: D
 				break
 		origin = end + direction * (EPSILON * 2)
 		previous = chosen
+		result["termination"] = "bounce_limit"
 	return result

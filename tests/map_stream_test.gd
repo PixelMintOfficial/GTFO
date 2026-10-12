@@ -6,6 +6,7 @@ extends Node
 ## the pixels in it are the pixels the generator wrote (or the depth map would hide the
 ## astronaut in the wrong places). Walking, running, jumping, teleporting, zooming and turning
 ## all move the window; each is checked here.
+## Every world depth material, including reflector replays, must follow the published window.
 ## Run: godot --headless --path . res://tests/map_stream_test.tscn  (failures exit nonzero)
 
 var _checks := 0
@@ -41,6 +42,29 @@ func _covers(world: Node, where: String) -> void:
 	var seen := _seen(world.player.camera)
 	var win := Rect2(terrain.window)
 	_check(win.encloses(seen.grow(-1.0)), "%s: the window %s covers what the camera shows %s" % [where, win, seen])
+	_bindings(world, where)
+
+
+func _bindings(world: Node, where: String) -> void:
+	var terrain: MapTerrain = world.terrain
+	var win := terrain.window
+	var expected := Vector4(win.position.x, win.position.y, win.size.x, win.size.y)
+	var pending: Array[Node] = [world]
+	var stale: Array[String] = []
+	var checked := 0
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		pending.append_array(node.get_children())
+		if not node is CanvasItem or not node.material is ShaderMaterial: continue
+		var material := node.material as ShaderMaterial
+		var has_depth := false
+		for uniform in material.shader.get_shader_uniform_list():
+			has_depth = has_depth or uniform["name"] == "depth_map"
+		if not has_depth: continue
+		checked += 1
+		if material.get_shader_parameter("depth_map") != terrain.depth_map or material.get_shader_parameter("map_win") != expected:
+			stale.append(str(node.get_path()))
+	_check(checked > 60 and stale.is_empty(), "%s: all %d world depth materials follow the window (stale %s)" % [where, checked, stale])
 
 
 func _overworld() -> void:

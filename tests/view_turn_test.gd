@@ -2,7 +2,9 @@ extends Node
 ## Checks for turning the camera round the world (ViewTurn), against the real scenes and real key
 ## presses: the projection's turns undo each other, G / H step through the four views, the world
 ## doesn't move when the view does (the astronaut's place and facing, props, doors, repair bars),
-## a turn waits for a calm moment, and a press during a swing is kept.
+## the widest zoom follows the astronaut in every view, a turn waits for a calm moment,
+## and a press during a swing is kept.
+## View preloads overlap streamed-window texture uploads and release cleanly at scene teardown.
 ## Run: godot --headless --path . res://tests/view_turn_test.tscn  (failures exit nonzero)
 
 var _checks := 0
@@ -40,6 +42,7 @@ func _ready() -> void:
 	GameState.intro_done = true
 	GameState.heading = 0
 	_projection()
+	await _preload_windows()
 	await _overworld()
 	await _interior()
 	print("VIEW TURN TESTS: %d checks, %d failures" % [_checks, _failures])
@@ -68,6 +71,24 @@ func _projection() -> void:
 	_check(t.view_center.y * 2.0 * t.depth_scale < 65534.0, "the depth map reaches the far side of the world")
 
 
+## Exercise the same preload/window-upload overlap that exposed the dummy renderer's RID race.
+func _preload_windows() -> void:
+	var turn := ViewTurn.new()
+	turn.terrain = MapTerrain.new("res://assets/maps/red_planet/red_planet_map.json")
+	add_child(turn)
+	var image := Image.create(32, 32, false, Image.FORMAT_RGB8)
+	image.fill(Color.WHITE)
+	for step in 32:
+		turn._preload_around(step % 4)
+		for i in 40:
+			var texture := ImageTexture.create_from_image(image)
+			var uploaded := texture.get_image()
+			_check(uploaded != null and not uploaded.is_empty() and uploaded.get_pixel(0, 0).is_equal_approx(Color.WHITE), "window texture remains valid while view sprites preload")
+		await get_tree().process_frame
+	turn.queue_free()
+	for i in 4: await get_tree().process_frame
+
+
 func _overworld() -> void:
 	var world := load("res://scenes/overworld.tscn").instantiate() as Node2D
 	get_tree().root.add_child.call_deferred(world)
@@ -78,6 +99,18 @@ func _overworld() -> void:
 	var terrain: MapTerrain = world.terrain
 	var start := player.world_pos
 	var facing := player.facing_dir()
+	# Reproduce walking beside a base at the widest zoom, where dome framing used to take over.
+	player.camera.set_level(player.camera.levels.size() - 1)
+	await get_tree().create_timer(1.2).timeout
+	_camera_centered(player, "widest zoom beside the base")
+	player.forced_input = Vector2.RIGHT
+	await get_tree().create_timer(0.8).timeout
+	player.forced_input = Vector2.ZERO
+	_check(player.world_pos.distance_to(start) > 5.0, "the astronaut walks at widest zoom")
+	await get_tree().create_timer(1.2).timeout
+	_camera_centered(player, "widest zoom after walking")
+	player.teleport(start)
+	player.puppet_face(facing)
 	(world.get_node("Multitool") as Multitool)._spawn_prop("crate", start + Vector2(30, 10), 0, "lift", 7.0, true)   # the world has no test props
 	var props := _props(world)
 	_check(not props.is_empty(), "a prop to follow round")
@@ -85,6 +118,7 @@ func _overworld() -> void:
 	for step in [KEY_H, KEY_H, KEY_G, KEY_H, KEY_H]:
 		await _tap(step)
 		await _settle(world)
+		_camera_centered(player, "widest zoom after turning to view %d" % terrain.heading)
 	_check(terrain.heading == 3 and GameState.heading == 3, "H H G H H ends three quarter turns round (got %d)" % terrain.heading)
 	_check(player.world_pos.distance_to(start) < 0.01, "the astronaut stays where they were")
 	_check(player.facing_dir().distance_to(facing) < 0.01, "and faces the same way in the world")
@@ -125,6 +159,19 @@ func _overworld() -> void:
 		_check(overlay.screen_point(points[i], 0.0).distance_to(before[i]) < 1.0, "the swing starts where the view was (%s)" % points[i])
 		_check(overlay.screen_point(points[i], 1.0).distance_to(after[i]) < 1.0, "the swing ends where the view is (%s)" % points[i])
 	await _settle(world)
+	_camera_centered(player, "widest zoom at the end of the swing")
+	player.camera.set_level(0)
+	await get_tree().create_timer(0.4).timeout
+	_camera_centered(player, "zooming back in keeps the astronaut centered")
+	var cutscene_focus := player.camera_focus() + Vector2(140, 80)
+	player.camera.focus_override = cutscene_focus
+	player.camera.snap_to(cutscene_focus)
+	await get_tree().process_frame
+	player.camera.force_update_scroll()
+	_check(player.camera.get_screen_center_position().distance_to(cutscene_focus) < 2.0, "cutscenes can still override the focus")
+	player.camera.release_focus()
+	await get_tree().create_timer(2.5).timeout
+	_camera_centered(player, "releasing cutscene focus returns to the astronaut")
 	world.queue_free()
 	for i in 4:                                          # let the scene and its textures go
 		await get_tree().process_frame
@@ -139,6 +186,7 @@ func _interior() -> void:
 	await get_tree().create_timer(0.3).timeout
 	var terrain: MapTerrain = base.terrain
 	_check(terrain.heading == 1, "the base opens on the view the camera was in outside")
+	_check(base.player.camera.zoom_locked and base.player.camera.levels.size() == 1, "indoors stays at its locked zoom")
 	await _tap(KEY_H)
 	await _settle(base)
 	_check(terrain.heading == 2, "indoors turns too")
@@ -152,6 +200,14 @@ func _interior() -> void:
 	for i in 4:
 		await get_tree().process_frame
 	GameState.heading = 0
+
+
+## Preserve the normal torso offset; allow only whole-pixel snapping at rest.
+func _camera_centered(player: Player, label: String) -> void:
+	player.camera.force_update_scroll()
+	var expected := player.camera_focus() + player.camera.offset
+	var error := player.camera.get_screen_center_position().distance_to(expected)
+	_check(error < 2.0, "%s: camera follows the astronaut (offset %.2f px)" % [label, error])
 
 
 ## Where the live view draws these world points, in map px from the screen's centre.

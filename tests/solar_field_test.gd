@@ -1,10 +1,12 @@
 extends Node
-## Solar regression suite: finite optics, no skipped reflectors, the B4 157.5-degree
-## bypass, real F/gamepad input, independent suppression, all four camera turns,
+## Solar regression suite: finite optics, all-angle physical shortcut search, real F/gamepad
+## input, independent suppression, all four camera turns,
 ## physical footprints/reach and solar/engine state through scene replacement.
-## Layout regressions also check equipment clearance and each color spanning three sectors.
+## Layout regressions also check equipment clearance, graded access and elevated ray geometry.
 ## Run: godot --headless --path . res://tests/solar_field_test.tscn
 ## Optional rendered evidence: omit --headless and append -- --gallery=shots/solar --audio-debug.
+
+const RouteSearch = preload("res://tests/solar_route_search.gd")
 
 var _checks := 0
 var _failures := 0
@@ -50,6 +52,8 @@ func _tap(code: int, pad := false) -> void:
 			key.pressed = pressed
 			event = key
 		Input.parse_input_event(event)
+		# Deliver this synthetic press/release before advancing a rendered-frame test.
+		Input.flush_buffered_events()
 		await get_tree().process_frame
 		await get_tree().process_frame
 		await _frames()
@@ -69,23 +73,31 @@ func _solution(state: SolarFieldState) -> Dictionary:
 func _model() -> void:
 	var state := SolarFieldState.new()
 	_check(is_inf(SolarOptics.collector_distance(Vector3(-1010, 2020, 34), Vector3(1, 1, 0).normalized(), state.field["collector"])), "a ray missing the cone has no false linear intersection")
-	_check(state.mirrors.size() == 13, "4 / 5 / 4 mirrors")
+	var counts := [4, 5, 4] if OS.get_environment("SOLAR_FIELD_LAYOUT") == "v1" else [3, 3, 4]
+	_check(state.mirrors.size() == counts[0] + counts[1] + counts[2], "authored reflector count")
 	var center := SolarOptics.point(state.field["collector"]["world"])
 	var hardware: Array[Vector2] = []
-	for route in state.field["routes"]:
+	for group in 3:
+		var route: Dictionary = state.field["routes"][group]
+		_check(route["mirrors"].size() == counts[group], route["id"] + " reflector count")
 		hardware.append(SolarOptics.point(route["source"]))
-		var sectors := {}
 		for pair in route["mirrors"]:
 			var p := SolarOptics.point(pair)
 			hardware.append(p)
-			sectors[Vector2i(1 if p.x > center.x else -1, 1 if p.y > center.y else -1)] = true
-		_check(sectors.size() >= 3, route["id"] + " reflectors are spread around the receiver")
 	for index in hardware.size():
 		_check(hardware[index].distance_to(center) > float(state.field["collector"]["radius"]) + 35.0, "equipment clears the receiver")
 		for other in range(index + 1, hardware.size()):
 			_check(hardware[index].distance_to(hardware[other]) >= 80.0, "equipment has room to breathe")
 	for route in state.routes:
 		_check(route["segments"].is_empty() and not route["connected"], "closed feed emits no random light")
+	# A small geometric margin keeps the beam's drawn width/glow from grazing the surface.
+	var receiver: Dictionary = state.field["collector"].duplicate()
+	state.field["collector"]["radius"] += 4.0
+	state.field["collector"]["top_radius"] += 4.0
+	for group in 3:
+		var shortcuts: Dictionary = RouteSearch.inspect(state, group)
+		_check(shortcuts["witnesses"].is_empty(), "%s incomplete paths clear the receiver by four units across all mirror settings: %s" % [state.field["routes"][group]["id"], shortcuts["witnesses"]])
+	state.field["collector"] = receiver
 	var solution := _solution(state)
 	for id in solution:
 		while state.orientations[id] != solution[id]:
@@ -97,19 +109,23 @@ func _model() -> void:
 			print("OPTICS DEBUG ", group, " ", solution, " ", state.routes[group])
 		_check(state.connected_count() == group + 1, "each feed energizes its full route")
 		_check(state.routes[group]["hits"].size() == state.field["routes"][group]["mirrors"].size(), "authored solution uses its exact route")
+		var route: Dictionary = state.field["routes"][group]
+		for index in route["mirrors"].size():
+			var p := SolarOptics.point(route["mirrors"][index])
+			var target := Vector3(p.x, p.y, state.field["beam_height"] + SolarOptics.mirror_elevation(route, index))
+			_check(state.routes[group]["segments"][index][1].distance_to(target) < .02, "beam meets the elevated mirror's physical center")
+		for segment in state.routes[group]["segments"]:
+			_check(segment[0].z >= segment[1].z - .01, "solved sunlight descends naturally toward the receiver")
 	_check(state.supplies_power(), "three concentrated channels supply power")
 	var downhill: Array = state.routes[2]["segments"]
-	_check(downhill[0][0].z > downhill[0][1].z + 50.0, "mountain feed sends a descending beam to its first reflector")
-	for segment in downhill.slice(1):
-		_check(absf(segment[0].z - segment[1].z) < .01, "fixed mirror tilt sends the descending sunlight across the ground field")
+	_check(downhill[0][0].z > downhill[0][1].z + 20.0, "mountain feed sends a descending beam to its first reflector")
+	var last_blue: String = "B" + str(state.field["routes"][1]["mirrors"].size())
 	for angle in 8:
-		while state.orientations["B4"] != angle:
-			state.rotate("B4")
-		_check(state.routes[1]["connected"] == (angle == solution["B4"]), "B4 orientation %d cannot bypass B5" % angle)
-		if angle == 7:
-			_check(not state.routes[1]["hit_collector"], "B4 at 157.5 degrees misses the cone physically")
-	while state.orientations["B4"] != solution["B4"]:
-		state.rotate("B4")
+		while state.orientations[last_blue] != angle:
+			state.rotate(last_blue)
+		_check(state.routes[1]["connected"] == (angle == solution[last_blue]), "last blue reflector orientation %d must be aligned" % angle)
+	while state.orientations[last_blue] != solution[last_blue]:
+		state.rotate(last_blue)
 	for mirror in state.mirrors:
 		var id: String = mirror["id"]
 		for angle in 8:
@@ -139,25 +155,31 @@ func _integration() -> void:
 	var solution := _solution(state)
 	if not _gallery.is_empty():
 		player.camera.set_level(2)
-	var approach: Array = state.field["access_paths"][0]["points"]
-	player.teleport(SolarOptics.point(approach[0]))
-	await _frames()
-	player.forced_input = Vector2(0, -1)
-	var destination := SolarOptics.point(approach[-1])
-	for step in 240:
-		await get_tree().physics_frame
-		if player.world_pos.y >= destination.y - 1.0:
-			break
-	player.forced_input = Vector2.ZERO
-	await _frames()
-	_check(player.world_pos.distance_to(destination) < 4.0 and not player.is_airborne(), "Amber beacon has a direct walking approach without jumping")
-	await _capture("amber-approach")
+	var approach := 0
+	for path in state.field["access_paths"]:
+		player.teleport(SolarOptics.point(path["points"][0]))
+		await _frames()
+		for point in path["points"].slice(1):
+			var destination := SolarOptics.point(point)
+			for step in 600:
+				var delta := destination - player.world_pos
+				if delta.length() < 2.0:
+					break
+				var direction: Vector2 = world.terrain.view_dir(delta).normalized()
+				player.forced_input = Vector2(direction.x, -direction.y)
+				await get_tree().physics_frame
+			player.forced_input = Vector2.ZERO
+			await _frames()
+			_check(player.world_pos.distance_to(destination) < 3.0 and not player.is_airborne(), "graded solar access can be walked without jumping")
+		await _capture("hill-approach%d" % approach)
+		approach += 1
 	for id in solar.equipment:
 		var point: Vector2 = solar.equipment[id]["world"]
 		_check(world.terrain.surface(point) == MapTerrain.Surface.SOLID, id + " has a solid pedestal")
 		var stand := solar.interaction_point(id)
 		_check(world.terrain.is_walkable(stand), id + " has reachable interaction ground")
-		var elevation: float = state.field["routes"][solar.equipment[id]["group"]].get("source_elevation", 0.0) if solar.equipment[id]["source"] else 0.0
+		var route: Dictionary = state.field["routes"][solar.equipment[id]["group"]]
+		var elevation := float(route.get("source_elevation", 0.0)) if solar.equipment[id]["source"] else SolarOptics.mirror_elevation(route, int(id.substr(1)) - 1)
 		_check(absf(world.terrain.height_at(stand) - elevation) < 1.0, id + " stands at its authored elevation")
 	for group in 3:
 		var id: String = state.field["routes"][group]["id"] + " SUN"
@@ -182,8 +204,20 @@ func _integration() -> void:
 		await _tap(KEY_Q)
 		_check(state.orientations[id] == initial, "Q cannot rotate nearby " + id)
 		for step in posmod(int(solution[id]) - int(state.orientations[id]), 8):
+			var prior: int = state.orientations[id]
 			await _tap(KEY_F)
+			_check(state.orientations[id] == posmod(prior + 1, 8), "each F press turns nearby " + id)
 	_check(state.supplies_power(), "real F inputs solve the whole field")
+	for route in state.routes:
+		var clearance := INF
+		for segment in route["segments"]:
+			var start: Vector3 = segment[0]
+			var end: Vector3 = segment[1]
+			var steps := ceili(start.distance_to(end) / 4.0)
+			for step in steps + 1:
+				var point := start.lerp(end, float(step) / steps)
+				clearance = minf(clearance, point.z - world.terrain.height_at(Vector2(point.x, point.y)))
+		_check(clearance > 3.0, "solved beam clears the reshaped terrain")
 	if not _gallery.is_empty():
 		player.teleport(SolarOptics.point(state.field["collector"]["world"]) + Vector2(-50, -50))
 	await _capture("energize-rise", .15)
@@ -227,17 +261,31 @@ func _integration() -> void:
 		_check(state.orientations == stored and state.supplies_power(), "camera changes only the drawing")
 		for mirror in state.mirrors:
 			var prop: WorldProp = solar.equipment[mirror["id"]]["prop"]
-			_check(prop.position == world.terrain.to_screen(mirror["world"], 0).round(), "equipment projection stays anchored in view %d" % heading)
+			_check(prop.position == world.terrain.to_screen(mirror["world"], mirror["elevation"]).round(), "equipment projection stays anchored in view %d" % heading)
 			var expected: int = stored[mirror["id"]] if mirror["mount"] != Vector2.ZERO else posmod(int(stored[mirror["id"]]) - world.terrain.heading * 4, 8)
 			_check(floori(float(prop.sprite.frame) / 4) == expected, "mirror angle rotates with view")
+		for group in 3:
+			var route: Dictionary = state.field["routes"][group]
+			var prop: WorldProp = solar.equipment[route["id"] + " SUN"]["prop"]
+			var sheet: Dictionary = solar._info["sheets"][route["id"]]["source"]
+			var yaw := floori(float(prop.sprite.frame) / sheet["deploy_frames"]) * PI / 2 + float(sheet.get("yaw_offset", 0.0))
+			var ray := SolarOptics.source_direction(state.field, group)
+			var projected: Vector2 = world.terrain.view_dir(Vector2(ray.x, ray.y)).normalized()
+			_check(Vector2.from_angle(yaw).dot(projected) > .9999, "beacon outlet follows its real ray in every view")
 		_check(solar.fx.energy > .95 and solar.fx.startup > 1.0, "turn retains receiver charge without restarting completion")
 		var indicator: Vector2 = world.terrain.to_screen(SolarOptics.point(state.field["collector"]["world"]), state.field["collector"]["height"] + 12).round()
 		_check(solar._indicator.distance_to(indicator) < 1.0, "receiver indicator matches this view")
 		await _capture("solved-view%d" % world.terrain.heading)
 		if not _gallery.is_empty():
-			# Also inspect the whole wider field, without the furthest zoom framing the base.
+			# Frame the whole elevated field for evidence, using the generated sprite extents.
 			player.camera.set_level(3)
-			player.camera.focus_override = world.terrain.to_screen(SolarOptics.point(state.field["collector"]["world"]), float(state.field["collector"]["height"]) * .5)
+			var frame := Rect2(solar._indicator, Vector2.ZERO)
+			for entry in solar.equipment.values():
+				var prop: WorldProp = entry["prop"]
+				var rect := prop.sprite.get_rect()
+				var origin := prop.position + prop.sprite.position
+				frame = frame.expand(origin + rect.position).expand(origin + rect.end)
+			player.camera.focus_override = frame.get_center()
 			player.camera.snap_to(player.camera.focus_override)
 			await _capture("layout-view%d" % world.terrain.heading)
 			player.camera.focus_override = null

@@ -440,23 +440,23 @@
  },
  "solar_input": {
   "anchor": [
-   162.6,
-   138.1
+   197.2,
+   114.8
   ],
   "world": [
-   287.2652416360247,
-   581.2652416360247,
-   21.0
+   298.7868417743718,
+   566.25,
+   26.0
   ],
   "panel_id": "ne",
   "housing": "solar_input/housing_r3.png",
   "lights": "solar_input/lights_r3.png",
   "position": [
-   137,
-   111
+   171,
+   88
   ],
   "size": [
-   51,
+   52,
    53
   ],
   "frames": 8

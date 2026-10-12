@@ -116,7 +116,7 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	terrain.load_view(k)
 	var meta := ViewData.get_json(terrain.view_json)
 	player.refresh_view(world_facing)
-	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
+	player.camera.set_view_limits(terrain.max_view_px)
 	stream.refresh(true)                                 # the window, once the camera has moved
 	$Map.texture = terrain.map_texture
 	day_night.set_masks(terrain.light_mask, terrain.sun_mask)

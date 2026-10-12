@@ -10,6 +10,7 @@ extends Node
 ## Turns wait for a calm moment: not in a cutscene, a modal, mid-jump, while the tool is being
 ## drawn or at work. The next views' pictures load in the background ahead of time, so a turn
 ## never waits for the disk. A press during a swing is kept and played straight after it.
+## Headless checks preload textures serially to avoid the dummy renderer's allocation race.
 ##
 ## Test hooks (after "--"): --turn=N (start N quarter turns round; read by the scene),
 ## --turn-left / --turn-right (turn once after a second, for captures).
@@ -213,7 +214,9 @@ func _preload_around(k: int) -> void:
 			want[path] = true
 			if _keep.has(path):
 				continue
-			if ResourceLoader.has_cached(path):
+			# The dummy renderer's texture owner is not thread-safe in this Godot version.
+			# Headless checks load textures serially; the displayed game keeps async preloads.
+			if ResourceLoader.has_cached(path) or DisplayServer.get_name() == "headless":
 				_keep[path] = load(path)
 			else:
 				ResourceLoader.load_threaded_request(path)

@@ -1,7 +1,8 @@
 """Canonical solar field layout shared by the map and equipment generators.
 
 data/solar_field.json owns world positions, optical dimensions, routes and the cable.
-Small equipment pads and authored access paths are levelled after original plant generation.
+Equipment elevations, capped peaks, plateau tops and graded access paths are applied after
+original plant generation. SOLAR_FIELD_LAYOUT=v1 retains the previous ground-field layout.
 The optical bounds limit escaped rays; they never clear terrain or forest.
 No renderer or view state is owned here.
 """
@@ -14,37 +15,91 @@ PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'solar_f
 
 
 def load_field():
-    with open(PATH, encoding='utf-8') as stream:
+    path = PATH.replace('.json', '_v1.json') if os.environ.get('SOLAR_FIELD_LAYOUT') == 'v1' else PATH
+    with open(path, encoding='utf-8') as stream:
         return json.load(stream)
 
 
-def pad_distance(X, Y):
-    field = load_field()
-    centers = [(*field['collector']['world'], field['collector']['radius'] + 8)]
+def mirror_elevation(route, index):
+    return route.get('mirror_elevations', [0] * len(route['mirrors']))[index]
+
+
+def equipment(field):
+    """One placement/elevation contract for terrain pads and reachable controls."""
     for route in field['routes']:
-        if not route.get('source_elevation', 0):
-            centers.append((*route['source'], 26))
-        centers.extend((*point, 26) for point in route['mirrors'])
-    distances = [np.hypot(X - x, Y - y) - radius for x, y, radius in centers]
-    for path in field.get('access_paths', []):
-        for a, b in zip(path['points'], path['points'][1:]):
-            dx, dy = b[0] - a[0], b[1] - a[1]
-            t = np.clip(((X - a[0]) * dx + (Y - a[1]) * dy) / (dx * dx + dy * dy), 0, 1)
-            distances.append(np.hypot(X - a[0] - t * dx, Y - a[1] - t * dy) - path['half_width'])
-    return np.minimum.reduce(distances)
+        yield route['id'] + ' SUN', route['source'], route.get('source_elevation', 0)
+        for index, point in enumerate(route['mirrors']):
+            yield route['id'] + str(index + 1), point, mirror_elevation(route, index)
+
+
+def access_profile(field, X, Y):
+    """Blend nearby ramp grades continuously through bends and branching approaches."""
+    distance = np.full_like(X, np.inf, dtype=float)
+    legs = [(a, b, path['half_width']) for path in field.get('access_paths', [])
+            for a, b in zip(path['points'], path['points'][1:])]
+
+    def profile(a, b, width):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        t = np.clip(((X - a[0]) * dx + (Y - a[1]) * dy) / (dx * dx + dy * dy), 0, 1)
+        za, zb = a[2] if len(a) > 2 else 0, b[2] if len(b) > 2 else 0
+        return np.hypot(X - a[0] - t * dx, Y - a[1] - t * dy) - width, za + (zb - za) * t
+
+    for a, b, width in legs:
+        np.minimum(distance, profile(a, b, width)[0], out=distance)
+    total = np.zeros_like(X, dtype=float)
+    heights = np.zeros_like(X, dtype=float)
+    for a, b, width in legs:
+        leg_distance, grade = profile(a, b, width)
+        weight = np.exp(-((leg_distance - distance) / (width * .75)) ** 2)
+        total += weight
+        heights += grade * weight
+    return distance, heights / np.maximum(total, 1e-30)
+
+
+def apply_terrain(height, material, X, Y):
+    """Shape only the authored solar sites; retain the world's original placement stream."""
+    field = load_field()
+
+    def blend(distance, target, width=12):
+        t = np.clip(distance / width, 0, 1)
+        weight = t * t * (3 - 2 * t)
+        height[:] = target + (height - target) * weight
+
+    for cap in field.get('terrain', {}).get('peak_caps', []):
+        x, y, w, h = cap['bounds']
+        distance = np.maximum.reduce([x - X, X - x - w, y - Y, Y - y - h])
+        material[(distance <= 0) & (height > cap['height'])] = 1
+        blend(distance, np.minimum(height, cap['height']), cap['blend'])
+    for plateau in field.get('terrain', {}).get('plateaus', []):
+        x, y = plateau['world']
+        rx, ry = plateau['half']
+        distance = (np.hypot((X - x) / rx, (Y - y) / ry) - 1) * min(rx, ry)
+        material[distance <= 0] = 1
+        blend(distance, plateau['height'], plateau['blend'])
+    x, y = field['collector']['world']
+    blend(np.hypot(X - x, Y - y) - field['collector']['radius'] - 8, 0)
+    for name, (x, y), elevation in equipment(field):
+        if name.endswith('SUN') and elevation and not field.get('terrain'):
+            continue  # v1's mountain beacon keeps its natural ground.
+        blend(np.hypot(X - x, Y - y) - 26, elevation)
+    if field.get('access_paths'):
+        path_distance, path_height = access_profile(field, X, Y)
+        blend(path_distance, path_height)
+        if field.get('terrain'):
+            material[path_distance <= 0] = 1  # Reshaped ramps must not retain buried boulder collision.
 
 
 def mirror_mount(route, field, index=0):
     """Mount bias for free world placement; player yaw still moves in 22.5° steps.
 
-    The same finite-plane normal is used by SolarOptics. Only the first mirror of an
-    elevated route has pitch; the fixed yaw bias permits routes to follow the landscape.
+    The same finite-plane normal is used by SolarOptics. Every mirror's fixed pitch
+    follows the actual elevation changes; player controls turn only its yaw.
     """
     points = [route['source'], *route['mirrors'], field['collector']['world']]
-    before, center, after = (np.array(p, float) for p in points[index:index + 3])
-    elevation = route.get('source_elevation', 0) if index == 0 else 0
-    incoming = np.array([*(center - before), -elevation])
-    outgoing = np.array([*(after - center), 0])
+    heights = [route.get('source_elevation', 0),
+               *[mirror_elevation(route, i) for i in range(len(route['mirrors']))], 0]
+    before, center, after = (np.array([*p, z], float) for p, z in zip(points[index:index + 3], heights[index:index + 3]))
+    incoming, outgoing = center - before, after - center
     incoming /= np.linalg.norm(incoming)
     outgoing /= np.linalg.norm(outgoing)
     normal = incoming - outgoing

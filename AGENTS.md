@@ -327,8 +327,8 @@ camera turns reproject equipment and rays without changing the optical puzzle.
     supplies at overworld spawn while preserving session progress. See docs/survival.md.
     `frozen` (kind -> true) holds needs still - no drain, recovery or damage - set from the
     master control panel; it is kept through rescue.
-  - `solar_field`: `SolarFieldState`: thirteen world mirror orientations, three closed/open
-    feeds and cached optical routes. All three complete 4/5/4 routes supply the base reactor;
+  - `solar_field`: `SolarFieldState`: ten world mirror orientations, three closed/open
+    feeds and cached optical routes. All three complete 3/3/4 Amber/Jade/Coral routes supply the base reactor;
     `base_powered()` also requires its existing machine repair. State survives turns, airlocks
     and rescue. See docs/solar-field.md for optics, generated art, ownership and test hooks.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
@@ -476,7 +476,7 @@ consts in the named files.
   - Holding jump goes higher (about 30 units: enough for the 14.4-unit cargo box); a tap does not.
   - There's a floaty hang near the top, plus crouch and land squash.
 - **Camera** (`game_camera.gd`):
-  - Overworld: 4 zoom levels; the furthest frames the whole main base and never more.
+  - Overworld: 4 zoom levels; all follow the astronaut. The furthest shows a main-base-sized area.
     In-between levels land on whole-pixel scales at 1080p.
   - Interior: `zoom_locked = true` (no zooming).
   - Cutscenes use `focus_override`, `snap_to` and `release_focus`.
@@ -558,7 +558,8 @@ consts in the named files.
     same burst and crescent) show whole glass in every view, by day and night and through the
     camera's swing. The far pane has no hole outside. The other rooms keep theirs.
 - **Solar field** (`scripts/solar/`, `data/solar_field.json`):
-  - Three closed sun feeds and 4/5/4 Amber/Jade/Coral reflectors surround one conical receiver.
+  - Three elevated, closed sun feeds and 3/3/4 Amber/Jade/Coral reflectors surround one conical receiver
+    (three yellow, three blue/teal, four red). Relays descend from hilltops into the clearing.
     F/X opens a feed or turns a nearby mirror clockwise 22.5 degrees. No Q reverse action.
     Movement, survival and the clock continue. Every assigned reflector is required.
     Local solar prompts and bars avoid the movable survival HUD using its canvas-aware
@@ -566,8 +567,10 @@ consts in the named files.
   - The receiver's local bar has three channel segments. Its cable goes into the base's
     power conduit; all three complete paths plus the repaired reactor run the engine.
     Routes persist through views and airlocks. Time of day fades beams without losing progress.
-  - The field occupies the original array clearing/red-dust ground; only equipment pads
-    are levelled after the unchanged flora placement stream. The forest is preserved.
+  - The receiver sits farther right/down in the original array clearing. Amber uses capped western
+    peaks, Jade the right-hand hill and Coral the upper cliff. Flat equipment pads and graded
+    approaches are shaped after the original flora placement stream; plants retain X/Y and settle
+    onto the reshaped ground. The forest is preserved.
   - Mirrors have silver sweeps/pivots; feeds deploy crystals and gather sunlight. Completing
     all routes sends a charge wave through receiver cells, lights its crown and pulses outward.
   - Canonical `SolarOptics` and session `SolarFieldState` are separate from `SolarField`
@@ -644,6 +647,8 @@ designs can be compared or restored:
 - `BASE_DESIGN` = `v1` | `hex` | `v2` | `v3` (default **v3**) — the main base.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
 - `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
+- `SOLAR_FIELD_LAYOUT` = `v1` | `v2` (default **v2**) — earlier 4/5/4 ground field or the
+  approved 3/3/4 terraced field. Use the same value when generating and running the game.
 - `TRAIL_LAMPS` = `0` | `1` (default **0**) — the lamps along the trails (and their light). Off,
   their spots still keep plants and the spawn clear, so the forest and spawn are unchanged.
 - `TEST_PROPS` = `0` | `1` (default **0**) — `props_gen.py`'s ore/scrap/crate test set by the
@@ -657,6 +662,8 @@ Running with a non-default design and `MAP_OUT` unset **replaces the game's asse
 
 After regenerating, **re-import** (`godot --headless --path . --import`, or focus the editor)
 before you run the game.
+Map, prop and solar image/data exports replace completed files atomically, so Windows
+editors and diff viewers can retain the previous version without blocking a truncating write.
 
 ### 6.3 Data contracts
 The generators write the JSON keys that the scripts read. If you rename, remove or reshape a
@@ -672,22 +679,34 @@ sheet; `anchor` and `world` on every animated dome sprite (the turn stands them 
 
 `data/solar_field.json` owns canonical `bounds`, `collector`, `cable`, `beam_height`,
 `mirror_span`, `reach`, `engine_room` and three `routes` (ID/label/color/ramp, source/direction/mirrors).
-Optional `access_paths` contain canonical `points` and `half_width` for narrow level approaches.
+Optional `access_paths` contain canonical `points` and `half_width` for narrow approaches.
+Points may include Z for graded ramps; two-coordinate points remain level at Z=0.
+`terrain.peak_caps` contains `bounds`, `height`, `blend`; `terrain.plateaus` contains elliptical
+`world`, `half`, `height`, `blend` tops. These shape only the authored solar sites.
 Generated `solar_field.json` adds `sheets` (file/size/frames/anchor, mirror `shine_frames`,
-feed `deploy_frames`) and four `views` with receiver `indicator_px` and `receiver_mask`
+feed `deploy_frames`/`yaw_offset`, the first source row's canonical angle) and four `views`
+with receiver `indicator_px` and `receiver_mask`
 (file/position/size; RGBA = normalized height/cell interior/local view depth/surface).
+Mirror sheets add `depth` (file/frames/scale/offset/skin_depth_span), eight frames sharing the sprite's
+size/anchor and silhouette. RG16 encodes local view depth as `(depth + 32) * 1024`, B
+encodes the surface-to-optical-plane gap normalized by skin_depth_span (32), and A includes
+the one-pixel outline. All parts, including faces, retain actual rendered SDF depth in RG.
+Only camera-facing incident/reflected segment pairs may bridge the skin gap (UV.y = 1);
+back-side contacts and other projected crossings keep solid surface depth. SolarReflectorLight clips identical world beam geometry
+over each y-sorted prop so front light shows and behind light stays hidden. Beam UV.x
+carries full float view depth; byte-packed vertex colors cannot preserve its precision.
 `feed_visual` owns `crystal_offset`, `tip_closed`, `tip_open` and `emerge` for the sunlight
 funnel's endpoint as a beacon opens. Closed beacons conceal the crystal under metal lids.
 Its `stands` map contains reachable canonical approach points for captures and placement
 checks, clear of the receiver's footprint; normal play can approach from any side.
 The map generator owns small level equipment pads and solid footprints, preserving the
 original landscape/plant random stream. `check_solar_field.py` verifies reachability,
-original forest fingerprints, equipment clearance and view anchors.
-Elevated routes add `source_elevation`; these feeds keep their natural terrain instead of
-getting a level pad. `mirror_half_height` defines finite vertical mirror extent. `SolarOptics`
-intersects three-dimensional rays with mirror rectangles and the capped frustum. The first
-mirror's fixed pitch is derived from descending input and horizontal output. Every mirror's
-fixed yaw offset follows its authored route, allowing free placement around terrain;
+original forest placement fingerprints, equipment clearance and view anchors.
+Elevated routes add `source_elevation` and parallel `mirror_elevations` (default zero).
+Legacy v1 elevated feeds retain their natural terrain; v2 uses authored level pads and ramps.
+`mirror_half_height` defines finite vertical mirror extent. `SolarOptics` intersects
+three-dimensional rays with mirror rectangles and the capped frustum. Every mirror's fixed
+pitch and yaw offset derive from its actual incoming/outgoing elevations and authored route;
 `special_mirrors` exports four view-specific sheets for nonzero mounting offsets.
 F continues to control yaw only, in eight 22.5-degree steps.
 Every interior/repair variant exports `solar_input`: a physical diagonal-wall inlet's
@@ -1278,6 +1297,56 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-11 — Owner requested a master control panel; dev-only by owner's choice (editor and
   debug builds, F1 / Guide): set the time (half-hour steps or a part of the day) and freeze food,
   water and oxygen (`SurvivalState.frozen`). Not part of the shipped HUD. PixelFont gains `<` `>`.
+- 2026-10-11 — Owner reported premature receiver strikes from Amber, B3 and C2, and asked
+  to check untested angles too. Reflector positions/mounts are adjusted so incomplete paths
+  physically miss the cone, while the full 4/5/4 paths, interleaved spacing, mountain feed
+  and original vegetation remain. The solar regression suite now searches all reachable
+  mirror-angle combinations with consistent orientations, including cross-channel bounces;
+  any incomplete path within four world units of the receiver fails with a replayable
+  angle assignment. This visual clearance is test-only; the physical cone remains unchanged.
+  Generated capture stands now select level ground in the base spawn's walk component,
+  with `solar_field_gen.py --stands-only` available to refresh anchors without rerendering art.
+- 2026-10-11 — Owner requested keeping the solar wall display clear of the battery cabinets.
+  Its paired mounts move along the wall to 30/210 degrees and up to 26 units, below the coral
+  trim, with housing/lenses and anchors regenerated for all views and machine-repair variants.
+- 2026-10-11 — Owner requested that the astronaut remain the camera's focal point at maximum
+  zoom-out. Normal follow no longer selects a nearby dome; the existing zoom range, smoothing,
+  torso offset, cutscene focus and indoor zoom lock remain. Real-scene camera tests cover walking
+  at widest zoom, all four headings, swing endpoints and zooming back in.
+- 2026-10-12 — Owner requested a less cluttered solar puzzle following the marked hills:
+  receiver moves to (-715, 2015); Amber uses capped western peaks, Jade the right-hand hill,
+  Coral the upper cliff. Reduce reflectors to three yellow, four red, three blue (A/B/C 3/3/4),
+  with relays on hills and ground and shorter descending routes. Authored flat tops and graded
+  access ramps are applied after scattering; original plant X/Y, variants and phases remain.
+  Source/mirror elevations drive shared 3D optics and generated mounting pitch/yaw. Keep the
+  previous field as `SOLAR_FIELD_LAYOUT=v1`; the approved terraced layout is v2/default.
+- 2026-10-12 — Owner requested visible mirror bounces, no mid-air cutoffs or rays through
+  surfaces, and slightly thicker light. Canonical `SolarWorldGeometry` intersects the existing
+  bilinear ground grid before downstream optics; unblocked rays extend beyond every view's
+  map/viewport rather than the placement bounds or an arbitrary Z ceiling. Empty-sky depth
+  (65535) never occludes light. Mirror-owned y-sorted contact meshes draw the incoming/outgoing
+  light over their faces without moving the whole beam layer above foreground actors. Core/halo
+  widths become 2.25/6 pixels, with matching swing thickness; small ground glints mark physical
+  impacts. MapTerrain shares explicit-view point/direction projection for the escape envelope.
+  The beam suite covers individual
+  and seeded mixed yaw settings, terrain/endpoints, native four-view contact pixels and shader
+  sky/solid fixtures. No equipment placements, terrain or generated assets change.
+- 2026-10-12 — Owner clarified that light must meet the reflective face while parts
+  physically behind the reflector stay hidden, and requested other-angle checks. Replace
+  short, always-overlaid contact strips with shared full beam geometry, clipped using
+  generated per-pixel reflector depth/silhouette (including frame, pivots and post).
+  The reflective skin matches the existing finite optical plane; hardware keeps its SDF
+  depth. Float UV depth replaces byte-packed colors to avoid false occlusion and preserve
+  unbounded escaped endpoints. Native front/behind pixel checks cover all ten reflectors,
+  eight yaw settings and four views, with day/night world galleries. Layout and optics
+  remain unchanged; generator-owned depth strips are committed with their source.
+- 2026-10-12 — Owner reported isolated light dots inside every reflector. Keeping optical
+  plane depth on both faces exposed the buried bounce vertex even from behind. RG now
+  retains the actual SDF face depth; B stores the finite skin gap. Per-hit UV.y annotation
+  permits that gap only for incident/reflected segments on the camera-visible side, including
+  routes revisiting a mirror from opposite sides. Real back-side contact pixel checks extend
+  the all-angle suite; the focused Jade reproduction fails before the fix. No routing,
+  equipment or terrain changes.
 - 2026-10-12 — Performance, against three reported issues (#7, #8, #11), measured with a new
   `--perf` hook rather than by feel, and with `--no-stream` so both map paths can be compared in
   one build. **What each change is actually worth, measured on an Intel UHD 620:**
@@ -1297,3 +1366,11 @@ Write one line per decision: date — decision (who approved it).
   Also: the map's layers are stored as 512 px tiles, the depth map dropped its unused alpha
   channel, and the map JSONs are parsed once with one view's fx held at a time - parsed, 350 KB
   of JSON costs 4.2 MB of heap (agent, from the owner's three issues).
+- 2026-10-12 — Merge performance main into the solar branch: streamed depth windows bind to
+  world beams, reflector replays, impacts and receiver FX; initialize player occlusion after the
+  first window publishes. Neighbor-window prediction keeps the astronaut centered at every zoom.
+  Regenerate all four maps/tiles with the terraced field and calmer tree sway; forest clearance
+  checks fingerprint canonical feet so narrower sprite boxes do not count as moved plants.
+  Native contact comparisons wait for zoom to settle. Headless texture preloads run serially
+  because the Godot dummy renderer races concurrent texture allocations; a preload/window
+  upload stress regression guards the workaround. Displayed game preloads remain asynchronous.

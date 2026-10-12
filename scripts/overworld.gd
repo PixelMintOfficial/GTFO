@@ -59,7 +59,6 @@ func _ready() -> void:
 	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
 	var view := terrain.view_json
 	player.setup(terrain)
-	player.camera.frames = terrain.frames
 	player.camera.setup(player, $Map, terrain.max_view_px, terrain.streaming)
 	# The window has to exist before anything that samples the depth map is set up, and it is
 	# built around where the camera is, so it comes straight after the camera.
@@ -67,6 +66,7 @@ func _ready() -> void:
 	add_child(stream)
 	stream.setup(terrain, $Map, player.camera, player)
 	stream.published.connect(_window_moved)
+	player.refresh_window()
 	$Map.texture = terrain.map_texture
 	wind.setup(player.camera, _biome_here)
 	map_screen.setup(view, player)
@@ -137,7 +137,7 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	terrain.load_view(k)
 	var view := terrain.view_json
 	player.refresh_view(world_facing)
-	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
+	player.camera.set_view_limits(terrain.max_view_px)
 	stream.refresh(true)                                 # the window, once the camera is where
 	$Map.texture = terrain.map_texture                   # this view puts it - not before
 	day_night.set_masks(terrain.light_mask)

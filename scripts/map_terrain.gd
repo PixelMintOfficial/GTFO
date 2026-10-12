@@ -13,6 +13,7 @@ enum Surface { SOLID, STEEP, WALK }
 ## turns (clockwise, seen from above) about view_center. load_view() switches the view.
 ## replace_variant() changes an interior's repaired artwork and walk grid while keeping
 ## this terrain instance, world positions, and the current heading shared by all systems.
+## to_screen_in_view/to_screen_direction share the projection for view-independent ray extents.
 
 var map_size := Vector2.ZERO
 var origin := Vector2.ZERO
@@ -180,24 +181,13 @@ func max_view_in(k: int) -> Vector2:
 ## Where view k draws a world point standing at height z - to_screen() for a view that is not
 ## the current one, which is what a neighbour's window has to be built around.
 func to_screen_in(k: int, p: Vector2, z: float) -> Vector2:
-	var d := p - view_center
-	var v := d
-	match posmod(k, 4):
-		1:
-			v = Vector2(d.y, -d.x)
-		2:
-			v = -d
-		3:
-			v = Vector2(-d.y, d.x)
-	v += view_center
-	var o := origin_in(k)
-	return Vector2(o.x + v.x / units_per_px, o.y - (depth_to_px * v.y + z) * px_per_unit)
+	return to_screen_in_view(p, z, posmod(k, 4), origin_in(k))
 
 
 ## A world point (or the point under it) as the current view lays it out.
-func view_point(p: Vector2) -> Vector2:
+func view_point(p: Vector2, view := -1) -> Vector2:
 	var d := p - view_center
-	match heading:
+	match heading if view < 0 else view:
 		1:
 			return Vector2(d.y, -d.x) + view_center
 		2:
@@ -218,8 +208,8 @@ func view_depth(p: Vector2) -> float:
 
 
 ## A world direction as the current view sees it, and back.
-func view_dir(w: Vector2) -> Vector2:
-	match heading:
+func view_dir(w: Vector2, view := -1) -> Vector2:
+	match heading if view < 0 else view:
 		1:
 			return Vector2(w.y, -w.x)
 		2:
@@ -252,8 +242,18 @@ static func _load_image(path: String) -> Image:
 
 ## Map pixel position of a world point standing at height z.
 func to_screen(p: Vector2, z: float) -> Vector2:
-	var v := view_point(p)
-	return Vector2(origin.x + v.x / units_per_px, origin.y - (depth_to_px * v.y + z) * px_per_unit)
+	return to_screen_in_view(p, z, heading, origin)
+
+
+## Project using generated view metadata without changing this terrain's current view.
+func to_screen_in_view(p: Vector2, z: float, view: int, view_origin: Vector2) -> Vector2:
+	var v := view_point(p, view)
+	return Vector2(view_origin.x + v.x / units_per_px, view_origin.y - (depth_to_px * v.y + z) * px_per_unit)
+
+
+func to_screen_direction(direction: Vector3, view := -1) -> Vector2:
+	var v := view_dir(Vector2(direction.x, direction.y), view)
+	return Vector2(v.x / units_per_px, -(depth_to_px * v.y + direction.z) * px_per_unit)
 
 
 func is_walkable(p: Vector2) -> bool:
