@@ -34,7 +34,8 @@ uniform bool first = true;             // the view left (else the view arrived a
 uniform bool front = true;             // the dithered copy in front (else the whole one behind)
 uniform vec3 toward = vec3(0.0, 0.5, 0.866);   // towards the camera (Godot space)
 uniform float block = 1.0;             // screen px per map px (the dither's grain)
-uniform vec2 lamp_px = vec2(-99999.0); // the astronaut's light, in this view's map px
+uniform vec2 lamp_px = vec2(-99999.0); // the suit lamp, in this view's map px
+uniform vec2 lamp_dir = vec2(1.0, 0.0);  // and the way it points, in this view
 uniform bool linear_out = false;       // write linear colour (if the 3D output is sRGB-encoded)
 
 varying vec2 px;
@@ -99,9 +100,7 @@ void fragment() {
 	float own = texelFetch(light_tex, ip, 0).r;
 	float sun = texelFetch(sun_tex, ip, 0).r;
 	vec3 day = c * (1.0 - 0.4 * sun * dn_night);
-	vec2 q = (floor(px) + 0.5 - lamp_px) / vec2(dn_lamp.z, dn_lamp.z * 0.55);
-	float f = clamp(1.0 - dot(q, q), 0.0, 1.0);
-	float lamp = floor(f * f * 3.0 + dn_bayer(floor(px)) * 0.95) / 3.0 * dn_lamp.w;
-	vec3 lit = mix(mix(dn_sky(day), day * vec3(1.0, 0.95, 0.86), lamp), c * (1.0 + 0.12 * dn_night), own);
+	float lamp = dn_lamp_shape(px, lamp_px, lamp_dir);
+	vec3 lit = mix(mix(dn_sky(day), day * DN_LAMP_TINT, lamp), c * (1.0 + 0.12 * dn_night), own);
 	ALBEDO = linear_out ? pow(clamp(lit, 0.0, 1.0), vec3(2.2)) : clamp(lit, 0.0, 1.0);
 }

@@ -20,6 +20,7 @@ extends Node2D
 ##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ##   --dev-panel / --dev-freeze=hunger,thirst,oxygen   master control panel (F1; see DevPanel)
+##   --suit-light           start with the suit's lamp lit (L switches it; see SuitLight)
 ##   --audio-debug          print every sound as it plays (there is no screenshot for sound)
 ##   --perf                 print texture memory, draw calls and frame times once a second
 ##   --perf-every=SECONDS   how often --perf prints (default 1.0)
@@ -39,6 +40,7 @@ var doors: Array[AirlockDoor] = []
 var view_turn: ViewTurn
 var stream: MapStream
 var solar: SolarField
+var suit_light: SuitLight
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -76,7 +78,7 @@ func _ready() -> void:
 	ambience.setup(view, player.camera, player, _biome_here)
 	player.step_source = _step_sound
 	multitool.setup(PROPS_JSON, player, terrain, $Actors)
-	day_night.setup(player, $Map, terrain.light_mask)
+	day_night.setup($Map, terrain.light_mask)
 	_setup_doors()
 	solar = SolarField.new()
 	add_child(solar)
@@ -93,6 +95,9 @@ func _ready() -> void:
 	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
 	add_child(dev_panel)
 	dev_panel.setup(player)
+	suit_light = SuitLight.new()                       # L: the only light out here after dark
+	add_child(suit_light)
+	suit_light.setup(player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -236,6 +241,8 @@ func _run_test_hooks(args: Dictionary) -> void:
 					solar.state.rotate(id)
 	if args.has("solar-at") and solar.equipment.has(args["solar-at"]):
 		player.teleport(solar.interaction_point(args["solar-at"]))
+	if args.has("suit-light") and not suit_light.on():
+		suit_light.toggle()
 	if args.has("dome-mended"):
 		GameState.window_repair.dome_mended = args["dome-mended"]
 		dome_fx.load_view(terrain.view_json)

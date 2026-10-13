@@ -311,6 +311,13 @@ func refresh_window() -> void:
 	mat.set_shader_parameter("map_win", MapStream.win_vec(terrain))
 
 
+## How much the lamp on the suit lights the astronaut themselves, 0..1 (SuitLight sets it every
+## frame). The beam is a shape on the ground; they carry its source, so it lights all of them,
+## head included. The shadow shares the material and so stays a daylight shadow in the pool.
+func set_suit_lamp(amount: float) -> void:
+	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_lamp", amount)
+
+
 func camera_focus() -> Vector2:
 	return global_position + (sprite.position + shadow.position) * 0.5
 

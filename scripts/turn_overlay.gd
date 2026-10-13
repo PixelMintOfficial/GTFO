@@ -108,6 +108,7 @@ static func view_info(terrain: MapTerrain, camera: Camera2D, player: Player) -> 
 			"upp": terrain.units_per_px, "dtp": terrain.depth_to_px, "ppu": terrain.px_per_unit,
 			"depth_scale": terrain.depth_scale, "heading": terrain.heading, "center": terrain.view_center,
 			"rect": rect, "view": view, "player_px": player.global_position,
+			"lamp_dir": SuitLight.beam_dir(terrain, player),
 			"offset": player.global_position - centre}
 
 
@@ -226,7 +227,8 @@ func _face_player(psi: float) -> void:
 	if not frames.has_animation(anim):
 		return
 	_player_board.texture = frames.get_frame_texture(anim, mini(_player.sprite.frame, frames.get_frame_count(anim) - 1))
-	_player_board.modulate = DayNight.light_mul
+	# The astronaut carries the suit lamp through the swing, so it keeps lighting them.
+	_player_board.modulate = DayNight.light_mul.lerp(Color(1.06, 1.0, 0.9), SuitLight.published_suit)
 
 
 ## The relief's grid of vertices. Building one is tens of milliseconds at the sizes used here
@@ -276,6 +278,7 @@ func _set_view_params(m: ShaderMaterial, v: Dictionary) -> void:
 	m.set_shader_parameter("rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
 	m.set_shader_parameter("block", _block)
 	m.set_shader_parameter("lamp_px", v["player_px"])
+	m.set_shader_parameter("lamp_dir", v["lamp_dir"])
 
 
 ## Something standing in the world, as a billboard: texture region, the anchor where it stands
