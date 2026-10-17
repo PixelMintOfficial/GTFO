@@ -73,6 +73,7 @@ scenes/
 scripts/
   game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
   day_night.gd         DayNight: the clock, the light through the day, lights kept lit at night
+  suit_light.gd        SuitLight: the lamp on the astronaut's suit (L / pad B), off until you light it
   day_clock.gd         DayClock: the time panel (sky window, day number, part of the day) and the new-day title
   audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.8)
   world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
@@ -103,10 +104,12 @@ scripts/
   pixel_font.gd        PixelFont: the 3x5 pixel font for every bit of in-game text
   dev_panel.gd         DevPanel: F1 master control panel (debug builds): set the time, freeze needs
 shaders/
-  day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky())
+  day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky(),
+                         dn_lamp_shape(): the suit lamp's beam on the ground)
   map_light            the map: time of day, with its light mask kept lit (and indoors the sun mask)
   graded               any other sunlit thing (given automatically by DayNight)
-  depth_occlusion      the astronaut behind scenery: silhouette, or tinted behind glass
+  depth_occlusion      the astronaut behind scenery: silhouette, or tinted behind glass; lit by
+                       the lamp they carry (sprite_lamp)
   prop_depth           props behind scenery: hidden, or tinted behind glass
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
   crash_reveal         uncovers the untouched ground behind the crashing satellite
@@ -238,11 +241,19 @@ patch` (the band's glass as it was, glare and trim shade included) over the map 
   pixels**. Half-pixel offsets tie and swap draw order at random.
 
 ### 4.4 Day and night: how things are lit
-`DayNight` sets five shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`,
-`dn_lamp`, declared in `project.godot`). Everything in the world must take them:
+`DayNight` sets four shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`) and
+`SuitLight` two more (`dn_lamp`, `dn_beam`); all six are declared in `project.godot`. Everything
+in the world must take them:
 - **A shader that draws the world** `#include`s `res://shaders/day_night.gdshaderinc` and passes
   its sunlit colour through `day_night(colour, map_px)` (or `dn_sky(colour)` when it has no map
   position). See `depth_occlusion`, `prop_depth`, `flora_depth`.
+- **The suit lamp is a shape, not a light node**: `dn_lamp_shape()` lays its beam along the
+  ground in the include, so every shader that calls `day_night()` already has it and nothing
+  dynamic is added to the scene. Whoever *carries* the lamp is lit by it all over instead -
+  `day_night_lit(colour, map_px, amount)`, which is how the astronaut's sprite takes it
+  (`sprite_lamp`, set by `Player.set_suit_lamp`). Anything drawn in a view's own map pixels
+  outside the ordinary shaders (the camera's swing) needs that view's own lamp position and
+  direction: `SuitLight.beam_dir(terrain, player)`.
 - **A world node with no material** gets the `graded` material from `DayNight` automatically,
   including nodes added later. Smoke, dust, gas, snow, sprites: nothing to do.
 - **Lights must say so**, or they go dark at night: draw them in a child node with an additive
@@ -272,10 +283,14 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | turn_left / turn_right (turn the camera a quarter turn) | G / H | d-pad left / right | view_turn.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
+| suit_light (the lamp on the suit, on/off) | L | B | suit_light.gd |
 | dev_panel (debug builds only) | F1 | Guide | dev_panel.gd |
 
 F / gamepad X is shared: while a door's prompt is showing, the door sets
 `multitool.suppressed = true`, so it opens the door instead of using the tool.
+L / gamepad B switches the suit's lamp. B is also every modal's cancel, so `SuitLight` ignores
+the press while the game is paused, in a cutscene, mid-turn or with the window panel open: a
+modal takes the press and the lamp never flicks on behind it.
 Inventory pauses the world and independently sets `multitool.inventory_suppressed`;
 after closing, F / X must be released before interactions resume. The inventory consumes
 modal input before map/camera handlers. Do not add another meaning to these buttons
@@ -299,6 +314,7 @@ camera turns reproject equipment and rays without changing the optical puzzle.
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
   - `tool_out`: the multitool stays out across the airlock;
+  - `suit_light`: the lamp on the suit, off when the game begins and as you left it after that;
   - `clock`: game hours since the start (`DayNight` turns it into the day, hour and part of
     the day).
   - `heading`: which way the camera faces (quarter turns, 0..3), the same indoors and out.
@@ -597,11 +613,24 @@ consts in the named files.
   - Four parts of the day: **MORNING** 05:00–11:00, **NOON** 11:00–16:00, **EVENING**
     16:00–20:00, **NIGHT** 20:00–05:00. A new day begins at **05:00**.
   - The light: a pink dawn, a warm morning, a clear noon, a golden evening, a violet dusk and a
-    deep blue night (`KEYS` in `day_night.gd`). At night, what glows on its own stays lit, and
-    a soft pool of light follows the astronaut.
+    **dark night** (`KEYS` in `day_night.gd`). What glows on its own stays lit after dark - the
+    pools, the spires, the two powered domes, the stars - and nothing else does: the ground is
+    down to a deep blue-violet you can just read shapes in, and you need the suit lamp to get
+    anywhere. Nothing lights the astronaut for them any more.
   - The time panel sits top left, and a "DAY N" title comes up at dawn. It is hidden during the
     crash intro and comes in with "DAY 1" when it ends.
-  - Time changes nothing in play yet (no sleep, no night dangers).
+  - Time changes nothing else in play yet (no sleep, no night dangers).
+- **The suit lamp** (`suit_light.gd`):
+  - L / gamepad B switches it on and off. It **starts off**, every time, and stays as you left
+    it through the airlock (`GameState.suit_light`). Nothing else turns it on.
+  - A beam thrown along the ground the way the astronaut faces (`reach` 120 map px, `spread`
+    38 degrees either side), with a small pool spilling round their feet (`spill`), in the same
+    three dithered steps as the rest of the light. It lights the astronaut themselves all over,
+    since they carry it.
+  - Its strength follows `DayNight.night`, so it is worth nothing at noon and everything at
+    2 a.m., and it can never wash the daylight out.
+  - It is two shader globals, not a light node (§4.4): it costs nothing per lit thing, and it
+    follows the camera's quarter turns because its direction is worked out in the current view.
 - **Sound** (§4.8, §7.6): the three lands each have their own ambience, crossfaded by the land
   you are standing in; the pools, spires, burning wreck and powered domes can be heard from
   near them; everything you do makes a noise. No music.
@@ -784,8 +813,9 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
   front of another) get a line in a darker shade of the surface's own colour.
 - **Time of day** is applied in the game, not baked into the art: the art is always rendered
   in daylight, and `day_night.gdshaderinc` colours it. Change the look of a time of day only in
-  `KEYS` (`day_night.gd`), and keep it cozy. The night is deep blue-violet, never black, and
-  things that glow carry it.
+  `KEYS` (`day_night.gd`), and keep it cozy. The night is **dark** - too dark to get about in
+  without the suit lamp - but never black: the sky light leaves a deep blue-violet floor you can
+  just read shapes in, and the things that glow carry it.
 
 ### 7.3 Palette
 - Ramps run dark → light. **Shadows lean violet; lights lean warm cream or peach.** Every
@@ -916,6 +946,7 @@ godot --headless --path . res://tests/view_turn_test.tscn             # turning 
 godot --headless --path . res://tests/window_crack_test.tscn          # the cargo box: jump on, lift, crack, break, rations
 godot --headless --path . res://tests/window_glass_test.tscn          # live reach, real input, scans, cost, final collapse
 godot --headless --path . res://tests/dev_panel_test.tscn            # master control panel: time, frozen needs, real keys
+godot --headless --path . res://tests/suit_light_test.tscn           # the suit lamp: starts off, L, the beam, the turns
 godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
@@ -931,6 +962,7 @@ Useful hooks:
 - `--stream-debug`: every map window as it is stitched (both scenes, §4.10)
 - `--turn=N`, `--turn-left` / `--turn-right`, `--turn-at=SECONDS` (when the turn fires, default 1)
 - `--dev-panel` (open the master control panel), `--dev-freeze=hunger,thirst,oxygen` (both, debug builds)
+- `--suit-light` (start with the suit's lamp lit; both scenes. It is off in an ordinary game)
 - overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`,
   `--dome-mended=ROOM` (that room's dome glass whole again; `command` = storage's)
 - interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
@@ -989,7 +1021,9 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - The base starts dead and broken; it gets repaired through play.
 - **Compact HUD only**; four survival meters, inventory stack counts, a six-slot hotbar,
   local machine repair progress and the time panel are approved (§12).
-- **A day/night cycle** with four parts of the day; lights stay lit at night.
+- **A day/night cycle** with four parts of the day; lights stay lit at night. **The night is
+  dark** (Don't Starve dark): nothing lights the astronaut for them, and the lamp on their suit
+  starts off and is switched on with L / pad B.
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
 - **The map is stored as tiles and only a window of it is in memory** (§4.10). The art,
@@ -1111,8 +1145,9 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
 - **Not built yet:** interiors for the nursery and comms domes, saving and loading (the clock
-  would be saved with `GameState.clock`), anything that depends on the time of day, music
-  (and there will not be any, §9).
+  would be saved with `GameState.clock`, the suit lamp with `GameState.suit_light`), anything
+  else that depends on the time of day - no sleep and no night dangers, so the dark costs you
+  nothing but your bearings yet - music (and there will not be any, §9).
 
 ---
 
@@ -1374,3 +1409,18 @@ Write one line per decision: date — decision (who approved it).
   Native contact comparisons wait for zoom to settle. Headless texture preloads run serially
   because the Godot dummy renderer races concurrent texture allocations; a preload/window
   upload stress regression guards the workaround. Displayed game preloads remain asynchronous.
+- 2026-10-13 — Owner's explicit darkness request: the night is Don't Starve dark and the
+  astronaut carries the only light. `KEYS`' night and dusk/dawn multipliers drop (full night
+  0.30/0.34/0.60 -> 0.085/0.095/0.175, with a smaller sky-light floor); daylight, the golden
+  evening and the four parts of the day are unchanged. The soft pool that used to follow the
+  astronaut at night is gone: nothing is lit for you, and the dead base lights nothing either.
+  In its place `SuitLight` (`scripts/suit_light.gd`), a lamp on the suit that **starts off**
+  and is switched with L / gamepad B; it stays as you left it through the airlock
+  (`GameState.suit_light`). It is a beam thrown along the ground the way the astronaut faces,
+  with a small spill round their feet, and it lights them all over because they carry it. Built
+  as two shader globals (`dn_lamp`, `dn_beam`) read by the existing day/night include, so no
+  dynamic light is added and the camera's quarter turns keep it pointing the same way in the
+  world. Its strength follows `DayNight.night`, so it does nothing in daylight. Two synthesised
+  sounds (`suit_light_on` / `suit_light_off`) baked with `--only`, no new packs. No HUD was
+  added (§9): the beam itself is the indicator. `tests/suit_light_test.tscn` covers it and is
+  part of `make check`.

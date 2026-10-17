@@ -9,6 +9,7 @@ extends Node2D
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ## --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ## --dev-panel / --dev-freeze=hunger,thirst,oxygen (master control panel, F1; see DevPanel)
+## --suit-light starts with the suit's lamp lit (L switches it; see SuitLight)
 ## --repair=power|oxygen opens its current task (three demo scraps supplied for captures).
 ## --repair-done=power|oxygen|both marks both tasks for repaired-art captures.
 ## --repair-circuit=power|oxygen skips cracks only for circuit screenshots/tests.
@@ -35,6 +36,7 @@ var repairs: MachineRepairs
 var cracks: WindowCracks
 var view_turn: ViewTurn
 var solar_input: SolarPowerInput
+var suit_light: SuitLight
 var _repair_mask := 0
 
 @onready var player: Player = $Actors/Player
@@ -61,7 +63,7 @@ func _ready() -> void:
 	stream.published.connect(_window_moved)
 	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	fx.setup(terrain.view_json, player)
-	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
+	day_night.setup($Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
 	var meta := ViewData.get_json(terrain.view_json)
 	# Damaged O2 room has unsafe air; the suit spends its reserve until wiring is restored.
@@ -92,6 +94,9 @@ func _ready() -> void:
 	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
 	add_child(dev_panel)
 	dev_panel.setup(player)
+	suit_light = SuitLight.new()                       # L: the base is dead, so bring your own
+	add_child(suit_light)
+	suit_light.setup(player, multitool)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
@@ -194,6 +199,8 @@ func _run_test_hooks(args: Dictionary) -> void:
 	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
+	if args.has("suit-light") and not suit_light.on():
+		suit_light.toggle()
 	if args.has("repair-bars"):
 		repairs.set_process_unhandled_input(false)
 	if args.has("repair-done"):

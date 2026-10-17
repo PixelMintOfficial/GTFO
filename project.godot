@@ -60,3 +60,7 @@ dn_lamp={
 "type": "vec4",
 "value": Vector4(0, 0, 1, 0)
 }
+dn_beam={
+"type": "vec4",
+"value": Vector4(1, 0, 0.788, 0.3)
+}
