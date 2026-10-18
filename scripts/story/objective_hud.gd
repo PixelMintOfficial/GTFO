@@ -19,6 +19,7 @@ var _panel: Node2D
 var _was := {}
 var _flash := 0.0
 var _all_done_t := -1.0
+var _drawn: Variant = null      # what the panel showed last time it was drawn
 
 
 func setup(player: Player) -> void:
@@ -44,18 +45,31 @@ func _process(delta: float) -> void:
 		_all_done_t = maxf(_all_done_t, 0.0) + delta
 	_panel.visible = not objectives.is_empty() and _all_done_t < LINGER and _player.controls_enabled \
 			and not _player.puppet and not get_tree().paused
-	_panel.queue_redraw()
+	# Redraw only when something it shows has changed (as DayClock does): the ticks, the flash
+	# fading in steps, or the plate moving aside for the survival panel.
+	var state := [objectives.map(func(o: Dictionary) -> bool: return o["done"]), ceili(_flash * 8.0),
+			_plate_rect(objectives).position if not objectives.is_empty() else Vector2.ZERO]
+	if state != _drawn:
+		_drawn = state
+		_panel.queue_redraw()
+
+
+## Where the plate goes and how big it is: under the time panel, out of the movable survival
+## panel's way.
+func _plate_rect(objectives: Array) -> Rect2:
+	var w := 0
+	for o in objectives:
+		w = maxi(w, PixelFont.width(o["label"]))
+	var r := Rect2(ORIGIN, Vector2(w + 18, objectives.size() * ROW + 5))
+	r.position = SurvivalHUD.plate_position(_panel, r)
+	return r
 
 
 func _draw_panel() -> void:
 	var objectives := GameState.story.objectives()
 	if objectives.is_empty():
 		return
-	var w := 0
-	for o in objectives:
-		w = maxi(w, PixelFont.width(o["label"]))
-	var r := Rect2(ORIGIN, Vector2(w + 18, objectives.size() * ROW + 5))
-	r.position = SurvivalHUD.plate_position(_panel, r)      # out of the way of the movable survival panel
+	var r := _plate_rect(objectives)
 	var at := r.position
 	_plate(r)
 	for i in objectives.size():

@@ -49,7 +49,7 @@ func load_view(meta_path: String) -> void:
 	_rim.clear()
 	_doors.clear()
 	_beacon = Vector2.ZERO
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	var anim: Dictionary = meta.get("animated", {})
 	var dir := meta_path.get_base_dir()
 	for s in anim.get("sprites", []):
@@ -73,18 +73,18 @@ func load_view(meta_path: String) -> void:
 		_beacon = Vector2(b[0], b[1])
 	_door_lit.resize(_doors.size())
 	_door_lit.fill(false)
-	_load_glass(meta, dir)
+	_load_glass(meta_path, meta, dir)
 
 
 ## This view's mended holes: a patch of whole glass over each hole in the mended room.
-func _load_glass(meta: Dictionary, dir: String) -> void:
+func _load_glass(meta_path: String, meta: Dictionary, dir: String) -> void:
 	for spr in _glass:
 		spr.queue_free()
 	_glass.clear()
 	var room := GameState.window_repair.dome_mended
 	if room == "" or not meta.has("fx"):
 		return
-	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join(meta["fx"])))
+	var fx := ViewData.fx_of(meta_path, meta)
 	var mat := ShaderMaterial.new()
 	mat.shader = GLASS
 	for c in fx.get("cracks", []):

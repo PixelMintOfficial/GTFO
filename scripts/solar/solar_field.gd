@@ -6,6 +6,8 @@ extends Node2D
 ## HUD. Independent solar_suppressed ownership protects the multitool and release transitions.
 ## load_view redraws equipment/meshes without mutating SolarFieldState. Test hooks live in
 ## overworld.gd (--solar-at=ID, --solar-solved, --solar-active); tests drive real F/pad input.
+## Reflector-owned depth-clipped replays share the entire world beam mesh. This preserves
+## front/behind order at faces/posts without cropping rays or covering foreground actors.
 
 const ART := "res://assets/maps/red_planet/solar_field.json"
 const BEAM := preload("res://shaders/solar_beam.gdshader")
@@ -21,6 +23,9 @@ var _tool: Multitool
 var _terrain: MapTerrain
 var _rays: Node2D
 var _meshes: Array[MeshInstance2D] = []
+var _impacts: Array[MeshInstance2D] = []
+var _reflectors: Dictionary = {}
+var _all_beams: Array[MeshInstance2D] = []
 var _cable: MeshInstance2D
 var _indicator := Vector2.ZERO
 var _release_guard := false
@@ -33,6 +38,7 @@ func setup(player: Player, tool: Multitool, terrain: MapTerrain, actors: Node2D)
 	_tool = tool
 	_terrain = terrain
 	state = GameState.solar_field
+	state.bind_world(terrain)
 	_info = JSON.parse_string(FileAccess.get_file_as_string(ART))
 	process_priority = -20
 	z_index = 50
@@ -43,17 +49,13 @@ func setup(player: Player, tool: Multitool, terrain: MapTerrain, actors: Node2D)
 	get_parent().add_child(_rays)
 	get_parent().move_child(_rays, get_parent().get_node("Map").get_index() + 1)
 	for group in state.feeds.size():
-		for width in [5.0, 1.5]:
-			var mesh := MeshInstance2D.new()
-			var mat := ShaderMaterial.new()
-			mat.shader = BEAM
-			var color := Color(state.field["routes"][group]["color"])
-			color.a = .18 if width > 2.0 else .94
-			mat.set_shader_parameter("beam_color", color)
-			mesh.material = mat
-			mesh.set_meta("width", width)
+		for width in SolarBeamVisuals.WIDTHS:
+			var mesh := _beam_mesh(group, width)
 			_rays.add_child(mesh)
 			_meshes.append(mesh)
+			var impact := _beam_mesh(group, width)
+			_rays.add_child(impact)
+			_impacts.append(impact)
 		var route: Dictionary = state.field["routes"][group]
 		_make_equipment(route["id"] + " SUN", SolarOptics.point(route["source"]), group, true, actors)
 	for mirror in state.mirrors:
@@ -79,9 +81,31 @@ func _make_equipment(id: String, world: Vector2, group: int, source: bool, actor
 	prop.solid = true
 	var entry := {"id": id, "prop": prop, "group": group, "source": source, "world": world}
 	equipment[id] = entry
-	prop.setup(_sheet(entry), 0, _terrain, _terrain.depth_map)
+	prop.setup(_sheet(entry), 0, _terrain)
 	actors.add_child(prop)
 	prop.place(world)
+	if not source:
+		var reflector := SolarReflectorLight.new()
+		prop.add_child(reflector)
+		var mirror: Dictionary = state.mirrors.filter(func(m): return m["id"] == id)[0]
+		reflector.setup(_terrain, prop, _art_sheet(entry), _meshes, state, mirror)
+		_reflectors[id] = reflector
+		_all_beams.append_array(reflector.meshes)
+
+
+func _beam_mesh(group: int, width: float) -> MeshInstance2D:
+	var mesh := MeshInstance2D.new()
+	var mat := ShaderMaterial.new()
+	mat.shader = BEAM
+	var color := Color(state.field["routes"][group]["color"])
+	color.a = .18 if width > 3.0 else .94
+	mat.set_shader_parameter("beam_color", color)
+	mesh.material = mat
+	mesh.set_meta("width", width)
+	mesh.set_meta("group", group)
+	mesh.set_meta("dn_unlit", true)
+	_all_beams.append(mesh)
+	return mesh
 
 
 ## Generator-owned, reachable approach used by capture hooks and placement checks.
@@ -89,27 +113,44 @@ func interaction_point(id: String) -> Vector2:
 	return SolarOptics.point(_info["stands"][id])
 
 
-func _sheet(entry: Dictionary) -> Dictionary:
+func _art_sheet(entry: Dictionary) -> Dictionary:
 	var route_id: String = state.field["routes"][entry["group"]]["id"]
 	var sheet: Dictionary = _info["sheets"][route_id]["source" if entry["source"] else "mirror"]
 	if _info.get("special_mirrors", {}).has(entry["id"]):
 		sheet = _info["special_mirrors"][entry["id"]][_terrain.heading]
+	return sheet
+
+
+func _sheet(entry: Dictionary) -> Dictionary:
+	var sheet := _art_sheet(entry)
 	return {"tex": load(ART.get_base_dir().path_join(sheet["file"])), "frames": sheet["frames"],
 			"anchor": SolarOptics.point(sheet["anchor"])}
+
+
+## The depth window has moved (MapStream): point every beam and cable at where it is now.
+func refresh_window() -> void:
+	for mesh in _all_beams:
+		MapStream.bind(mesh.material as ShaderMaterial, _terrain)
+	if _cable != null and _cable.material != null:
+		MapStream.bind(_cable.material as ShaderMaterial, _terrain)
+	for entry in equipment.values():
+		(entry["prop"] as WorldProp).refresh_window()
+	if fx != null:
+		fx.refresh_window()
 
 
 func load_view() -> void:
 	_indicator = SolarOptics.point(_info["views"][_terrain.heading]["indicator_px"])
 	for entry in equipment.values():
-		(entry["prop"] as WorldProp).set_view(_sheet(entry), _terrain.depth_map)
-	for mesh in _meshes:
+		(entry["prop"] as WorldProp).set_view(_sheet(entry))
+		if not entry["source"]:
+			(_reflectors[entry["id"]] as SolarReflectorLight).load_view(_art_sheet(entry))
+	for mesh in _all_beams:
 		var mat := mesh.material as ShaderMaterial
-		mat.set_shader_parameter("depth_map", _terrain.depth_map)
-		mat.set_shader_parameter("map_size", _terrain.map_size)
+		MapStream.bind(mat, _terrain)
 		mat.set_shader_parameter("depth_scale", _terrain.depth_scale)
 	var cable_material := _cable.material as ShaderMaterial
-	cable_material.set_shader_parameter("depth_map", _terrain.depth_map)
-	cable_material.set_shader_parameter("map_size", _terrain.map_size)
+	MapStream.bind(cable_material, _terrain)
 	cable_material.set_shader_parameter("depth_scale", _terrain.depth_scale)
 	var segments := []
 	var cable: Array = state.field["cable"]
@@ -127,7 +168,24 @@ func _refresh() -> void:
 		for layer in 2:
 			var mesh := _meshes[group * 2 + layer]
 			mesh.mesh = SolarBeamVisuals.mesh(_terrain, state.routes[group]["segments"], mesh.get_meta("width"))
+			var impact := _impacts[group * 2 + layer]
+			impact.mesh = SolarBeamVisuals.mesh(_terrain, _impact_segments(state.routes[group]), impact.get_meta("width"))
+	for reflector in _reflectors.values():
+		(reflector as SolarReflectorLight).refresh()
 	queue_redraw()
+
+
+## A tiny ground glint makes a physical stop readable even when it lands on flat soil.
+func _impact_segments(route: Dictionary) -> Array:
+	var segments := []
+	if route["termination"] != "terrain":
+		return segments
+	var hit: Vector3 = route["segments"][-1][1]
+	for side in 8:
+		var a := Vector2(hit.x, hit.y) + Vector2.from_angle(side * TAU / 8)
+		var b := Vector2(hit.x, hit.y) + Vector2.from_angle((side + 1) * TAU / 8)
+		segments.append([Vector3(a.x, a.y, _terrain.height_at(a) + .2), Vector3(b.x, b.y, _terrain.height_at(b) + .2)])
+	return segments
 
 
 func _changed() -> void:
@@ -165,9 +223,9 @@ func _process(_delta: float) -> void:
 	if _release_guard and not Input.is_action_pressed("interact") and not Input.is_action_pressed("tool_use"):
 		_release_guard = false
 	_tool.solar_suppressed = not nearest.is_empty() or _release_guard
-	for group in 3:
-		for layer in 2:
-			(_meshes[group * 2 + layer].material as ShaderMaterial).set_shader_parameter("daylight", DayNight.daylight * smoothstep(.6, 1.0, fx.deployment[group]))
+	for mesh in _all_beams:
+		var group: int = mesh.get_meta("group")
+		(mesh.material as ShaderMaterial).set_shader_parameter("daylight", DayNight.daylight * smoothstep(.6, 1.0, fx.deployment[group]))
 	queue_redraw()
 
 
@@ -237,5 +295,5 @@ func beam_boards() -> Array:
 		for segment in state.routes[group]["segments"]:
 			var color := Color(state.field["routes"][group]["color"])
 			color.a = DayNight.daylight
-			out.append({"beam": segment, "color": color})
+			out.append({"beam": segment, "color": color, "radius": SolarBeamVisuals.WIDTHS[1] / (2.0 * _terrain.px_per_unit)})
 	return out

@@ -29,6 +29,7 @@ var _then := Callable()
 var _paused_here := false
 var _wait := 0.0
 var _t := 0.0
+var _drawn: Variant = null      # what the plate showed last time it was drawn
 
 
 func _ready() -> void:
@@ -114,7 +115,12 @@ func _process(delta: float) -> void:
 			_wait += delta
 			if _wait >= auto_advance:
 				_advance()
-	_canvas.queue_redraw()
+	# Redraw only when what it shows has changed: a new letter, a new line, the key blinking,
+	# opening or closing (as DayClock does).
+	var state := [opened, _index, int(_shown), _shown >= _current().length() and fmod(_t, 0.8) < 0.5]
+	if state != _drawn:
+		_drawn = state
+		_canvas.queue_redraw()
 
 
 # ---------------------------------------------------------------- drawing

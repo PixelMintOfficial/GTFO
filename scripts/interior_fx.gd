@@ -80,7 +80,7 @@ func load_view(meta_path: String) -> void:
 	_socket = Vector2.ZERO
 	for a in [_shafts, _motes, _leds, _tanks, _spark_points, _sparks, _flashes, _vents, _puffs, _rooms]:
 		a.clear()
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	if meta["game"].has("reserve_png"):
 		_reserve.texture = load(meta_path.get_base_dir().path_join(meta["game"]["reserve_png"]))
 	var fx: Dictionary = meta["fx"]

@@ -8,7 +8,8 @@ extends Node
 ## What glows on its own stays lit at night: the map's light mask keeps its lamps, lit windows,
 ## glowing pools and crystals bright, the plants keep their glowing parts, and the effects
 ## scripts' lights are left alone (additive layers, and nodes tagged with the meta "dn_unlit").
-## Around the astronaut a soft pool of light follows them through the dark.
+## Nothing else is lit after dark: the lamp the astronaut carries is SuitLight's, and it is off
+## until they switch it on.
 ##
 ## Every other world node with no material of its own (smoke, dust, gas, snow, the doors, the
 ## domes' moving parts...) gets the graded material, now and whenever one is added. UI on its own
@@ -31,25 +32,24 @@ const PHASES := [
 	["NIGHT", 20.0, Color("#a8c8ff")],
 ]
 ## The light through the day: hour, the daylight's colour, sky light in the shadows, saturation,
-## how dark it is (0..1). Between two keys it eases from one to the next.
+## how dark it is (0..1). Between two keys it eases from one to the next. The night is deep: the
+## sky light leaves a blue-violet floor rather than black, but little else, so the astronaut's
+## suit lamp (SuitLight) is what you get about by once the sun is down.
 const KEYS := [
-	[0.0, Color(0.30, 0.34, 0.60), Color(0.020, 0.020, 0.050), 0.62, 1.0],
-	[4.4, Color(0.32, 0.35, 0.62), Color(0.024, 0.020, 0.055), 0.65, 1.0],
-	[5.8, Color(0.74, 0.56, 0.68), Color(0.040, 0.016, 0.044), 0.82, 0.55],
+	[0.0, Color(0.085, 0.095, 0.175), Color(0.008, 0.008, 0.022), 0.55, 1.0],
+	[4.4, Color(0.090, 0.098, 0.182), Color(0.010, 0.008, 0.024), 0.57, 1.0],
+	[5.8, Color(0.50, 0.37, 0.47), Color(0.026, 0.010, 0.030), 0.76, 0.55],
 	[7.4, Color(1.00, 0.89, 0.86), Color(0.020, 0.008, 0.008), 0.95, 0.0],
 	[10.0, Color(1.00, 1.00, 1.00), Color(0.0, 0.0, 0.0), 1.00, 0.0],
 	[15.5, Color(1.00, 0.99, 0.96), Color(0.0, 0.0, 0.0), 1.00, 0.0],
 	[18.0, Color(1.02, 0.86, 0.76), Color(0.026, 0.004, 0.016), 0.98, 0.1],
-	[19.5, Color(0.62, 0.46, 0.62), Color(0.032, 0.010, 0.050), 0.84, 0.6],
-	[21.0, Color(0.30, 0.34, 0.60), Color(0.020, 0.020, 0.050), 0.62, 1.0],
-	[24.0, Color(0.30, 0.34, 0.60), Color(0.020, 0.020, 0.050), 0.62, 1.0],
+	[19.5, Color(0.42, 0.31, 0.44), Color(0.020, 0.007, 0.032), 0.76, 0.6],
+	[21.0, Color(0.085, 0.095, 0.175), Color(0.008, 0.008, 0.022), 0.55, 1.0],
+	[24.0, Color(0.085, 0.095, 0.175), Color(0.008, 0.008, 0.022), 0.55, 1.0],
 ]
 
 ## Real minutes per game day.
 @export var day_minutes := 12.0
-## The astronaut's light at night: how far it reaches across the ground (map px) and how strong it is.
-@export var lamp_radius := 66.0
-@export var lamp_strength := 0.6
 
 ## For the effects scripts: the hour (0..24), how dark it is (0 by day, 1 at night), how much
 ## sun there is (1 - night), the part of the day and the day number.
@@ -65,15 +65,13 @@ var clock_panel: DayClock
 ## How many times faster than normal the clock runs (a test hook sets it).
 var speed := 1.0
 
-var _player: Player
 var _graded: ShaderMaterial
 var _map_mat: ShaderMaterial
 var _pending: Array[Node] = []
 
 
 ## map: the scene's pre-rendered map sprite. light_mask / sun_mask: its light and sun masks.
-func setup(player: Player, map: Sprite2D, light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
-	_player = player
+func setup(map: CanvasItem, light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
 	_map_mat = ShaderMaterial.new()
 	_map_mat.shader = MAP_SHADER
 	map.material = _map_mat
@@ -143,11 +141,6 @@ func _update(delta: float, quiet: bool) -> void:
 	RenderingServer.global_shader_parameter_set("dn_add", Vector3(add.r, add.g, add.b))
 	RenderingServer.global_shader_parameter_set("dn_sat", light[2])
 	RenderingServer.global_shader_parameter_set("dn_night", night)
-	var lamp := Vector4(0.0, 0.0, 1.0, 0.0)
-	if _player != null:
-		var p := _player.global_position + Vector2(0.0, -6.0)
-		lamp = Vector4(p.x, p.y, lamp_radius, lamp_strength * night)
-	RenderingServer.global_shader_parameter_set("dn_lamp", lamp)
 	if quiet:
 		day = d
 		phase = ph

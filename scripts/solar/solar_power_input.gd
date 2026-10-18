@@ -39,8 +39,7 @@ func load_view(meta: Dictionary) -> void:
 	for sprite in [_housing, _lights]:
 		sprite.position = SolarOptics.point(panel["position"])
 		var material := sprite.material as ShaderMaterial
-		material.set_shader_parameter("depth_map", _terrain.depth_map)
-		material.set_shader_parameter("map_size", _terrain.map_size)
+		MapStream.bind(material, _terrain)
 		material.set_shader_parameter("depth_scale", _terrain.depth_scale)
 		material.set_shader_parameter("sprite_depth", _terrain.view_depth(SolarOptics.point(panel["world"])))
 		material.set_shader_parameter("tolerance", 6.0)

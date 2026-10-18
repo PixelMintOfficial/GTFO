@@ -147,12 +147,11 @@ func _ready() -> void:
 	move_child(_dust, 0)  # under the astronaut
 
 
-func setup(t: MapTerrain, depth_map: Texture2D) -> void:
+func setup(t: MapTerrain) -> void:
 	terrain = t
 	var mat := sprite.material as ShaderMaterial
-	mat.set_shader_parameter("depth_map", depth_map)
-	mat.set_shader_parameter("map_size", t.map_size)
 	mat.set_shader_parameter("depth_scale", t.depth_scale)
+	refresh_window()
 	_scale = t.character_scale
 	mat.set_shader_parameter("tolerance", body_depth * _scale)
 	camera.limit_left = 0
@@ -222,9 +221,7 @@ func _set_facing(d: Vector2) -> void:
 
 ## The camera turned: face the same way in the world, and see the new view's depth.
 func refresh_view(world_facing: Vector2) -> void:
-	var mat := sprite.material as ShaderMaterial
-	mat.set_shader_parameter("depth_map", terrain.depth_map)
-	mat.set_shader_parameter("map_size", terrain.map_size)
+	refresh_window()
 	camera.limit_right = int(terrain.map_size.x)
 	camera.limit_bottom = int(terrain.map_size.y)
 	_set_facing(world_facing)
@@ -306,6 +303,21 @@ func _load_tool_tips() -> void:
 
 
 ## What the camera follows: halfway between the ground (or the box) and the astronaut in the air.
+## The depth map the astronaut is hidden behind is only a window on the view (MapStream), and
+## it moves as the camera does. Point the shader at where it is now.
+func refresh_window() -> void:
+	var mat := sprite.material as ShaderMaterial
+	mat.set_shader_parameter("depth_map", terrain.depth_map)
+	mat.set_shader_parameter("map_win", MapStream.win_vec(terrain))
+
+
+## How much the lamp on the suit lights the astronaut themselves, 0..1 (SuitLight sets it every
+## frame). The beam is a shape on the ground; they carry its source, so it lights all of them,
+## head included. The shadow shares the material and so stays a daylight shadow in the pool.
+func set_suit_lamp(amount: float) -> void:
+	(sprite.material as ShaderMaterial).set_shader_parameter("sprite_lamp", amount)
+
+
 func camera_focus() -> Vector2:
 	return global_position + (sprite.position + shadow.position) * 0.5
 

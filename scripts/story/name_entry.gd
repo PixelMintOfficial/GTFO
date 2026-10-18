@@ -31,6 +31,7 @@ var _then := Callable()
 var _paused_here := false
 var _t := 0.0
 var _auto_t := 0.0
+var _drawn: Variant = null      # what the plate showed last time it was drawn
 
 
 func _ready() -> void:
@@ -177,7 +178,12 @@ func _process(delta: float) -> void:
 			text = _clean(auto_name).substr(0, _max)
 			auto_name = ""
 			_confirm()
-	_canvas.queue_redraw()
+	# Redraw only when what it shows has changed: the name, the picked key, the cursor blinking,
+	# opening or closing (as DayClock does).
+	var state := [opened, text, _cursor, fmod(_t, 0.9) < 0.55]
+	if state != _drawn:
+		_drawn = state
+		_canvas.queue_redraw()
 
 
 # ---------------------------------------------------------------- drawing

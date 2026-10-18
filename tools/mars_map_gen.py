@@ -39,8 +39,11 @@ Pipeline
      grid, the sun staying put on screen. View 0 writes the usual files; view k writes the same
      set with a _rk suffix (map, depth, light, fx, minimap, plant and door sheets...). The walk
      and biome grids belong to the world, so there is one of each.
+     Image/data exports replace completed files atomically, preserving previews and grids while
+     editors/diff viewers hold the previous version open on Windows.
 
     MAP_VIEWS=0 python tools/mars_map_gen.py     # only some of the views (default 0123)
+    python tools/mars_map_gen.py --tiles-only    # re-cut the tiles from the pictures on disk
 """
 import contextlib
 import gc
@@ -57,7 +60,7 @@ from scipy import ndimage as ndi
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import astronaut_sprite_gen as A  # noqa: E402  (shared SDF primitives, ray-marcher, palette)
-from solar_layout import pad_distance, footprints  # small equipment pads and collision
+from solar_layout import apply_terrain, footprints  # authored terraces, approaches and collision
 
 ROOT = os.path.dirname(HERE)
 OUT = os.environ.get('MAP_OUT', os.path.join(ROOT, 'assets', 'maps', 'red_planet'))
@@ -94,6 +97,7 @@ VIEW = 0
 VIEWS = [int(c) for c in os.environ.get('MAP_VIEWS', '0123')]
 VIEW_C = np.array([0.0, HALF, 0.0])
 SFX = ''                          # file-name suffix of the view being written: '' for view 0, '_r1'...
+_TILES = {}                       # this view's tiled layers, collected for its meta JSON
 
 
 def view_sfx(k):
@@ -382,6 +386,19 @@ def hexa(*hs):
 def smoothstep(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
     return t * t * (3 - 2 * t)
+
+
+def save_png(image, path):
+    """Never truncate an image that an editor/viewer may still have memory-mapped."""
+    image.save(path + '.tmp', format='PNG')
+    os.replace(path + '.tmp', path)
+
+
+def save_text(text, path):
+    """Replace generated metadata/viewers without truncating an open prior version."""
+    with open(path + '.tmp', 'w', encoding='utf-8') as stream:
+        stream.write(text)
+    os.replace(path + '.tmp', path)
 
 
 BAYER = (np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]], np.float32) + 0.5) / 16 - 0.5
@@ -1040,8 +1057,9 @@ def build_world():
     place_flora(G, U, V, rs)
     if SOLAR_DESIGN == 'field':
         # Do this after scattering: adding hardware cannot reroll the planet's forest.
-        pads = pad_distance(Xg, Yg)
-        G['H'] *= smoothstep(0, 12, pads)
+        apply_terrain(G['H'], G['mat'], Xg, Yg)
+        for plant in G['flora']:
+            plant['z'] = height_at(G, plant['X'], plant['Y'])
         Hu, Hv = np.gradient(G['H'])
         dx, dy = (Hu - Hv) / SQ2, (Hu + Hv) / SQ2
         inv = 1 / np.sqrt(dx * dx + dy * dy + 1)
@@ -2210,8 +2228,8 @@ def lantern_tree(base, seed, t=0.0):
     Ht = rs.uniform(44, 72)
     capr = Ht * rs.uniform(0.27, 0.35)
     lean = rs.uniform(-1, 1, 2) * 0.14
-    sw = math.sin(TAU * t) * Ht * 0.03
-    sw2 = math.sin(TAU * t - 0.9) * 1.3
+    sw = math.sin(TAU * t) * Ht * 0.014          # a lean, not a thrash: the crown travels ~3 px
+    sw2 = math.sin(TAU * t - 0.9) * 0.6          # the hanging pods swing with it, less than it does
     p1 = base + np.array([lean[0] * Ht * 0.3 + sw * 0.25, lean[1] * Ht * 0.3, Ht * 0.45])
     p2 = base + np.array([lean[0] * Ht * 0.55 + sw, lean[1] * Ht * 0.55, Ht * 0.86])
     style = int(rs.integers(3))                      # 0 parasol, 1 dome, 2 tiered
@@ -2634,7 +2652,7 @@ def render_flora(G, img, D, kind, gid, gb):
                 colour = np.concatenate([sprite_rgba(fr, HAZES[1], 0.09) for fr in frs], axis=1)
                 depth = np.concatenate([depth_row(fr) for fr in frs], axis=1)
                 fn = f'flora/{name}_{v}{SFX}.png'
-                Image.fromarray(np.vstack([colour, depth])).save(os.path.join(OUT, fn))
+                save_png(Image.fromarray(np.vstack([colour, depth])), os.path.join(OUT, fn))
                 sheet_of[(name, v)] = len(sheets)
                 sheets.append(dict(file=fn, frames=nf, fps=spec['fps'], frame_size=[box[2], box[3]], glows=glows,
                                    anchor=[round(AX - box[0], 1), round(AY - box[1], 1)]))
@@ -2730,7 +2748,7 @@ def export_halos():
         strip[:, k * size:(k + 1) * size, :3] = 255
         strip[:, k * size:(k + 1) * size, 3] = (lv * 255).astype(np.uint8)
     os.makedirs(os.path.join(OUT, 'anim'), exist_ok=True)
-    Image.fromarray(strip).save(os.path.join(OUT, 'anim', 'halos.png'))
+    save_png(Image.fromarray(strip), os.path.join(OUT, 'anim', 'halos.png'))
     return dict(file='anim/halos.png', cell=size, radii=HALO_SIZES)
 
 
@@ -2803,7 +2821,7 @@ def export_crash(G, pre, wreck_fx, body, kind):
     rgba = pre['rgba']
     h, w = rgba.shape[:2]
     rgba[..., 3] = np.where(kind[pre['y0']:pre['y0'] + h, pre['x0']:pre['x0'] + w] == 4, 0, rgba[..., 3])
-    Image.fromarray(rgba).save(os.path.join(adir, f'crash_before{SFX}.png'))
+    save_png(Image.fromarray(rgba), os.path.join(adir, f'crash_before{SFX}.png'))
     # the satellite coming in, tumbling: rendered high above the origin, nothing under it
     C = cam(0.0, 0.0, 80.0)
     with canonical():
@@ -2811,7 +2829,7 @@ def export_crash(G, pre, wreck_fx, body, kind):
     frames_parts = [turned(fp, about=C) for fp in frames_parts]
     box = sprite_box(frames_parts)
     strip = np.concatenate([sprite_rgba(render_sprite(fp, box)) for fp in frames_parts], axis=1)
-    Image.fromarray(strip).save(os.path.join(adir, f'satellite{SFX}.png'))
+    save_png(Image.fromarray(strip), os.path.join(adir, f'satellite{SFX}.png'))
     ox, oy = project(*C)
     cf = np.array(CRASH['came_from'])
     gz = lambda X, Y: height_at(G, X, Y)  # noqa: E731
@@ -4174,7 +4192,7 @@ def export_animated(D):
             alpha = np.where(filled | ring, 255, 0).astype(np.uint8)
             strip[:, f * w:(f + 1) * w, :3] = img
             strip[:, f * w:(f + 1) * w, 3] = alpha
-        Image.fromarray(strip).save(os.path.join(adir, f'{name}{SFX}.png'))
+        save_png(Image.fromarray(strip), os.path.join(adir, f'{name}{SFX}.png'))
         centre = scale_pt(C + np.array([0, 0, z_center]), C, DOME_SCALE)          # what it turns round
         out['sprites'].append(dict(name=name, file=f'anim/{name}{SFX}.png', frames=frames, fps=fps,
                                    position=[x0, y0], frame_size=[w, h],
@@ -4262,6 +4280,75 @@ def draw_text(img, x, y, text, color, shadow=(34, 24, 44)):
     reg[mask[:reg.shape[0], :reg.shape[1]]] = color
 
 
+# The map's pictures are cut into tiles so the game only keeps in memory what the camera can
+# see (AGENTS.md 4.1). A view is still one pre-rendered image - this is only how it is stored.
+TILE = 512
+
+
+def tile_import_stub(png_path):
+    """Tell Godot to import a tile as an Image, not a texture.
+
+    Tiles are only ever read as pixels, on a worker thread, to stitch the window around the
+    camera that the game actually draws and samples. A CompressedTexture2D would hand those
+    pixels back through RenderingServer.texture_2d_get - a GPU readback, slow and main-thread
+    only - so every tile is imported as a plain Image instead, and none of them ever occupies
+    the GPU. Written only when absent, so the uid Godot assigns on first import survives every
+    regeneration."""
+    out = png_path + '.import'
+    if os.path.exists(out):
+        return
+    rel = 'res://' + os.path.relpath(png_path, ROOT).replace(os.sep, '/')
+    with open(out, 'w') as fh:
+        fh.write('[remap]\n\nimporter="image"\ntype="Image"\n\n[deps]\n\n'
+                 f'source_file="{rel}"\ndest_files=[]\n\n[params]\n\n')
+
+
+def export_tiles(arr, name, fill, mode, as_image=False):
+    """Cut one of a view's layers into TILE-square tiles and write the ones that are not all
+    `fill`. Over half of every map is empty sky, so the depth and light layers lose about 40%
+    of their tiles outright; the picture has stars painted in its sky and loses none.
+
+    Returns the layer's entry for the view JSON: where the tiles are, what a missing one is
+    filled with, which ones exist, and the handful whose constant fill is not the usual one.
+    Asserts that stitching the tiles back together reproduces `arr` exactly - a map that does
+    not round-trip is a map the game would draw wrong."""
+    h, w = arr.shape[:2]
+    gx, gy = (w + TILE - 1) // TILE, (h + TILE - 1) // TILE
+    out = os.path.join(OUT, 'tiles', f'{name}{SFX}')
+    os.makedirs(out, exist_ok=True)
+    for stale in os.listdir(out):                        # a smaller map must not leave old tiles
+        if not stale.endswith('.import'):                # keep the stubs: they carry Godot's uids
+            os.remove(os.path.join(out, stale))
+    fill_a = np.array(fill, arr.dtype)
+    present, fills, check = [], [], np.empty_like(arr)
+    for ty in range(gy):
+        for tx in range(gx):
+            cell = arr[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE]
+            flat = cell.reshape(-1, cell.shape[-1]) if cell.ndim == 3 else cell.reshape(-1, 1)
+            first = flat[0]
+            if (flat == first).all():                    # one colour throughout: keep the colour, not the tile
+                if not np.array_equal(first, fill_a):
+                    fills.append([tx, ty, [int(v) for v in np.atleast_1d(first)]])
+                check[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE] = cell
+                continue
+            fn = f't_{tx:02d}_{ty:02d}.png'
+            save_png(Image.fromarray(cell, mode), os.path.join(out, fn))
+            if as_image:
+                tile_import_stub(os.path.join(out, fn))
+            present.append([tx, ty, fn])
+            check[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE] = cell
+    for tx, ty, const in fills:                          # rebuild the skipped ones to check the fills
+        check[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE] = np.array(const, arr.dtype)
+    for ty in range(gy):
+        for tx in range(gx):
+            if not any(t == tx and v == ty for t, v, _ in present) and not any(t == tx and v == ty for t, v, _ in fills):
+                check[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE] = fill_a
+    assert np.array_equal(check, arr), f'{name}{SFX}: tiles do not stitch back to the whole picture'
+    print(f'  tiles {name}{SFX}: {len(present)}/{gx * gy} written, {gx * gy - len(present)} constant')
+    return dict(dir=f'tiles/{name}{SFX}', fill=[int(v) for v in np.atleast_1d(fill_a)],
+                present=present, fills=fills)
+
+
 def export_minimap(final, filled, fit=(352, 192)):
     """A small whole-map image for the in-game map screen (M)."""
     ys, xs = np.nonzero(filled)
@@ -4300,7 +4387,7 @@ def export_minimap(final, filled, fit=(352, 192)):
     draw_text(mm, int(wx - text_width('WRECK') / 2), int(wy + 2), 'WRECK', A.hex2rgb('#ffb27a'))
     draw_text(mm, 4, 4, 'RED PLANET', A.hex2rgb('#ec7a5a'))
     draw_text(mm, w - text_width('M CLOSE') - 4, h - 9, 'M CLOSE', A.hex2rgb('#a99bb4'))
-    Image.fromarray(mm).save(os.path.join(OUT, f'red_planet_minimap{SFX}.png'))
+    save_png(Image.fromarray(mm), os.path.join(OUT, f'red_planet_minimap{SFX}.png'))
     return dict(file=f'red_planet_minimap{SFX}.png', origin=[int(x0), int(y0)], scale=scale, size=[w, h])
 
 
@@ -4333,7 +4420,7 @@ def export_biome_grid(G, cell=4):
     grid[..., 0] = np.clip((1 - f - i) * 255, 0, 255)
     grid[..., 1] = np.clip(f * 255, 0, 255)
     grid[..., 2] = np.clip(i * 255, 0, 255)
-    Image.fromarray(grid.transpose(1, 0, 2).copy()).save(os.path.join(OUT, 'red_planet_biome.png'))
+    save_png(Image.fromarray(grid.transpose(1, 0, 2).copy()), os.path.join(OUT, 'red_planet_biome.png'))
     return dict(png='red_planet_biome.png', grid_size=n, cell=cell, names=['red', 'forest', 'ice'])
 
 
@@ -4341,14 +4428,16 @@ def export_game_data(G, D, kind, debris=(), body=None, world=True):
     """Data the game needs on top of the picture: a screen-space depth map (so the
     player can be hidden by cliffs, props and glass) and a walk/height grid. The walk grid
     belongs to the world, not the view: only view 0 writes it (world=False skips it)."""
-    depth = np.zeros((H, W, 4), np.uint8)
+    depth = np.zeros((H, W, 3), np.uint8)
     for r0 in range(0, H, 512):
         r1 = min(H, r0 + 512)
         dq = np.where(kind[r0:r1] > 0, np.clip(D[r0:r1] * DEPTH_SCALE, 0, 65534), 65535).astype(np.uint32)
         depth[r0:r1, :, 0], depth[r0:r1, :, 1] = dq >> 8, dq & 255
         depth[r0:r1, :, 2] = np.where(kind[r0:r1] == 4, 255, np.where(kind[r0:r1] == 5, PLANT_DEPTH_B, 0))
-    depth[..., 3] = 255
-    Image.fromarray(depth).save(os.path.join(OUT, f'red_planet_depth{SFX}.png'))
+    # Three channels, not four: the alpha was a constant 255 and no shader ever read it, which
+    # cost 34 MB of texture memory per view for nothing.
+    save_png(Image.fromarray(depth, 'RGB'), os.path.join(OUT, f'red_planet_depth{SFX}.png'))
+    _TILES['depth'] = export_tiles(depth.copy(), 'depth', (255, 255, 0), 'RGB', as_image=True)
     del depth
     if not world:
         return None
@@ -4430,7 +4519,7 @@ def export_game_data(G, D, kind, debris=(), body=None, world=True):
     grid[..., 0], grid[..., 1] = hq >> 8, hq & 255
     grid[..., 2] = np.where(solid, 0, np.where(walk, 255, 128))
     grid[..., 3] = 255
-    Image.fromarray(grid.transpose(1, 0, 2).copy()).save(os.path.join(OUT, 'red_planet_walk.png'))
+    save_png(Image.fromarray(grid.transpose(1, 0, 2).copy()), os.path.join(OUT, 'red_planet_walk.png'))
     print(f'game data: {walk.mean() * 100:.1f}% walkable, {(~walk & ~solid).mean() * 100:.1f}% too steep '
           f'(jump only), {solid.mean() * 100:.1f}% solid')
     return dict(
@@ -4476,7 +4565,7 @@ def export_doors(D, kind):
             strip.append(sprite_rgba(fr))
         img = np.concatenate(strip, axis=1)
         fn = f'anim/door_{k}{SFX}.png'
-        Image.fromarray(img).save(os.path.join(OUT, fn))
+        save_png(Image.fromarray(img), os.path.join(OUT, fn))
         foot = scale_pt(f - np.array([0, 0, 6.0]), C, DOME_SCALE)
         foot0 = to_canon(foot)                                  # the game keeps the world in view 0's frame
         lamp = scale_pt(f + dv3 * 1.4 + np.array([0, 0, 7.9]), C, DOME_SCALE)
@@ -4506,7 +4595,7 @@ def export_cracks(cracks):
         rgb = apply_haze(patch[..., :3], y0, x0)
         patch[..., :3] = np.where(patch[..., 3:] > 0, rgb, 0)
         fn = f"anim/cracks/{c['id']}{SFX}.png"
-        Image.fromarray(patch).save(os.path.join(OUT, fn))
+        save_png(Image.fromarray(patch), os.path.join(OUT, fn))
         out.append(dict(c, patch=fn))
     if out:
         print('damage: ' + ', '.join(f"{c['id']} ({c['shape']}, {len(c['outline'])}-pt outline, "
@@ -4553,6 +4642,7 @@ def build():
     _snapshot()
     for k in VIEWS:
         VIEW, SFX = k, view_sfx(k)
+        _TILES.clear()
         apply_view_constants(k)
         print(f'================ view {k} ({["front", "turned right", "from behind", "turned left"][k]})')
         G = view_world(G0, k)
@@ -4702,8 +4792,10 @@ def render_view(G, G0, k):
         add_glow(final, sx, sy, rad, colr, s_, EMIT)
     EMIT[~filled] = 255                                   # space looks the same by day and night
     EMIT[ring] = 0
-    Image.fromarray(final).save(os.path.join(OUT, f'red_planet_map{SFX}.png'))
-    Image.fromarray(EMIT, 'L').save(os.path.join(OUT, f'red_planet_light{SFX}.png'))
+    save_png(Image.fromarray(final), os.path.join(OUT, f'red_planet_map{SFX}.png'))
+    save_png(Image.fromarray(EMIT, 'L'), os.path.join(OUT, f'red_planet_light{SFX}.png'))
+    _TILES['map'] = export_tiles(final, 'map', (0, 0, 0), 'RGB', as_image=True)
+    _TILES['light'] = export_tiles(EMIT, 'light', (255,), 'L', as_image=True)
     print(f'light mask: {np.count_nonzero(EMIT[filled] > 127)} lit pixels on the ground')
     glows = collect_glows(G, fxpx, D, baked, sprites)
     rs_g = np.random.default_rng(SEED + 818)
@@ -4754,14 +4846,15 @@ def render_view(G, G0, k):
                            'R_k (P - view_center) + view_center, R_k a quarter turn clockwise k times '
                            '((x, y) -> (y, -x) per turn); the screen formula above applies to the view point.')
     meta['game'] = game
+    meta['tiles'] = dict(tile=[TILE, TILE], grid=[(W + TILE - 1) // TILE, (H + TILE - 1) // TILE],
+                         layers=dict(_TILES))
     meta['biomes'] = export_biome_grid(G0)
     meta['minimap'] = export_minimap(final, filled)
     meta['animated'] = export_animated(D)
     fx = dict(flora=flora_out, halos=export_halos(), glow_colors=GLOW_COLORS, glows=glows,
               crash=export_crash(G, pre, wreck_fx, body, kind), cracks=export_cracks(base_cracks),
               doors=export_doors(D, kind))
-    with open(os.path.join(OUT, f'red_planet_fx{SFX}.json'), 'w') as fh:
-        json.dump(fx, fh, separators=(',', ':'))
+    save_text(json.dumps(fx, separators=(',', ':')), os.path.join(OUT, f'red_planet_fx{SFX}.json'))
     meta['fx'] = f'red_planet_fx{SFX}.json'
     margin = 24
     frames = {}
@@ -4784,28 +4877,27 @@ def render_view(G, G0, k):
                         note='The furthest zoom-out shows max_view_px of map: the whole main base, no more. '
                              'frames are [x, y, w, h] boxes the camera frames at that zoom.')
     print(f"zoom: furthest view {meta['zoom']['max_view_px']} map px")
-    with open(os.path.join(OUT, f'red_planet_map{SFX}.json'), 'w') as fh:
-        json.dump(meta, fh, indent=2)
+    save_text(json.dumps(meta, indent=2), os.path.join(OUT, f'red_planet_map{SFX}.json'))
 
     # close-ups for quick review (view 0), an overview of every view
     prev = os.path.join(OUT, 'preview')
     os.makedirs(prev, exist_ok=True)
     im = Image.fromarray(final)
-    im.resize((W // 4, H // 4), Image.LANCZOS).save(os.path.join(prev, f'overview_quarter{SFX}.png'))
+    save_png(im.resize((W // 4, H // 4), Image.LANCZOS), os.path.join(prev, f'overview_quarter{SFX}.png'))
     if k != 0:
         print(f'view {k} rendered in {time.time() - t_start:.1f}s')
         return
     for name, box in boxes.items():
-        im.crop((int(box[0] - 120), int(box[1] - 60), int(box[2] + 120), int(box[3] + 80))).save(
-            os.path.join(prev, f'{name}_closeup.png'))
+        save_png(im.crop((int(box[0] - 120), int(box[1] - 60), int(box[2] + 120), int(box[3] + 80))),
+                  os.path.join(prev, f'{name}_closeup.png'))
     for name, (X, Y, w_, h_) in dict(forest=(-150, 2300, 900, 520), forest2=(520, 2700, 900, 520),
                                      ice=(950, 1500, 900, 520), ice2=(380, 800, 900, 520),
                                      seam=(-560, 2050, 900, 520), crash=(CRASH['X'] + 40, CRASH['Y'] + 60, 640, 380),
                                      massif=(980, 1420, 1100, 640), front=(260, 700, 1000, 580)).items():
         cx, cy = project(X, Y, 0.0)
-        im.crop((int(cx - w_ / 2), int(cy - h_ / 2), int(cx + w_ / 2), int(cy + h_ / 2))).save(
-            os.path.join(prev, f'{name}_closeup.png'))
-    im.resize((W // 4, H // 4), Image.LANCZOS).save(os.path.join(prev, 'overview_quarter.png'))
+        save_png(im.crop((int(cx - w_ / 2), int(cy - h_ / 2), int(cx + w_ / 2), int(cy + h_ / 2))),
+                  os.path.join(prev, f'{name}_closeup.png'))
+    save_png(im.resize((W // 4, H // 4), Image.LANCZOS), os.path.join(prev, 'overview_quarter.png'))
 
     # interactive viewer (template + metadata inlined so it opens straight from disk)
     sprite_dir = os.path.join(ROOT, 'assets', 'characters', 'astronaut')
@@ -4818,11 +4910,44 @@ def render_view(G, G0, k):
                                     fps=idle['fps'], row=idle['directions'].index('S')))
     with open(os.path.join(HERE, 'map_viewer.html'), encoding='utf-8') as fh:
         page = fh.read().replace('__MAP__', json.dumps(viewer))
-    with open(os.path.join(OUT, 'viewer.html'), 'w', encoding='utf-8') as fh:
-        fh.write('<!doctype html>\n' + page)
+    save_text('<!doctype html>\n' + page, os.path.join(OUT, 'viewer.html'))
     print(f'view {k} rendered in {time.time() - t_start:.1f}s')
+
+
+def tiles_only():
+    """Re-cut the tiles from the whole pictures already on disk, without re-rendering anything.
+
+    Tiling is a pure function of a view's picture, depth and light: the same bytes in, the same
+    tiles out, and export_tiles asserts the round trip. So when only the tiling has changed
+    there is no need to spend forty minutes ray-marching the planet again. (interior_gen.py's
+    --repair-metadata-only exists for the same reason.) A full run writes exactly these files.
+    """
+    global SFX, _TILES
+    for k in VIEWS:
+        SFX = view_sfx(k)
+        _TILES.clear()
+        meta_path = os.path.join(OUT, f'red_planet_map{SFX}.json')
+        meta = json.load(open(meta_path))
+        depth_path = os.path.join(OUT, f'red_planet_depth{SFX}.png')
+        depth = np.asarray(Image.open(depth_path))[..., :3].copy()
+        if Image.open(depth_path).mode != 'RGB':         # four channels, the fourth all 255
+            save_png(Image.fromarray(depth, 'RGB'), depth_path)
+        _TILES['depth'] = export_tiles(depth, 'depth', (255, 255, 0), 'RGB', as_image=True)
+        del depth
+        _TILES['map'] = export_tiles(np.asarray(Image.open(os.path.join(OUT, f'red_planet_map{SFX}.png')).convert('RGB')),
+                                     'map', (0, 0, 0), 'RGB', as_image=True)
+        _TILES['light'] = export_tiles(np.asarray(Image.open(os.path.join(OUT, f'red_planet_light{SFX}.png')).convert('L')),
+                                       'light', (255,), 'L', as_image=True)
+        w, h = meta['size']
+        meta['tiles'] = dict(tile=[TILE, TILE], grid=[(w + TILE - 1) // TILE, (h + TILE - 1) // TILE],
+                             layers=dict(_TILES))
+        save_text(json.dumps(meta, indent=2), meta_path)
+        print(f'view {k}: tiles written')
 
 
 if __name__ == '__main__':
     np.seterr(all='ignore')
-    build()
+    if '--tiles-only' in sys.argv:
+        tiles_only()
+    else:
+        build()

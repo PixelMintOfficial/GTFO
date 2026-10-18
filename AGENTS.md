@@ -73,11 +73,15 @@ scenes/
 scripts/
   game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
   day_night.gd         DayNight: the clock, the light through the day, lights kept lit at night
+  suit_light.gd        SuitLight: the lamp on the astronaut's suit (L / pad B), off until you light it
   day_clock.gd         DayClock: the time panel (sky window, day number, part of the day) and the new-day title
   audio.gd             autoload Audio: buses, one-shots, loops, ambience beds (§4.8)
   world_ambience.gd    WorldAmbience: the overworld's beds and the things you can hear
   inventory_ui.gd      six-slot hotbar and paused backpack; draws existing sprites and PixelFont
   map_terrain.gd       MapTerrain: walkability, ground height, biome, the views, world<->pixel projection
+  map_stream.gd        MapStream: the window of the map that is in memory (§4.10)
+  view_data.gd         ViewData: the map JSONs, parsed once
+  perf_probe.gd        PerfProbe: --perf, what the game costs as it runs
   view_turn.gd         ViewTurn: G / H turn the camera round the world; loads the next views ahead
   turn_overlay.gd      TurnOverlay: the turn's swing, the world stood up in 3D for a moment
   player.gd            Player: movement, low-gravity jump, slopes, multitool states, cutscene puppet
@@ -102,10 +106,12 @@ scripts/
   pixel_font.gd        PixelFont: the 3x5 pixel font for every bit of in-game text
   dev_panel.gd         DevPanel: F1 master control panel (debug builds): set the time, freeze needs
 shaders/
-  day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky())
+  day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky(),
+                         dn_lamp_shape(): the suit lamp's beam on the ground)
   map_light            the map: time of day, with its light mask kept lit (and indoors the sun mask)
   graded               any other sunlit thing (given automatically by DayNight)
-  depth_occlusion      the astronaut behind scenery: silhouette, or tinted behind glass
+  depth_occlusion      the astronaut behind scenery: silhouette, or tinted behind glass; lit by
+                       the lamp they carry (sprite_lamp)
   prop_depth           props behind scenery: hidden, or tinted behind glass
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
   crash_reveal         uncovers the untouched ground behind the crashing satellite
@@ -118,7 +124,7 @@ tools/                 the pipeline (Python): generates everything in assets/
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
   window_repair_gen.py      source-matched window inspections, connected glass pieces and working tool
-  bot_gen.py                the base's bot: SDF model, four views, dormant/wake/idle/talk (BOT_DESIGN)
+  bot_gen.py                the base's bot: SDF model, eight facings, dormant/wake/idle/talk/move (BOT_DESIGN)
   solar_field_gen.py        solar mirror/feed sheets and four-view indicator metadata (shared SDF renderer)
   sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
   requirements.txt          what make env installs
@@ -147,13 +153,22 @@ assets/                (lowercase, always)
 ## 4. How the game is built
 
 ### 4.1 Pre-rendered world plus data layers
-The world is not made of tiles or 3D meshes. Each map is **one big pre-rendered image**, plus
-data images and JSON written by the same generator so they always match the picture exactly:
+The world is not made of tiles or 3D meshes in the usual sense: nothing is assembled out of
+repeated art. Each map is **one big pre-rendered image**, plus data images and JSON written by
+the same generator so they always match the picture exactly.
+
+A view of the overworld is 7751x4350, and its picture, depth map and light mask come to about
+240 MB. Keeping three views for the camera's turns meant over a gigabyte of **texture** memory,
+so each of those three layers is also **cut into 512 px tiles**, and the game keeps only a
+window of them around the camera (§4.10). That is GPU memory: it is what the frame rate and an
+integrated GPU care about, and it is not the number a task manager shows for the process. The
+whole-picture PNGs are still written - they are what the browser viewer and the previews use,
+and the tiles are cut from them - but the game never loads them.
 
 | File | Contents |
 |---|---|
 | `*_map.png` / `base_interior.png` | the picture |
-| `*_depth.png` | per map pixel: camera depth (world Y × `depth_scale`) as 16 bits in R (high) and G (low); **B = 255** means dome glass, **B = 96** means a live plant (overworld) |
+| `*_depth.png` | per map pixel: camera depth (world Y × `depth_scale`) as 16 bits in R (high) and G (low); **B = 255** means dome glass, **B = 96** means a live plant (overworld). Three channels: there is no alpha to read |
 | `*_walk.png` | a 1-world-unit grid, pixel (u, v): R, G = 16-bit ground height `(z + height_offset) × height_scale`; **B = 255** walkable, **128** too steep (you can jump over, onto or down it), **0** solid |
 | `red_planet_biome.png` | RGB = how much red dust / forest / ice (sums to 255) |
 | `*_light.png` | grey: how much of each map pixel is its own light (lamps, lit windows, LEDs, glowing plants, pools and crystals, the light pooling round them, the stars). Kept lit at night |
@@ -162,6 +177,7 @@ data images and JSON written by the same generator so they always match the pict
 | `*_map.json` / `base_interior.json` | projection constants (`game`, incl. `light_png` / `sun_png`), spawn, domes, zoom frames, door, fx |
 | `red_planet_fx.json` | plants, glows, halos, crash scene, dome cracks, airlock doors |
 | `red_planet_props.json` | sprite sheets and placements of the multitool test props, dead lamps |
+| `tiles/<layer><_rk>/t_XX_YY.png` | the picture, depth and light of view k in 512 px tiles. A tile of one colour throughout (over half of every map is sky) is not written: the view JSON's `tiles` block gives the grid, which tiles exist and what a missing one is filled with. Imported as **Image**, never as a texture, so they can be stitched on a worker thread |
 
 Scripts must **read positions from this data** (door positions, LED pixels, crack outlines and
 so on). Never hard-code a map pixel position in a script. If you need one, the generator
@@ -242,11 +258,19 @@ overlay: the emergency lines and floor rings, bloomed, laid over the map additiv
   pixels**. Half-pixel offsets tie and swap draw order at random.
 
 ### 4.4 Day and night: how things are lit
-`DayNight` sets five shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`,
-`dn_lamp`, declared in `project.godot`). Everything in the world must take them:
+`DayNight` sets four shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`) and
+`SuitLight` two more (`dn_lamp`, `dn_beam`); all six are declared in `project.godot`. Everything
+in the world must take them:
 - **A shader that draws the world** `#include`s `res://shaders/day_night.gdshaderinc` and passes
   its sunlit colour through `day_night(colour, map_px)` (or `dn_sky(colour)` when it has no map
   position). See `depth_occlusion`, `prop_depth`, `flora_depth`.
+- **The suit lamp is a shape, not a light node**: `dn_lamp_shape()` lays its beam along the
+  ground in the include, so every shader that calls `day_night()` already has it and nothing
+  dynamic is added to the scene. Whoever *carries* the lamp is lit by it all over instead -
+  `day_night_lit(colour, map_px, amount)`, which is how the astronaut's sprite takes it
+  (`sprite_lamp`, set by `Player.set_suit_lamp`). Anything drawn in a view's own map pixels
+  outside the ordinary shaders (the camera's swing) needs that view's own lamp position and
+  direction: `SuitLight.beam_dir(terrain, player)`.
 - **A world node with no material** gets the `graded` material from `DayNight` automatically,
   including nodes added later. Smoke, dust, gas, snow, sprites: nothing to do.
 - **Lights must say so**, or they go dark at night: draw them in a child node with an additive
@@ -276,6 +300,7 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | turn_left / turn_right (turn the camera a quarter turn) | G / H | d-pad left / right | view_turn.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
+| suit_light (the lamp on the suit, on/off) | L | B | suit_light.gd |
 | wake the bot (the fix job) | hold F, tool out | hold X | multitool.gd, story/bot.gd |
 | talk to the awake bot (interact) | F | X | story/bot.gd |
 | dialogue_next / dialogue_close | F, Enter, Space / Esc | A, X / B | story/bot_dialogue.gd |
@@ -284,6 +309,9 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 
 F / gamepad X is shared: while a door's prompt is showing, the door sets
 `multitool.suppressed = true`, so it opens the door instead of using the tool.
+L / gamepad B switches the suit's lamp. B is also every modal's cancel, so `SuitLight` ignores
+the press while the game is paused, in a cutscene, mid-turn or with the window panel open: a
+modal takes the press and the lamp never flicks on behind it.
 Inventory pauses the world and independently sets `multitool.inventory_suppressed`;
 after closing, F / X must be released before interactions resume. The inventory consumes
 modal input before map/camera handlers. Do not add another meaning to these buttons
@@ -311,6 +339,7 @@ camera turns reproject equipment and rays without changing the optical puzzle.
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
   - `tool_out`: the multitool stays out across the airlock;
+  - `suit_light`: the lamp on the suit, off when the game begins and as you left it after that;
   - `clock`: game hours since the start (`DayNight` turns it into the day, hour and part of
     the day).
   - `heading`: which way the camera faces (quarter turns, 0..3), the same indoors and out.
@@ -340,13 +369,14 @@ camera turns reproject equipment and rays without changing the optical puzzle.
     `frozen` (kind -> true) holds needs still - no drain, recovery or damage - set from the
     master control panel; it is kept through rescue.
   - `story`: `StoryState`: the opening chapter - `bot_awake`, `named`, `player_name`,
-    `reserve_power` (the bulkheads open), `objectives_given`, the lore lines `heard`. Every name
-    and line comes from `data/bot_story.json` (tokens `{BOT}`, `{OWNER}`, `{NAME}`). Objectives
-    are done when their machine's repair reaches 100%. Kept through rescue. The player's name is
-    also remembered between launches in `user://profile.cfg` (`PlayerProfile`: a preference,
-    like the survival HUD's position, not a save file). `skip_intro()` for tests.
-  - `solar_field`: `SolarFieldState`: thirteen world mirror orientations, three closed/open
-    feeds and cached optical routes. All three complete 4/5/4 routes supply the base reactor;
+    `reserve_power` (the bulkheads open), `objectives_given`, the lore lines `heard`, and
+    `bot_world` (where the bot was last, following you; null while it is in its cradle). Every
+    name and line comes from `data/bot_story.json` (tokens `{BOT}`, `{OWNER}`, `{NAME}`).
+    Objectives are done when their machine's repair reaches 100%. Kept through rescue. The
+    player's name is also remembered between launches in `user://profile.cfg` (`PlayerProfile`:
+    a preference, like the survival HUD's position, not a save file). `skip_intro()` for tests.
+  - `solar_field`: `SolarFieldState`: ten world mirror orientations, three closed/open
+    feeds and cached optical routes. All three complete 3/3/4 Amber/Jade/Coral routes supply the base reactor;
     `base_powered()` also requires its existing machine repair. State survives turns, airlocks
     and rescue. See docs/solar-field.md for optics, generated art, ownership and test hooks.
 - Inside, the corridors to the power and oxygen rooms are sealed by bulkheads until the bot
@@ -441,8 +471,40 @@ the scene from one view to the next.
   and the game's own orthographic camera swings round. The view left dissolves into the view
   arrived at (a pixel dither), then the overlay fades into the live view. It sits above the
   world (layer 3) and below every UI layer. Turns wait for a calm moment: not in a cutscene, a
-  modal, mid-jump, or while the tool is being drawn or at work. The next views' textures load
-  in the background ahead of time, so a turn never waits for the disk.
+  modal, mid-jump, or while the tool is being drawn or at work. The next views' sprite sheets
+  load in the background ahead of time and their windows are kept stitched (§4.10), so a turn
+  never waits for the disk. A press whose view is not ready yet is kept and played as soon as
+  it is, rather than freezing the frame.
+
+
+### 4.10 The map window: only what you can see is in memory
+
+`MapStream` (`scripts/map_stream.gd`) stitches a window of each resident view out of the tiles
+§4.1 describes, and that window is what the game actually draws and samples. **Texture** memory
+then follows the zoom instead of the size of the world: 1097 MB down to 200 MB at the default
+zoom on an Intel UHD 620 (`--no-stream` loads the whole pictures instead, so the two can be
+compared in one build). This is GPU memory. It is not what a task manager shows for the
+process, which moves by about 11 MB - see §12.
+
+- **What it covers**: what the camera shows, grown by the margin the turn's swing lays out
+  (`TurnOverlay.MARGIN`) and then by `PAD`, so walking does not restitch every step. It is
+  sized from the zoom level being tweened *to*, so a zoom stitches once.
+- **Where it is**: `MapTerrain.window` (map pixels), with `map_texture`, `depth_map` and
+  `light_mask` holding that rect and nothing else. `map_size` still means the whole map - the
+  camera's limits and `to_screen()` depend on it. **Do not let the two merge.**
+- **Three views at a time**, as before, so a turn never waits: the one you are looking at and
+  the two you could turn to. Only one is restitched per frame, the current one first, and the
+  old windows stay on screen until the new one is ready - a rebuild is never visible. A turn
+  waits for its view's window (`ViewTurn.request`) rather than stitching on the spot.
+- **Anything that samples the depth map** must sample the window: `(map_pos - map_win.xy)`,
+  with a bounds test, and **a pixel outside the window counts as sky** so a sprite there draws
+  whole instead of being wrongly hidden. `MapStream.bind(material, terrain)` points a material
+  at the current window; re-point on the scene's `_window_moved` as well as on a view switch.
+- **Small maps are not streamed.** The interior has no `tiles` block, so `MapTerrain.streaming`
+  is false, its layers are loaded whole, and its window is the whole map - the same shaders and
+  the same code path, with the window simply never moving.
+- `--stream-debug` prints every window as it is stitched; `tests/map_stream_test.tscn` checks
+  that the window always covers what the camera shows and that its pixels are the generator's.
 
 ---
 
@@ -464,7 +526,7 @@ consts in the named files.
   - Holding jump goes higher (about 30 units: enough for the 14.4-unit cargo box); a tap does not.
   - There's a floaty hang near the top, plus crouch and land squash.
 - **Camera** (`game_camera.gd`):
-  - Overworld: 4 zoom levels; the furthest frames the whole main base and never more.
+  - Overworld: 4 zoom levels; all follow the astronaut. The furthest shows a main-base-sized area.
     In-between levels land on whole-pixel scales at 1080p.
   - Interior: `zoom_locked = true` (no zooming).
   - Cutscenes use `focus_override`, `snap_to` and `release_focus`.
@@ -546,7 +608,8 @@ consts in the named files.
     same burst and crescent) show whole glass in every view, by day and night and through the
     camera's swing. The far pane has no hole outside. The other rooms keep theirs.
 - **Solar field** (`scripts/solar/`, `data/solar_field.json`):
-  - Three closed sun feeds and 4/5/4 Amber/Jade/Coral reflectors surround one conical receiver.
+  - Three elevated, closed sun feeds and 3/3/4 Amber/Jade/Coral reflectors surround one conical receiver
+    (three yellow, three blue/teal, four red). Relays descend from hilltops into the clearing.
     F/X opens a feed or turns a nearby mirror clockwise 22.5 degrees. No Q reverse action.
     Movement, survival and the clock continue. Every assigned reflector is required.
     Local solar prompts and bars avoid the movable survival HUD using its canvas-aware
@@ -554,8 +617,10 @@ consts in the named files.
   - The receiver's local bar has three channel segments. Its cable goes into the base's
     power conduit; all three complete paths plus the repaired reactor run the engine.
     Routes persist through views and airlocks. Time of day fades beams without losing progress.
-  - The field occupies the original array clearing/red-dust ground; only equipment pads
-    are levelled after the unchanged flora placement stream. The forest is preserved.
+  - The receiver sits farther right/down in the original array clearing. Amber uses capped western
+    peaks, Jade the right-hand hill and Coral the upper cliff. Flat equipment pads and graded
+    approaches are shaped after the original flora placement stream; plants retain X/Y and settle
+    onto the reshaped ground. The forest is preserved.
   - Mirrors have silver sweeps/pivots; feeds deploy crystals and gather sunlight. Completing
     all routes sends a charge wave through receiver cells, lights its crown and pulses outward.
   - Canonical `SolarOptics` and session `SolarFieldState` are separate from `SolarField`
@@ -607,11 +672,24 @@ consts in the named files.
   - Four parts of the day: **MORNING** 05:00–11:00, **NOON** 11:00–16:00, **EVENING**
     16:00–20:00, **NIGHT** 20:00–05:00. A new day begins at **05:00**.
   - The light: a pink dawn, a warm morning, a clear noon, a golden evening, a violet dusk and a
-    deep blue night (`KEYS` in `day_night.gd`). At night, what glows on its own stays lit, and
-    a soft pool of light follows the astronaut.
+    **dark night** (`KEYS` in `day_night.gd`). What glows on its own stays lit after dark - the
+    pools, the spires, the two powered domes, the stars - and nothing else does: the ground is
+    down to a deep blue-violet you can just read shapes in, and you need the suit lamp to get
+    anywhere. Nothing lights the astronaut for them any more.
   - The time panel sits top left, and a "DAY N" title comes up at dawn. It is hidden during the
     crash intro and comes in with "DAY 1" when it ends.
-  - Time changes nothing in play yet (no sleep, no night dangers).
+  - Time changes nothing else in play yet (no sleep, no night dangers).
+- **The suit lamp** (`suit_light.gd`):
+  - L / gamepad B switches it on and off. It **starts off**, every time, and stays as you left
+    it through the airlock (`GameState.suit_light`). Nothing else turns it on.
+  - A beam thrown along the ground the way the astronaut faces (`reach` 120 map px, `spread`
+    38 degrees either side), with a small pool spilling round their feet (`spill`), in the same
+    three dithered steps as the rest of the light. It lights the astronaut themselves all over,
+    since they carry it.
+  - Its strength follows `DayNight.night`, so it is worth nothing at noon and everything at
+    2 a.m., and it can never wash the daylight out.
+  - It is two shader globals, not a light node (§4.4): it costs nothing per lit thing, and it
+    follows the camera's quarter turns because its direction is worked out in the current view.
 - **Sound** (§4.8, §7.6): the three lands each have their own ambience, crossfaded by the land
   you are standing in; the pools, spires, burning wreck and powered domes can be heard from
   near them; everything you do makes a noise. No music.
@@ -641,10 +719,10 @@ the existing renderer (`render_groups` / `render_sprite`).
 | Generator | Writes | Run it when | Time |
 |---|---|---|---|
 | `python tools/astronaut_sprite_gen.py` then `python tools/godot_spriteframes.py` | `assets/characters/astronaut/*` | you change the astronaut, the multitool or any animation | slow (about 1,000 frames); `--quick` writes only the contact sheet |
-| `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 8 minutes for the four views (~1.5 per view), several GB of RAM |
+| `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | ~35 min for the four views (~9 each, measured on an 8-core laptop), several GB of RAM. `--tiles-only` re-cuts the tiles from the pictures already on disk in a couple of minutes |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
 | `python tools/solar_field_gen.py` | `assets/maps/red_planet/solar/*`, `solar_field.json` | after every map regeneration or equipment change; `make map` includes it | seconds |
-| `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about a minute per variant (four views, four variants) |
+| `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about 2.5 minutes (four views × four machine variants, ~40 s each) |
 | `python tools/bot_gen.py` | `assets/maps/base_interior/bot/*` | you change the bot; `make interior` runs it | seconds |
 | `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
 
@@ -658,6 +736,8 @@ designs can be compared or restored:
 - `BASE_DESIGN` = `v1` | `hex` | `v2` | `v3` (default **v3**) — the main base.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
 - `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
+- `SOLAR_FIELD_LAYOUT` = `v1` | `v2` (default **v2**) — earlier 4/5/4 ground field or the
+  approved 3/3/4 terraced field. Use the same value when generating and running the game.
 - `BOT_DESIGN` = `pod` | `lantern` | `orb` (default **pod**) — the bot; lantern and orb are the
   other two looks from the approved contact sheet (`docs/bot-mockups.png`), kept for rework.
 - `TRAIL_LAMPS` = `0` | `1` (default **0**) — the lamps along the trails (and their light). Off,
@@ -673,6 +753,8 @@ Running with a non-default design and `MAP_OUT` unset **replaces the game's asse
 
 After regenerating, **re-import** (`godot --headless --path . --import`, or focus the editor)
 before you run the game.
+Map, prop and solar image/data exports replace completed files atomically, so Windows
+editors and diff viewers can retain the previous version without blocking a truncating write.
 
 ### 6.3 Data contracts
 The generators write the JSON keys that the scripts read. If you rename, remove or reshape a
@@ -688,22 +770,34 @@ sheet; `anchor` and `world` on every animated dome sprite (the turn stands them 
 
 `data/solar_field.json` owns canonical `bounds`, `collector`, `cable`, `beam_height`,
 `mirror_span`, `reach`, `engine_room` and three `routes` (ID/label/color/ramp, source/direction/mirrors).
-Optional `access_paths` contain canonical `points` and `half_width` for narrow level approaches.
+Optional `access_paths` contain canonical `points` and `half_width` for narrow approaches.
+Points may include Z for graded ramps; two-coordinate points remain level at Z=0.
+`terrain.peak_caps` contains `bounds`, `height`, `blend`; `terrain.plateaus` contains elliptical
+`world`, `half`, `height`, `blend` tops. These shape only the authored solar sites.
 Generated `solar_field.json` adds `sheets` (file/size/frames/anchor, mirror `shine_frames`,
-feed `deploy_frames`) and four `views` with receiver `indicator_px` and `receiver_mask`
+feed `deploy_frames`/`yaw_offset`, the first source row's canonical angle) and four `views`
+with receiver `indicator_px` and `receiver_mask`
 (file/position/size; RGBA = normalized height/cell interior/local view depth/surface).
+Mirror sheets add `depth` (file/frames/scale/offset/skin_depth_span), eight frames sharing the sprite's
+size/anchor and silhouette. RG16 encodes local view depth as `(depth + 32) * 1024`, B
+encodes the surface-to-optical-plane gap normalized by skin_depth_span (32), and A includes
+the one-pixel outline. All parts, including faces, retain actual rendered SDF depth in RG.
+Only camera-facing incident/reflected segment pairs may bridge the skin gap (UV.y = 1);
+back-side contacts and other projected crossings keep solid surface depth. SolarReflectorLight clips identical world beam geometry
+over each y-sorted prop so front light shows and behind light stays hidden. Beam UV.x
+carries full float view depth; byte-packed vertex colors cannot preserve its precision.
 `feed_visual` owns `crystal_offset`, `tip_closed`, `tip_open` and `emerge` for the sunlight
 funnel's endpoint as a beacon opens. Closed beacons conceal the crystal under metal lids.
 Its `stands` map contains reachable canonical approach points for captures and placement
 checks, clear of the receiver's footprint; normal play can approach from any side.
 The map generator owns small level equipment pads and solid footprints, preserving the
 original landscape/plant random stream. `check_solar_field.py` verifies reachability,
-original forest fingerprints, equipment clearance and view anchors.
-Elevated routes add `source_elevation`; these feeds keep their natural terrain instead of
-getting a level pad. `mirror_half_height` defines finite vertical mirror extent. `SolarOptics`
-intersects three-dimensional rays with mirror rectangles and the capped frustum. The first
-mirror's fixed pitch is derived from descending input and horizontal output. Every mirror's
-fixed yaw offset follows its authored route, allowing free placement around terrain;
+original forest placement fingerprints, equipment clearance and view anchors.
+Elevated routes add `source_elevation` and parallel `mirror_elevations` (default zero).
+Legacy v1 elevated feeds retain their natural terrain; v2 uses authored level pads and ramps.
+`mirror_half_height` defines finite vertical mirror extent. `SolarOptics` intersects
+three-dimensional rays with mirror rectangles and the capped frustum. Every mirror's fixed
+pitch and yaw offset derive from its actual incoming/outgoing elevations and authored route;
 `special_mirrors` exports four view-specific sheets for nonzero mounting offsets.
 F continues to control yaw only, in eight 22.5-degree steps.
 Every interior/repair variant exports `solar_input`: a physical diagonal-wall inlet's
@@ -787,8 +881,9 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
   front of another) get a line in a darker shade of the surface's own colour.
 - **Time of day** is applied in the game, not baked into the art: the art is always rendered
   in daylight, and `day_night.gdshaderinc` colours it. Change the look of a time of day only in
-  `KEYS` (`day_night.gd`), and keep it cozy. The night is deep blue-violet, never black, and
-  things that glow carry it.
+  `KEYS` (`day_night.gd`), and keep it cozy. The night is **dark** - too dark to get about in
+  without the suit lamp - but never black: the sky light leaves a deep blue-violet floor you can
+  just read shapes in, and the things that glow carry it.
 
 ### 7.3 Palette
 - Ramps run dark → light. **Shadows lean violet; lights lean warm cream or peach.** Every
@@ -822,7 +917,9 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
 - **Lands:**
   - **red dust** around the main base: dunes, mesas, craters, spiky ranges;
   - **alien forest** around the nursery dome: violet-teal moss, glowing pools, crystal
-    spires, swaying alien plants;
+    spires, alien plants leaning in the wind (a slow gust rolls across a grove at a time, so
+    the forest breathes rather than thrashes - `BiomeFX`'s `sway_rate` and `gust_*`, and the
+    lean itself in the generator's `lantern_tree`);
   - **ice** around the comms dome: snowfields, frozen lakes, charcoal peaks and cliffs
     under snow.
   - The comms dome sits on a stepped charcoal massif reached by ramped trails.
@@ -922,11 +1019,12 @@ godot --headless --path . res://tests/view_turn_test.tscn             # turning 
 godot --headless --path . res://tests/window_crack_test.tscn          # the cargo box: jump on, lift, crack, break, rations
 godot --headless --path . res://tests/window_glass_test.tscn          # live reach, real input, scans, cost, final collapse
 godot --headless --path . res://tests/dev_panel_test.tscn            # master control panel: time, frozen needs, real keys
+godot --headless --path . res://tests/suit_light_test.tscn           # the suit lamp: starts off, L, the beam, the turns
 godot --headless --path . res://tests/window_restore_test.tscn       # sealed panes' art and light, every view and variant
 godot --headless --path . res://tests/solar_field_test.tscn          # solar optics, routes, equipment and input
 godot --headless --path . res://tests/survival_test.tscn             # survival needs, damage, rescue
 godot --headless --path . res://tests/survival_hud_test.tscn         # the survival panel (and its layout probes, see make check)
-godot --headless --path . res://tests/bot_story_test.tscn            # bulkheads, waking the bot, its talk, your name, reserve power
+godot --headless --path . res://tests/bot_story_test.tscn            # bulkheads, waking the bot, its talk, your name, reserve power, following
 godot --path . res://scenes/interior.tscn -- --bot-wake --name=ASTRO --story-auto=0.5 --capture=wake.png --seconds=1.4 --burst=10 --gap=0.45
 godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
@@ -938,7 +1036,12 @@ godot --path . -- --no-intro --inventory-demo --open-inventory --capture=bag.png
 Useful hooks:
 - `--spawn=X,Y`, `--walk=DX,DY[,run]`, `--capture=PATH`, `--seconds=S`, `--burst=N`, `--gap=S`
 - `--quit=SECONDS`, `--audio-debug`, `--equip`, `--use`, `--face=DX,DY` (both scenes)
+- `--perf` / `--perf-every=S`: texture memory, draw calls and mean/worst frame time, once a
+  second. There is no screenshot for memory, so this is how a change to it is shown (both scenes)
+- `--stream-debug`: every map window as it is stitched (both scenes, §4.10)
+- `--turn=N`, `--turn-left` / `--turn-right`, `--turn-at=SECONDS` (when the turn fires, default 1)
 - `--dev-panel` (open the master control panel), `--dev-freeze=hunger,thirst,oxygen` (both, debug builds)
+- `--suit-light` (start with the suit's lamp lit; both scenes. It is off in an ordinary game)
 - overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`,
   `--dome-mended=ROOM` (that room's dome glass whole again; `command` = storage's)
 - interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
@@ -1004,9 +1107,14 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **Compact HUD only**; four survival meters, inventory stack counts, a six-slot hotbar,
   local machine repair progress, the time panel and the objective line under it are
   approved (§12).
-- **A day/night cycle** with four parts of the day; lights stay lit at night.
+- **A day/night cycle** with four parts of the day; lights stay lit at night. **The night is
+  dark** (Don't Starve dark): nothing lights the astronaut for them, and the lamp on their suit
+  starts off and is switched on with L / pad B.
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
+- **The map is stored as tiles and only a window of it is in memory** (§4.10). The art,
+  the projection and the four pre-rendered views are unchanged: this is how the pictures
+  are stored and loaded, not how they are drawn.
 - **The camera turns in quarter turns** (G / H), indoors and out, in a short eased swing;
   the sun stays on the same side of the screen in every view.
 - **Dome cracks keep their original look** (a thin bright rim, no heavy dark outline).
@@ -1133,8 +1241,9 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
 - **Not built yet:** interiors for the nursery and comms domes, saving and loading (the clock
-  would be saved with `GameState.clock`), anything that depends on the time of day, music
-  (and there will not be any, §9).
+  would be saved with `GameState.clock`, the suit lamp with `GameState.suit_light`), anything
+  else that depends on the time of day - no sleep and no night dangers, so the dark costs you
+  nothing but your bearings yet - music (and there will not be any, §9).
 
 ---
 
@@ -1319,6 +1428,83 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-11 — Owner requested a master control panel; dev-only by owner's choice (editor and
   debug builds, F1 / Guide): set the time (half-hour steps or a part of the day) and freeze food,
   water and oxygen (`SurvivalState.frozen`). Not part of the shipped HUD. PixelFont gains `<` `>`.
+- 2026-10-11 — Owner reported premature receiver strikes from Amber, B3 and C2, and asked
+  to check untested angles too. Reflector positions/mounts are adjusted so incomplete paths
+  physically miss the cone, while the full 4/5/4 paths, interleaved spacing, mountain feed
+  and original vegetation remain. The solar regression suite now searches all reachable
+  mirror-angle combinations with consistent orientations, including cross-channel bounces;
+  any incomplete path within four world units of the receiver fails with a replayable
+  angle assignment. This visual clearance is test-only; the physical cone remains unchanged.
+  Generated capture stands now select level ground in the base spawn's walk component,
+  with `solar_field_gen.py --stands-only` available to refresh anchors without rerendering art.
+- 2026-10-11 — Owner requested keeping the solar wall display clear of the battery cabinets.
+  Its paired mounts move along the wall to 30/210 degrees and up to 26 units, below the coral
+  trim, with housing/lenses and anchors regenerated for all views and machine-repair variants.
+- 2026-10-11 — Owner requested that the astronaut remain the camera's focal point at maximum
+  zoom-out. Normal follow no longer selects a nearby dome; the existing zoom range, smoothing,
+  torso offset, cutscene focus and indoor zoom lock remain. Real-scene camera tests cover walking
+  at widest zoom, all four headings, swing endpoints and zooming back in.
+- 2026-10-12 — Owner requested a less cluttered solar puzzle following the marked hills:
+  receiver moves to (-715, 2015); Amber uses capped western peaks, Jade the right-hand hill,
+  Coral the upper cliff. Reduce reflectors to three yellow, four red, three blue (A/B/C 3/3/4),
+  with relays on hills and ground and shorter descending routes. Authored flat tops and graded
+  access ramps are applied after scattering; original plant X/Y, variants and phases remain.
+  Source/mirror elevations drive shared 3D optics and generated mounting pitch/yaw. Keep the
+  previous field as `SOLAR_FIELD_LAYOUT=v1`; the approved terraced layout is v2/default.
+- 2026-10-12 — Owner requested visible mirror bounces, no mid-air cutoffs or rays through
+  surfaces, and slightly thicker light. Canonical `SolarWorldGeometry` intersects the existing
+  bilinear ground grid before downstream optics; unblocked rays extend beyond every view's
+  map/viewport rather than the placement bounds or an arbitrary Z ceiling. Empty-sky depth
+  (65535) never occludes light. Mirror-owned y-sorted contact meshes draw the incoming/outgoing
+  light over their faces without moving the whole beam layer above foreground actors. Core/halo
+  widths become 2.25/6 pixels, with matching swing thickness; small ground glints mark physical
+  impacts. MapTerrain shares explicit-view point/direction projection for the escape envelope.
+  The beam suite covers individual
+  and seeded mixed yaw settings, terrain/endpoints, native four-view contact pixels and shader
+  sky/solid fixtures. No equipment placements, terrain or generated assets change.
+- 2026-10-12 — Owner clarified that light must meet the reflective face while parts
+  physically behind the reflector stay hidden, and requested other-angle checks. Replace
+  short, always-overlaid contact strips with shared full beam geometry, clipped using
+  generated per-pixel reflector depth/silhouette (including frame, pivots and post).
+  The reflective skin matches the existing finite optical plane; hardware keeps its SDF
+  depth. Float UV depth replaces byte-packed colors to avoid false occlusion and preserve
+  unbounded escaped endpoints. Native front/behind pixel checks cover all ten reflectors,
+  eight yaw settings and four views, with day/night world galleries. Layout and optics
+  remain unchanged; generator-owned depth strips are committed with their source.
+- 2026-10-12 — Owner reported isolated light dots inside every reflector. Keeping optical
+  plane depth on both faces exposed the buried bounce vertex even from behind. RG now
+  retains the actual SDF face depth; B stores the finite skin gap. Per-hit UV.y annotation
+  permits that gap only for incident/reflected segments on the camera-visible side, including
+  routes revisiting a mirror from opposite sides. Real back-side contact pixel checks extend
+  the all-angle suite; the focused Jade reproduction fails before the fix. No routing,
+  equipment or terrain changes.
+- 2026-10-12 — Performance, against three reported issues (#7, #8, #11), measured with a new
+  `--perf` hook rather than by feel, and with `--no-stream` so both map paths can be compared in
+  one build. **What each change is actually worth, measured on an Intel UHD 620:**
+  - *the map window* (§4.10): texture memory 1097 MB → 200 MB, VRAM 1122 MB → 232 MB. Frame
+    rate unchanged (both 60), and **process RSS 306 MB → 295 MB**. Nearly all of its benefit is
+    GPU memory, which on an integrated GPU is system memory but is not in the process's
+    resident set - so it does **not** show in a task manager, and #11 is not answered by it.
+  - *redrawing only what changed* (the clock dial, the four survival meters, the flora list):
+    this is what took the frame rate from 30 to a locked 60.
+  - *the turn* no longer freezes: it kept a press rather than forcing its view into memory on
+    the frame of the press, which cost up to 1965 ms when one turn followed another.
+  - *the forest*: trees lean about half as far (crown travel ±6.1 px → ±2.8 px) on a slow gust
+    that rolls through a grove at a time; the screen changing between frames fell 27% → 6%.
+  Of the ~300 MB a task manager shows, ~177 MB is an empty Godot window on the same machine,
+  20 MB the walk grid and 8 MB the audio. **Say which memory you mean when you report a
+  number**; the three in play here (process RSS, texture memory, VRAM) move independently.
+  Also: the map's layers are stored as 512 px tiles, the depth map dropped its unused alpha
+  channel, and the map JSONs are parsed once with one view's fx held at a time - parsed, 350 KB
+  of JSON costs 4.2 MB of heap (agent, from the owner's three issues).
+- 2026-10-12 — Merge performance main into the solar branch: streamed depth windows bind to
+  world beams, reflector replays, impacts and receiver FX; initialize player occlusion after the
+  first window publishes. Neighbor-window prediction keeps the astronaut centered at every zoom.
+  Regenerate all four maps/tiles with the terraced field and calmer tree sway; forest clearance
+  checks fingerprint canonical feet so narrower sprite boxes do not count as moved plants.
+  Native contact comparisons wait for zoom to settle. Headless texture preloads run serially
+  because the Godot dummy renderer races concurrent texture allocations; a preload/window
+  upload stress regression guards the workaround. Displayed game preloads remain asynchronous.
 - 2026-10-12 — The bot (team design; approved by the requester): a new maintenance bay south of
   storage, where the base's bot sleeps docked in a charging cradle. Woken with the multitool's fix
   job, it takes you for the previous owner, you give it your name, it switches on reserve power
@@ -1337,3 +1523,27 @@ Write one line per decision: date — decision (who approved it).
   prompt only shows when you face it, so F stays with the tool. Its sheet is eight facings drawn
   once (like the astronaut's) instead of one strip per view; a quiet synthesised `bot_hover`
   goes with it. Further bot features are listed for the team in `docs/bot-design.md`, not built.
+- 2026-10-13 — Owner's explicit darkness request: the night is Don't Starve dark and the
+  astronaut carries the only light. `KEYS`' night and dusk/dawn multipliers drop (full night
+  0.30/0.34/0.60 -> 0.085/0.095/0.175, with a smaller sky-light floor); daylight, the golden
+  evening and the four parts of the day are unchanged. The soft pool that used to follow the
+  astronaut at night is gone: nothing is lit for you, and the dead base lights nothing either.
+  In its place `SuitLight` (`scripts/suit_light.gd`), a lamp on the suit that **starts off**
+  and is switched with L / gamepad B; it stays as you left it through the airlock
+  (`GameState.suit_light`). It is a beam thrown along the ground the way the astronaut faces,
+  with a small spill round their feet, and it lights them all over because they carry it. Built
+  as two shader globals (`dn_lamp`, `dn_beam`) read by the existing day/night include, so no
+  dynamic light is added and the camera's quarter turns keep it pointing the same way in the
+  world. Its strength follows `DayNight.night`, so it does nothing in daylight. Two synthesised
+  sounds (`suit_light_on` / `suit_light_off`) baked with `--only`, no new packs. No HUD was
+  added (§9): the beam itself is the indicator. `tests/suit_light_test.tscn` covers it and is
+  part of `make check`.
+- 2026-10-19 — Merge main into the bot branch (requester): the suit lamp, the map window, the
+  terraced solar field and the performance pass come in alongside the bot. The bot and the
+  bulkheads now bind main's depth window (`MapStream.bind()`, re-bound on `_window_moved`), and
+  the objective line, dialogue, name entry, bulkhead lamp and bot glow redraw only when what they
+  show changes, as DayClock does. The interior, window, bot and the bot's sounds were regenerated
+  on the merged code; 409 regenerated images were pixel-identical to main's and keep main's bytes.
+  The suit lamp needed nothing: it ignores presses while the bot's dialogue or name entry pause
+  the world. Under the dark night the following bot shows only its eye glow outside the lamp's
+  beam; kept that way, as the darkness rule asks (requester).

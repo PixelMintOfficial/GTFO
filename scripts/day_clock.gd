@@ -72,10 +72,26 @@ func on_new_day(day: int) -> void:
 	announce("DAY %d" % day)
 
 
+## How often the stars are allowed to twinkle, times a second. They are a handful of pixels
+## fading in and out; any faster is work nobody can see.
+const STAR_HZ := 8.0
+
+var _dial_state := Vector3(-1, -1, -1)
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	_flash = maxf(0.0, _flash - delta * 1.6)
 	_toast_t += delta
+	# The dial is a 30x21 image painted a pixel at a time and uploaded to the GPU, and the panel
+	# redrawn with it. None of that is worth doing 60 times a second for a clock: repaint only
+	# when something it draws has actually moved on - the minute, the darkness, a twinkling star
+	# (which only shows at night), the phase flash or a toast.
+	var state := Vector3(roundf(DayNight.hour * 60.0), roundf(DayNight.night * 64.0),
+			roundf(_t * STAR_HZ) if DayNight.night > 0.02 else 0.0)
+	if state == _dial_state and _flash <= 0.0 and (_toast.is_empty() or _toast_t > 3.0):
+		return
+	_dial_state = state
 	_paint_dial()
 	_panel.queue_redraw()
 

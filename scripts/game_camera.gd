@@ -2,13 +2,11 @@ class_name GameCamera
 extends Camera2D
 ## Follows the player with smoothing that stays snapped to whole map pixels, and steps
 ## through zoom levels: I zooms in, O zooms out. The default view is the closest. The
-## furthest shows the whole main base and never more (its size comes from the map data).
+## furthest shows a base-sized area (from the map data), still centered on the astronaut.
 ## At 1080p the in-between levels land on whole-pixel scales, so they stay pixel-perfect.
 
 @export var follow_speed := 6.0
 @export var zoom_time := 0.3
-## Gap kept between the player and the screen edge while framing a dome.
-@export var frame_margin := 48.0
 ## How quickly the camera pans to a cutscene focus and back to the player.
 @export var pan_speed := 2.2
 
@@ -20,11 +18,10 @@ var zoom_locked := false
 ## How much more of the world each level shows than the default view.
 var levels: Array[float] = [1.0]
 var level := 0
-## At the furthest zoom, nearby domes are framed whole while the player stays in view.
-var frames: Array[Rect2] = []
 
 var _target: Node2D
 var _map: CanvasItem
+var _streamed := false
 var _max_view := Vector2.ZERO
 var _pos := Vector2.ZERO
 var _factor := 1.0
@@ -35,7 +32,8 @@ var _shake_left := 0.0
 var _shake_len := 1.0
 
 
-func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2) -> void:
+func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2, streamed := false) -> void:
+	_streamed = streamed
 	_target = target
 	_map = map
 	_max_view = max_view_px
@@ -47,11 +45,9 @@ func setup(target: Node2D, map: CanvasItem, max_view_px: Vector2) -> void:
 	snap()
 
 
-## The camera turned round the world: the new view's furthest zoom and dome boxes. Keeps the
-## zoom level and jumps to where it wants to be in this view (at the furthest zoom, on a dome).
-func set_view_limits(max_view_px: Vector2, view_frames: Array[Rect2]) -> void:
+## The camera turned round the world: keep the zoom level and follow the reprojected target.
+func set_view_limits(max_view_px: Vector2) -> void:
 	_max_view = max_view_px
-	frames = view_frames
 	_build_levels()
 	if _target != null:
 		_pos = _goal()
@@ -89,6 +85,12 @@ func view_size() -> Vector2:
 	return _base_view() / zoom
 
 
+## How much the camera will show once a zoom has finished. The map window is sized from this,
+## not from view_size(), so a zoom stitches once instead of on every frame of its tween.
+func target_view_size() -> Vector2:
+	return _base_view() * maxf(_factor, levels[level])
+
+
 func set_level(i: int) -> void:
 	i = clampi(i, 0, levels.size() - 1)
 	if i == level:
@@ -121,24 +123,28 @@ func _focus() -> Vector2:
 	return _target.camera_focus() if _target.has_method("camera_focus") else _target.global_position
 
 
-## Where the camera wants to be: on the player, or at the furthest zoom on a nearby dome
-## (as far toward its centre as possible while the player stays on screen).
+## Normal play follows the astronaut at every zoom level; only cutscenes override the focus.
 func _goal() -> Vector2:
 	if focus_override != null:
 		return focus_override - offset
-	var goal := _focus()
-	if level < levels.size() - 1 or frames.is_empty():
-		return goal
-	var half := view_size() * 0.5 - Vector2(frame_margin, frame_margin)
-	var best := goal
-	var best_d := INF
-	for r in frames:
-		var c := r.get_center() - offset
-		var d := goal.distance_to(c)
-		if d < best_d and d < view_size().length() * 0.6:
-			best_d = d
-			best = c.clamp(goal - half, goal + half)
-	return best
+	return _focus()
+
+
+## Where the camera would sit if the world were drawn the way view k draws it.
+##
+## MapStream has to stitch a window for the two views the player might turn to next, and a
+## window is built around where the camera will be, not where it is. This has to agree with
+## _goal() exactly for the view the player is already in, or the first frame of a turn would
+## land on ground the window does not cover. Both views follow the astronaut at every zoom.
+func centre_in(terrain: MapTerrain, k: int, player: Player) -> Vector2:
+	if posmod(k, 4) == terrain.heading:
+		return _goal() + offset
+	# The same point _sync() draws the astronaut at, as view k would draw it.
+	var feet := terrain.to_screen_in(k, player.world_pos, terrain.height_at(player.world_pos)).round()
+	var goal := feet + (player.sprite.position + player.shadow.position) * 0.5 - offset
+	var half := view_size() * 0.5
+	var size := Vector2(terrain.size_in(k))
+	return goal.clamp(half - offset, size - half - offset) + offset
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -153,10 +159,16 @@ func _unhandled_input(event: InputEvent) -> void:
 func _apply_factor(f: float) -> void:
 	_factor = f
 	zoom = Vector2.ONE / f
-	# Once a map pixel gets smaller than a screen pixel, let mipmaps shrink it smoothly.
+	# Once a map pixel gets smaller than a screen pixel, let mipmaps shrink it smoothly. A
+	# streamed map has none: its picture is a window stitched afresh as the camera moves, and a
+	# mip pyramid whose phase shifts with the window would shimmer at every restitch.
 	var screen_px_per_map_px := _base_scale() / f
-	_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if screen_px_per_map_px < 0.999 \
-			else CanvasItem.TEXTURE_FILTER_NEAREST
+	if screen_px_per_map_px >= 0.999:
+		_map.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	elif _streamed:
+		_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	else:
+		_map.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 
 func _build_levels() -> void:

@@ -71,6 +71,7 @@ var _stuck := 0.0
 var _flash := 0.0                # blinking back in beside you
 var _hop := 0.0                  # its little hop of greeting
 var _t := 0.0
+var _drawn: Variant = null       # what its eyes and prompt showed last time they were drawn
 var _lit: Node2D
 var _glow: Node2D
 var _halos := {}
@@ -131,9 +132,13 @@ func setup(info: Dictionary, player: Player, tool: Multitool, terrain: MapTerrai
 
 ## The camera turned: its facing as this view sees it, its foot and its depth.
 func set_view() -> void:
-	_mat.set_shader_parameter("depth_map", _terrain.depth_map)
-	_mat.set_shader_parameter("map_size", _terrain.map_size)
+	refresh_window()
 	_place()
+
+
+## The depth map it hides behind is a moving window (MapStream): point the shader at it again.
+func refresh_window() -> void:
+	MapStream.bind(_mat, _terrain)
 
 
 ## Coming back in through the airlock: it meets you by the door, with a hop and a chirp.
@@ -211,8 +216,14 @@ func _process(delta: float) -> void:
 			talk()
 	sprite.position.y = -roundf(sin(PI * clampf(_hop / 0.5, 0.0, 1.0)) * 6.0)
 	_place()
-	_lit.queue_redraw()
-	_glow.queue_redraw()
+	# Redraw only when what its layers show has changed (as DayClock does): it moving needs none,
+	# they move with it. The eyes, the prompt and its bob, the talking pulse, the blink-in flash.
+	var state := [_row, _eyes_on(), _prompt, roundf(sin(_t * 4.0)) if _prompt else 0.0,
+			roundf(sin(_t * 12.0) * 3.0) if _talking else 0.0, ceili(_flash * 10.0), sprite.position.y]
+	if state != _drawn:
+		_drawn = state
+		_lit.queue_redraw()
+		_glow.queue_redraw()
 
 
 # ---------------------------------------------------------------- following

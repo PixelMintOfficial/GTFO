@@ -530,6 +530,30 @@
    "note": "Synthesised: two struggling ticks, then warm light. The first thing in the game you actually fix.",
    "group": "The multitool"
   },
+  "suit_light_on": {
+   "files": [
+    "suit_light_on.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -13.0,
+   "loop": false,
+   "seconds": 0.532,
+   "dist": 260.0,
+   "note": "Synthesised: the switch on the suit, then its lamp catching. After dark it is the only light the astronaut has, so switching it on is an event you hear.",
+   "group": "Lights and beacons"
+  },
+  "suit_light_off": {
+   "files": [
+    "suit_light_off.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -14.0,
+   "loop": false,
+   "seconds": 0.288,
+   "dist": 260.0,
+   "note": "Synthesised: the same switch, and the lamp letting go. A shade shorter and quieter than switching it on - you hear the dark arrive, not the click.",
+   "group": "Lights and beacons"
+  },
   "cargo_land": {
    "files": [
     "cargo_land_0.wav",

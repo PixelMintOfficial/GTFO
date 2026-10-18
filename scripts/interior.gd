@@ -12,6 +12,7 @@ extends Node2D
 ## --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ## --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ## --dev-panel / --dev-freeze=hunger,thirst,oxygen (master control panel, F1; see DevPanel)
+## --suit-light starts with the suit's lamp lit (L switches it; see SuitLight)
 ## --repair=power|oxygen opens its current task (three demo scraps supplied for captures).
 ## --repair-done=power|oxygen|both marks both tasks for repaired-art captures.
 ## --repair-circuit=power|oxygen skips cracks only for circuit screenshots/tests.
@@ -23,6 +24,7 @@ extends Node2D
 ## --window-fit=N fits N pieces; --window-scan=P starts the complete board's scan at fraction P.
 ## --window-close=S closes that live panel after S seconds for world scan/persistence captures.
 ## --audio-debug (print every sound as it plays)
+## --perf / --perf-every=SECONDS (print texture memory, draw calls and frame times)
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
 ## --turn=N (start with the camera turned N quarter turns round; G / H turn it)
 ## --turn-left / --turn-right (turn the camera once after a second, see ViewTurn)
@@ -36,11 +38,13 @@ const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
 const PROPS_JSON := "res://assets/maps/base_interior/interior_props.json"
 
 var terrain: MapTerrain
+var stream: MapStream
 var door: AirlockDoor
 var repairs: MachineRepairs
 var cracks: WindowCracks
 var view_turn: ViewTurn
 var solar_input: SolarPowerInput
+var suit_light: SuitLight
 var bot: Bot
 var bulkheads: Array[Bulkhead] = []
 var dialogue: BotDialogue
@@ -64,14 +68,18 @@ func _ready() -> void:
 	_repair_mask = _completed_mask()
 	terrain = MapTerrain.new(_repair_map(_repair_mask), GameState.heading)
 	$Map.texture = terrain.map_texture
-	player.setup(terrain, terrain.depth_map)
+	player.setup(terrain)
 	player.camera.zoom_locked = true                     # no zooming out indoors
-	player.camera.setup(player, $Map, terrain.max_view_px)
-	multitool.setup(PROPS_JSON, player, terrain, $Actors, terrain.depth_map)
+	player.camera.setup(player, $Map, terrain.max_view_px, terrain.streaming)
+	stream = MapStream.new()
+	add_child(stream)
+	stream.setup(terrain, $Map, player.camera, player)
+	stream.published.connect(_window_moved)
+	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	fx.setup(terrain.view_json, player)
-	day_night.setup(player, $Map, terrain.light_mask, terrain.sun_mask)
+	day_night.setup($Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	var meta := ViewData.get_json(terrain.view_json)
 	# Damaged O2 room has unsafe air; the suit spends its reserve until wiring is restored.
 	# Room coordinates are world metadata and remain valid through camera turns.
 	var room: Dictionary = meta["rooms"]["oxygen"]
@@ -100,10 +108,13 @@ func _ready() -> void:
 	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
 	add_child(dev_panel)
 	dev_panel.setup(player)
+	suit_light = SuitLight.new()                       # L: the base is dead, so bring your own
+	add_child(suit_light)
+	suit_light.setup(player, multitool)
 	_setup_story(meta)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
-	view_turn.setup(terrain, player, _apply_view, _turn_boards)
+	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -151,13 +162,14 @@ func _setup_door(meta: Dictionary) -> void:
 ## The camera turned round the base: switch everything to that view.
 func _apply_view(k: int, world_facing: Vector2) -> void:
 	terrain.load_view(k)
-	$Map.texture = terrain.map_texture
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
+	var meta := ViewData.get_json(terrain.view_json)
 	player.refresh_view(world_facing)
-	player.camera.set_view_limits(terrain.max_view_px, terrain.frames)
+	player.camera.set_view_limits(terrain.max_view_px)
+	stream.refresh(true)                                 # the window, once the camera has moved
+	$Map.texture = terrain.map_texture
 	day_night.set_masks(terrain.light_mask, terrain.sun_mask)
 	fx.load_view(terrain.view_json)
-	multitool.set_view(terrain.depth_map)
+	multitool.set_view()
 	repairs.set_view(meta)
 	solar_input.load_view(meta)
 	cracks.set_view(meta)
@@ -168,6 +180,15 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	bot.set_view()
 	door.queue_free()
 	_setup_door(meta)
+
+
+## The depth window has moved: point everything that samples it at where it is now.
+func _window_moved(_heading: int) -> void:
+	player.refresh_window()
+	multitool.refresh_window()
+	bot.refresh_window()
+	for b in bulkheads:
+		b.refresh_window()
 
 
 ## The loose props (scrap, the cargo box, rations), for the camera's swing.
@@ -189,7 +210,7 @@ func _completed_mask() -> int:
 func _repair_map(mask: int) -> String:
 	if mask == 0:
 		return MAP_JSON
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP_JSON))
+	var meta := ViewData.get_json(MAP_JSON)
 	return MAP_JSON.get_base_dir().path_join(meta["repair_variants"][str(mask)])
 
 
@@ -229,8 +250,11 @@ func _quit_after(seconds: float) -> void:
 
 
 func _run_test_hooks(args: Dictionary) -> void:
+	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
+	if args.has("suit-light") and not suit_light.on():
+		suit_light.toggle()
 	if args.has("repair-bars"):
 		repairs.set_process_unhandled_input(false)
 	if args.has("repair-done"):

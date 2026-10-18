@@ -34,6 +34,7 @@ var _half := 15.0
 var _frames := 10
 var _opening := -1.0            # seconds into opening (-1: not opening)
 var _t := 0.0
+var _drawn: Variant = null      # what the lamp and label showed last time they were drawn
 var _halos := {}
 
 
@@ -78,9 +79,13 @@ func set_view(info: Dictionary, base_dir: String) -> void:
 	sprite.position = Vector2(info["position"][0], info["position"][1]) - position
 	_lit.position = -position                            # draws in map pixels
 	_glow.position = -position
-	_mat.set_shader_parameter("depth_map", _terrain.depth_map)
-	_mat.set_shader_parameter("map_size", _terrain.map_size)
+	refresh_window()
 	_mat.set_shader_parameter("sprite_depth", _terrain.view_depth(world))
+
+
+## The depth map it hides behind is a moving window (MapStream): point the shader at it again.
+func refresh_window() -> void:
+	MapStream.bind(_mat, _terrain)
 
 
 ## Reserve power is on: the leaves slide into the posts, and the corridor opens.
@@ -100,8 +105,12 @@ func _process(delta: float) -> void:
 		if k >= 1.0:
 			_opening = -1.0
 			_set_open(true)
-	_lit.queue_redraw()
-	_glow.queue_redraw()
+	# Redraw only when the lamp blinks, the bulkhead opens or SEALED comes and goes (as DayClock does).
+	var state := [_lamp_on(), opened, _notice()]
+	if state != _drawn:
+		_drawn = state
+		_lit.queue_redraw()
+		_glow.queue_redraw()
 
 
 func _set_open(value: bool) -> void:
@@ -129,6 +138,11 @@ func boards() -> Array:
 			"anchor": foot - (position + sprite.position), "world": Vector3(world.x, world.y, _terrain.height_at(world))}]
 
 
+## Close enough to a sealed bulkhead to be told so.
+func _notice() -> bool:
+	return not opened and _player != null and _player.controls_enabled and _player.world_pos.distance_to(world) < NOTICE
+
+
 func _lamp_on() -> bool:
 	return opened or fmod(_t, 1.2) < 0.6                 # sealed: a slow red blink
 
@@ -136,7 +150,7 @@ func _lamp_on() -> bool:
 func _draw_lamp() -> void:
 	if _lamp_on():
 		_lit.draw_rect(Rect2(_lamp.round() - Vector2(1, 1), Vector2(2, 2)), (OPEN if opened else SEALED).lerp(Color.WHITE, 0.4))
-	if not opened and _player != null and _player.controls_enabled and _player.world_pos.distance_to(world) < NOTICE:
+	if _notice():
 		var w := PixelFont.width("SEALED") + 6
 		var top := (_lamp + Vector2(-round(w / 2.0), -14)).round()
 		_lit.draw_rect(Rect2(top - Vector2(1, 1), Vector2(w + 2, 11)), Color("#120f1d", 0.9))

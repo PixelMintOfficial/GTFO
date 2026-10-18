@@ -670,6 +670,35 @@ def syn_lamp_on(name):
     return run(out, [hp(70), lp(6000), norm(-6.0)])
 
 
+def syn_suit_light(name, on=True):
+    """The switch on the suit's chest and the lamp behind it: a small dry clack, then the beam
+    catching, or letting go. Synthesised, like every other light on this planet. Its partials
+    are deliberately out of key with each other - a lamp is not a chord."""
+    rng = seeded(name)
+    sec = 0.55 if on else 0.32
+    out = np.zeros(_ns(sec))
+    _add(out, 0.9 * run(noise(0.02, rng), [bp(1800, 6200), fade(0.0005, 0.018)]), 0.0)
+    _add(out, 0.5 * (sine(0.05, 2100.0) + 0.6 * sine(0.05, 3170.0)) * dec(0.05, 0.012), 0.0)
+    body = sec - 0.06
+    lamp = 0.55 * sine(body, 520.0) + 0.3 * sine(body, 737.0) + 0.18 * sine(body, 1193.0)
+    hiss = 0.25 * run(noise(body, rng), [bp(2400, 7000)])
+    if on:
+        _add(out, 0.45 * (lamp + hiss) * ramp(body, [(0, 0), (0.12, 0.85), (0.3, 0.5), (1, 0.0)]), 0.05)
+        _add(out, 0.3 * sweep(0.18, 380.0, 1180.0) * dec(0.18, 0.09), 0.05)
+    else:
+        _add(out, 0.4 * (lamp + hiss) * ramp(body, [(0, 0.7), (0.45, 0.16), (1, 0.0)]), 0.04)
+        _add(out, 0.26 * sweep(0.14, 900.0, 300.0) * dec(0.14, 0.07), 0.04)
+    return run(out, [hp(220), lp(7200), norm(-6.0)])
+
+
+def syn_suit_light_on(name):
+    return syn_suit_light(name, True)
+
+
+def syn_suit_light_off(name):
+    return syn_suit_light(name, False)
+
+
 def syn_lamp_hum(name):
     """A lit lamp, heard from close by. 2 s, seamless, and deliberately almost nothing."""
     rng = seeded(name)
@@ -1249,6 +1278,14 @@ RECIPES = {
     'lamp_on': dict(bus='sfx', gain_db=-10.0, dist=380.0, synth=syn_lamp_on,
                     note='Synthesised: two struggling ticks, then warm light. The first thing '
                          'in the game you actually fix.'),
+    'suit_light_on': dict(
+        bus='sfx', gain_db=-13.0, dist=260.0, synth=syn_suit_light_on,
+        note='Synthesised: the switch on the suit, then its lamp catching. After dark it is the '
+             'only light the astronaut has, so switching it on is an event you hear.'),
+    'suit_light_off': dict(
+        bus='sfx', gain_db=-14.0, dist=260.0, synth=syn_suit_light_off,
+        note='Synthesised: the same switch, and the lamp letting go. A shade shorter and quieter '
+             'than switching it on - you hear the dark arrive, not the click.'),
 
     # ---------------------------------------------------------------- storage's panes and the cargo box
     'cargo_land': dict(
@@ -1544,7 +1581,7 @@ GROUPS = [
     ('cargo_', 'Storage: the cargo box and the panes'), ('ration_', 'Storage: the cargo box and the panes'),
     ('pane_', 'Storage: the cargo box and the panes'),
     ('crash_', 'The satellite crash'), ('debris', 'The satellite crash'),
-    ('beacon', 'Lights and beacons'),
+    ('beacon', 'Lights and beacons'), ('suit_light', 'Lights and beacons'),
     ('ui_', 'Interface'),
 ]
 

@@ -98,10 +98,10 @@ func setup(meta_path: String, camera: GameCamera, player: Player, biome: BiomeFX
 ## sparks already in the air are let go).
 func load_view(meta_path: String) -> void:
 	var dir := meta_path.get_base_dir()
-	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	var meta := ViewData.get_json(meta_path)
 	if not meta.has("fx"):
 		return
-	var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join(meta["fx"])))
+	var fx := ViewData.fx_of(meta_path, meta)
 	var c: Dictionary = fx["crash"]
 	_focus = _v(c["focus"])
 	_sky = _v(c["sky"])

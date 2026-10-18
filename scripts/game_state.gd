@@ -9,6 +9,9 @@ var arrive := ""
 var door_id := -1
 ## Whether the multitool was out, so it stays out across the airlock.
 var tool_out := false
+## The lamp on the astronaut's suit (SuitLight): off when the game begins, and as you left it
+## through the airlock. It is the only light they carry, and nothing switches it on for them.
+var suit_light := false
 ## Which way the camera faces: quarter turns round the world (0..3), the same indoors and out.
 var heading := 0
 ## The time: game hours since the game began (on day 1, at 08:00). DayNight moves it on and

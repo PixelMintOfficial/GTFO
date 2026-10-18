@@ -3,7 +3,9 @@ render_mode unshaded;
 // SDF-generated receiver mask: R height, G cell interior, B local view depth, A surface.
 // Sweeping silver reflections follow daylight; connected cells retain their own energy.
 uniform sampler2D depth_map : filter_nearest, repeat_disable;
-uniform vec2 map_size;
+// The depth map holds only the part of the view that is in memory (MapStream): x, y where the
+// window starts in map pixels, z, w how big it is. Outside it counts as sky, so nothing hides.
+uniform vec4 map_win = vec4(0.0, 0.0, 1.0, 1.0);
 uniform float depth_scale = 20.0;
 uniform float receiver_depth;
 uniform float radius = 62.0;
@@ -15,10 +17,12 @@ varying vec2 map_pos;
 void vertex() { map_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy; }
 void fragment() {
 	vec4 mask = texture(TEXTURE, UV);
-	vec4 depth_tex = texture(depth_map, (floor(map_pos) + .5) / map_size);
+	ivec2 dp = ivec2(floor(map_pos) - map_win.xy);
+	bool inside = all(greaterThanEqual(dp, ivec2(0))) && all(lessThan(dp, ivec2(map_win.zw)));
+	vec4 depth_tex = inside ? texelFetch(depth_map, dp, 0) : vec4(1.0, 1.0, 0.0, 1.0);
 	float depth = (round(depth_tex.r * 255.0) * 256.0 + round(depth_tex.g * 255.0)) / depth_scale;
 	float surface = receiver_depth + (mask.b * 2.0 - 1.0) * radius;
-	if (depth < surface - 1.5 && depth_tex.b < .5) discard;
+	if (inside && depth < surface - 1.5 && depth_tex.b < .5) discard;
 	float sheen = step(abs(fract(UV.x * .7 + mask.r * .3 - clock * .08) - .5), .018) * daylight;
 	float rise = max(0.0, 1.0 - abs(mask.r - startup * .5) * 12.0) * step(startup, 2.4);
 	float circuit = step(abs(fract(mask.r * 4.0 - clock * .35) - .5), .055);

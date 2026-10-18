@@ -4,6 +4,7 @@ extends Node2D
 ## funnels and the cone's energizing wave. No input or optical/state mutations live here.
 ## Deployment/charge phases survive view changes; entering a powered field does not replay
 ## completion. SDF receiver masks and all positions are regenerated for each of four views.
+## Source sheets use generated yaw_offset so the beacon outlet faces its actual world ray.
 
 const RECEIVER := preload("res://shaders/solar_receiver.gdshader")
 const BEAM := preload("res://shaders/solar_beam.gdshader")
@@ -67,11 +68,17 @@ func load_view() -> void:
 	material.set_shader_parameter("radius", _state.field["collector"]["radius"])
 	for node in [_receiver, _crown, _pulse] + _funnels:
 		var shader := node.material as ShaderMaterial
-		shader.set_shader_parameter("depth_map", _terrain.depth_map)
-		shader.set_shader_parameter("map_size", _terrain.map_size)
+		MapStream.bind(shader, _terrain)
 		shader.set_shader_parameter("depth_scale", _terrain.depth_scale)
 	_crown.mesh = SolarBeamVisuals.mesh(_terrain, _ring(float(_state.field["collector"]["top_radius"]) + .5, float(_state.field["collector"]["height"]) + 2), 2.0)
 	refresh()
+
+## The depth window has moved: point the receiver and its beams at where it is now.
+func refresh_window() -> void:
+	for node in [_receiver, _crown, _pulse] + _funnels:
+		if node != null and node.material != null:
+			MapStream.bind(node.material as ShaderMaterial, _terrain)
+
 
 func _ring(radius: float, height: float) -> Array:
 	var world := SolarOptics.point(_state.field["collector"]["world"])
@@ -106,7 +113,7 @@ func _process(delta: float) -> void:
 	for group in 3:
 		var route: Dictionary = _state.field["routes"][group]
 		var world := SolarOptics.point(route["source"])
-		var direction := SolarOptics.point(route["direction"])
+		var direction := SolarOptics.point(route["direction"]).normalized()
 		var visual: Dictionary = _art["feed_visual"]
 		var local := SolarOptics.point(visual["crystal_offset"])
 		var crystal := world + direction * local.x + direction.orthogonal() * local.y
@@ -130,7 +137,7 @@ func refresh() -> void:
 		var prop := entry["prop"] as WorldProp
 		if entry["source"]:
 			var direction := _terrain.view_dir(SolarOptics.point(_state.field["routes"][group]["direction"]))
-			var quadrant := posmod(roundi(direction.angle() / (PI / 2)), 4)
+			var quadrant := posmod(roundi((direction.angle() - float(sheets["source"].get("yaw_offset", 0.0))) / (PI / 2)), 4)
 			var count: int = sheets["source"]["deploy_frames"]
 			prop.sprite.frame = quadrant * count + roundi(deployment[group] * (count - 1))
 		else:
