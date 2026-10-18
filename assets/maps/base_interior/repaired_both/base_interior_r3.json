@@ -20,7 +20,8 @@
   "view_center": [
    0.0,
    525.0
-  ]
+  ],
+  "reserve_png": "base_interior_reserve_r3.png"
  },
  "name": "base_interior",
  "image": "base_interior_r3.png",
@@ -99,6 +100,70 @@
   ],
   "height": 34.0
  },
+ "bulkheads": [
+  {
+   "id": "power",
+   "file": "anim/bulkhead_power_r3.png",
+   "frames": 10,
+   "position": [
+    223,
+    286
+   ],
+   "frame_size": [
+    139,
+    90
+   ],
+   "sort_y": 365.1,
+   "world": [
+    127.0,
+    525.0
+   ],
+   "axis": 0,
+   "half_width": 15.0,
+   "height": 34.0,
+   "lamp_px": [
+    292.5,
+    289.5
+   ]
+  },
+  {
+   "id": "oxygen",
+   "file": "anim/bulkhead_oxygen_r3.png",
+   "frames": 10,
+   "position": [
+    223,
+    579
+   ],
+   "frame_size": [
+    139,
+    91
+   ],
+   "sort_y": 658.4,
+   "world": [
+    -127.0,
+    525.0
+   ],
+   "axis": 0,
+   "half_width": 15.0,
+   "height": 34.0,
+   "lamp_px": [
+    292.5,
+    582.8
+   ]
+  }
+ ],
+ "bot": {
+  "world": [
+   -42.0,
+   498.0
+  ],
+  "facing": [
+   0.0,
+   -1.0
+  ],
+  "radius": 7.0,
+  "height": 14.0
+ },
  "repair_machines": [
   {
    "id": "power",
@@ -133,6 +198,29 @@
    ]
   }
  ],
+ "solar_input": {
+  "anchor": [
+   162.6,
+   138.1
+  ],
+  "world": [
+   287.2652416360247,
+   581.2652416360247,
+   21.0
+  ],
+  "panel_id": "ne",
+  "housing": "solar_input/housing_r3.png",
+  "lights": "solar_input/lights_r3.png",
+  "position": [
+   137,
+   111
+  ],
+  "size": [
+   51,
+   53
+  ],
+  "frames": 8
+ },
  "repair_variants": {
   "1": "repaired_power/base_interior.json",
   "2": "repaired_oxygen/base_interior.json",
@@ -437,28 +525,5 @@
     780.2
    ]
   ]
- },
- "solar_input": {
-  "anchor": [
-   162.6,
-   138.1
-  ],
-  "world": [
-   287.2652416360247,
-   581.2652416360247,
-   21.0
-  ],
-  "panel_id": "ne",
-  "housing": "solar_input/housing_r3.png",
-  "lights": "solar_input/lights_r3.png",
-  "position": [
-   137,
-   111
-  ],
-  "size": [
-   51,
-   53
-  ],
-  "frames": 8
  }
 }

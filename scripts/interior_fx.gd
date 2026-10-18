@@ -9,6 +9,9 @@ extends Node2D
 ## Repaired room variants omit their fault emitters and use steady cyan status LEDs.
 ## Each shaft carries its pane ID. A sealed pane loses its shaft and dust immediately;
 ## load_view reads the session repair ledger so neither returns after a turn or airlock.
+## Reserve power (the bot switches it on: GameState.story.reserve_power): the generator's reserve
+## overlay (game.reserve_png: the emergency lines and floor rings, bloomed) laid over the map
+## additively, flickering on the first time, steady after that (and after a turn or the airlock).
 
 const DUST := Color("#ffe6b4")
 const SPARK_HOT := Color("#fff0a0")
@@ -35,6 +38,8 @@ var _label_t := 99.0
 var _glow: Node2D
 var _lit: Node2D                # sparks: their own light, bright by night too
 var _toast: Node2D
+var _reserve: Sprite2D
+var _reserve_t := -1.0          # seconds since reserve power came on (-1: off)
 var _halos := {}
 var _discs := {}
 var _t := 0.0
@@ -48,6 +53,13 @@ func setup(meta_path: String, player: Player) -> void:
 	_glow.material = add
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
+	_reserve = Sprite2D.new()
+	_reserve.centered = false
+	_reserve.material = add
+	_reserve.visible = false
+	add_child(_reserve)
+	if GameState.story.reserve_power:                    # already on: no flicker coming back in
+		_reserve_t = 99.0
 	_lit = Node2D.new()
 	_lit.set_meta("dn_unlit", true)
 	_lit.draw.connect(_draw_lit)
@@ -69,6 +81,8 @@ func load_view(meta_path: String) -> void:
 	for a in [_shafts, _motes, _leds, _tanks, _spark_points, _sparks, _flashes, _vents, _puffs, _rooms]:
 		a.clear()
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
+	if meta["game"].has("reserve_png"):
+		_reserve.texture = load(meta_path.get_base_dir().path_join(meta["game"]["reserve_png"]))
 	var fx: Dictionary = meta["fx"]
 	for s in fx["shafts"]:
 		if GameState.window_repair.fixed.has(s["pane"]):
@@ -128,6 +142,7 @@ func _process(delta: float) -> void:
 			m[0] = r.position + Vector2(randf() * r.size.x, randf() * r.size.y * 0.3)
 	_update_sparks(delta)
 	_update_vapor(delta)
+	_update_reserve(delta)
 	for i in _vents.size():                              # the snapped pipe, still hissing
 		Audio.loop("amb_gas_leak", "gas:%d" % i, _vents[i][0] as Vector2)
 	var room := ""                                        # which room you are in
@@ -145,6 +160,22 @@ func _process(delta: float) -> void:
 	_glow.queue_redraw()
 	_lit.queue_redraw()
 	_toast.queue_redraw()
+
+
+## Reserve power: the emergency lines stutter on, then hold, breathing a little.
+func _update_reserve(delta: float) -> void:
+	if not GameState.story.reserve_power or _reserve.texture == null:
+		_reserve.visible = false
+		return
+	if _reserve_t < 0.0:
+		_reserve_t = 0.0
+	_reserve_t += delta
+	var k := _reserve_t
+	var a := 0.92 + 0.08 * sin(_t * 1.7)
+	if k < 1.2:
+		a = (0.45 + 0.5 * k / 1.2) if (fmod(k, 0.27) < 0.15 or k > 0.95) else 0.08
+	_reserve.visible = true
+	_reserve.modulate.a = a
 
 
 ## Torn wiring spits a few sparks now and then: sometimes one, sometimes a crackling run.

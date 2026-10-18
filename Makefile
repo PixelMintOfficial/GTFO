@@ -8,7 +8,7 @@
 #   make sfx            regenerate all sound     (fast; needs make sources first)
 #   make props          regenerate the test props (fast, needs the map's data)
 #   make solar          regenerate solar mirror/feed sheets and four-view anchors
-#   make interior       regenerate the base interior (seconds)
+#   make interior       regenerate the base interior and its bot (about a minute)
 #   make windows        regenerate only glass inspection assets
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
 #   make map            regenerate the overworld (~3 min, several GB of RAM)
@@ -61,6 +61,7 @@ solar: $(PY)
 interior: $(PY)
 	$(PY) tools/interior_gen.py
 	$(PY) tools/window_repair_gen.py
+	$(PY) tools/bot_gen.py
 
 windows: $(PY)
 	$(PY) tools/window_repair_gen.py
@@ -107,7 +108,7 @@ check-interior:
 		|| { echo "interior: errors above" >&2; exit 1; }
 
 # The regression suites: the inventory's real input events, the circuit repair model over a
-# thousand shuffled boards, the camera's turn, and the cargo box under storage's smashed panes.
+# thousand shuffled boards, the camera's turn, the cargo box under storage's smashed panes, and the bot.
 # They report their own pass/fail and exit nonzero.
 check-tests:
 	@echo "== tests"
@@ -126,6 +127,7 @@ check-tests:
 	@$(GODOT) --headless --path . res://tests/dev_panel_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_glass_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/window_restore_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/bot_story_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error|[1-9][0-9]* failures' /tmp/gtfo-tests.log \
 		|| { echo "tests: failures above" >&2; exit 1; }
 

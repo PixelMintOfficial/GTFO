@@ -919,6 +919,61 @@
    "note": "A machine's wiring finished: the warmth of lamp_on, because it is the same feeling - something here works again.",
    "group": "The circuit panel"
   },
+  "bot_boot": {
+   "files": [
+    "bot_boot.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -9.0,
+   "loop": false,
+   "seconds": 1.15,
+   "dist": 360.0,
+   "note": "The bot waking, timed to its 1 s wake animation: relay clack, rising servo, two ticks as its eyes catch, two inharmonic blips.",
+   "group": "Other"
+  },
+  "bot_chirp": {
+   "files": [
+    "bot_chirp_0.wav",
+    "bot_chirp_1.wav",
+    "bot_chirp_2.wav",
+    "bot_chirp_3.wav",
+    "bot_chirp_4.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -20.0,
+   "loop": false,
+   "seconds": 0.081,
+   "pitch": [
+    0.94,
+    1.08
+   ],
+   "note": "The bot's voice while its words type out, every few letters. Five variants at inharmonic ratios and a pitch spread: a sentence never becomes a tune. Near-threshold, like the UI ticks.",
+   "group": "Other"
+  },
+  "bot_hover": {
+   "files": [
+    "bot_hover.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -18.0,
+   "loop": true,
+   "seconds": 2.0,
+   "dist": 200.0,
+   "fade": 0.4,
+   "note": "The bot following you: a soft lift-fan hum, heard only close by. Seamless 2 s.",
+   "group": "Other"
+  },
+  "reserve_on": {
+   "files": [
+    "reserve_on.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -8.0,
+   "loop": false,
+   "seconds": 1.734,
+   "note": "Reserve power: a relay clunk, then the emergency hum stuttering on in step with the flicker InteriorFX draws on the emergency lines.",
+   "group": "Other"
+  },
   "ui_map_open": {
    "files": [
     "ui_map_open.wav"

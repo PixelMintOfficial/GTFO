@@ -43,6 +43,8 @@ var window_repair := WindowRepair.new()
 var survival := SurvivalState.new()
 ## Solar routing/closed feeds persist through camera turns, airlocks and rescue.
 var solar_field := SolarFieldState.new()
+## The bot, your name, reserve power and the objectives (StoryState); kept through rescue.
+var story := StoryState.new()
 ## Initial developer vital overrides apply once, never on airlock transitions or rescue.
 var survival_debug_initialized := false
 

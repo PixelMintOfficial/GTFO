@@ -8,6 +8,14 @@ The inside of the main base, as a cutaway diorama: three round rooms - storage i
 left - joined by short corridors. Same iso camera, outlines and data formats as the overworld
 (tools/mars_map_gen.py), so the astronaut and the game's map code work unchanged.
 
+The bot and its bulkheads: the corridors to the power and oxygen rooms are sealed by bulkheads
+until the bot wakes. Their frames are baked into the room (their threshold is walkable); their
+leaves are sprite sheets (anim/bulkhead_<room>*.png, closed -> open; `bulkheads` in each view's
+JSON). The bot's charging cradle is baked into storage; the bot itself is a sprite
+(tools/bot_gen.py), sleeping at `bot.world`. Reserve power lights the emergency lines:
+base_interior_reserve*.png (game.reserve_png) is that light, laid over the map additively once
+the bot switches it on.
+
     python tools/interior_gen.py
 
 Look
@@ -83,6 +91,11 @@ ROOMS = {   # dome: the base room outside it on the overworld (mars_map_gen BASE
 }
 CORRIDORS = [('storage', 'power'), ('storage', 'oxygen')]
 CORR_HALF = 15.0                  # corridor half width
+SEALED = ('power', 'oxygen')      # rooms behind a bulkhead until the bot wakes (scripts/story/bulkhead.gd)
+BULK_H = 34.0                     # a bulkhead's doorway height (the corridor walls are CORR_H)
+BULK_FRAMES = 10                  # its leaves sliding open: closed -> open
+BOT_AT = (-42.0, -22.0)           # the bot's cradle, from storage's middle: clear south-west floor
+BOT_RADIUS = 7.0                  # how much floor the cradle (and the bot asleep on it) takes
 WALL_T = 5.0                      # wall thickness
 WALL_H = 56.0                     # back walls
 WALL_LOW = 4.5                    # the cut-away front walls
@@ -313,7 +326,7 @@ _orig_part_bound = M.part_bound
 M.part_bound = part_bound
 
 
-STEP_OVER = ('shard', 'cable', 'cableend', 'wire', 'scrap', 'o2panel', 'blade')   # low things you walk over
+STEP_OVER = ('shard', 'cable', 'cableend', 'wire', 'scrap', 'o2panel', 'blade', 'threshold')   # low things you walk over
 BODY_H = 9.0                      # anything in the way below this blocks you
 
 
@@ -905,6 +918,144 @@ def oxygen_props(rs):
     return parts, C, tanks, fx
 
 
+# ================================================================== the bot's cradle and the bulkheads
+def bot_cradle_pt():
+    """Where the bot's cradle stands: storage's clear south-west floor."""
+    st = ROOMS['storage']
+    return cam(st['X'] + BOT_AT[0], st['Y'] + BOT_AT[1])
+
+
+def decal_cradle(part, P):
+    """The cradle's plinth (a Disc: local x is up): dark steel, a groove round the rim, two dead
+    charge contacts on top."""
+    q = part.sdf.local(P)
+    out = np.full(len(P), OID['steel'])
+    r = np.hypot(q[:, 1], q[:, 2])
+    out[(r > 5.6) & (r < 6.1)] = OID['cable']
+    out[(q[:, 0] > 0.4) & (np.abs(q[:, 1]) < 0.7) & (np.abs(np.abs(q[:, 2]) - 2.6) < 0.7)] = OID['darkwin']
+    return out
+
+
+def cradle_parts():
+    """The bot's charging cradle (the bot is a sprite: tools/bot_gen.py) and its charge cable run
+    to a socket in the wall behind it. Its own dice, so storage's other detail stays put."""
+    rs = np.random.default_rng(311)
+    c = bot_cradle_pt()
+    ang = math.degrees(math.atan2(BOT_AT[1], BOT_AT[0]))      # straight back to the wall behind it
+    sock = room_pt('storage', ang, r_in('storage') - 0.6, 1.6)
+    R = A.rz(math.radians(ang + 90))
+    parts = [P_('cradle', A.Disc(c + [0, 0, 0.7], 6.6, 0.7, 0.4, M.UPAX), 'steel', 'cradle', decal_cradle),
+             P_('cradlering', A.Torus(c + [0, 0, 1.45], 5.0, 0.45), 'coral', 'cradle'),
+             P_('socket', A.RoundBox(sock, (1.6, 0.6, 1.2), 0.3, R), 'dark', 'cradle')]
+    parts += wire(sock, (sock + c) / 2 + np.array([0, 0, 0.5]), c + A.nz(sock - c) * 6.4, rs,
+                  'cable', 'cradlecable', r=0.55, curl=0)
+    return parts
+
+
+def bulkhead_pt(room):
+    """The middle of the doorway sealing storage from a side room: halfway along the corridor's
+    open stretch, on its middle line, at the floor."""
+    x0, x1, y = corridor_rect('storage', room)
+    st, rm = ROOMS['storage'], ROOMS[room]
+    sgn = 1 if rm['X'] > st['X'] else -1
+    return cam((st['X'] + sgn * st['R'] + rm['X'] - sgn * rm['R']) / 2, y)
+
+
+def decal_bulk_post(part, P):
+    """A bulkhead post: white, hazard stripes along its foot, the coral strip at the walls' height."""
+    q = part.sdf.local(P)
+    h = part.sdf.half
+    out = np.full(len(P), OID['white'])
+    low = q[:, 2] < -h[2] + 5.0
+    stripe = np.mod(q[:, 1] + q[:, 2], 3.0) < 1.5
+    out[low & stripe] = OID['mustard']
+    out[low & ~stripe] = OID['dark']
+    out[np.abs(q[:, 2] + h[2] - (CORAL[0] + CORAL[1]) / 2) < 1.0] = OID['coral']
+    return out
+
+
+def decal_bulk_leaf(part, P):
+    """A bulkhead leaf: steel, a hazard band at its foot, a coral line, a dark lock bar at its edge."""
+    q = part.sdf.local(P)
+    h = part.sdf.half
+    out = np.full(len(P), OID['steel'])
+    low = q[:, 2] < -h[2] + 4.5
+    stripe = np.mod(q[:, 1] + q[:, 2], 3.0) < 1.5
+    out[low & stripe] = OID['mustard']
+    out[low & ~stripe] = OID['dark']
+    out[np.abs(q[:, 2] - h[2] * 0.3) < 0.7] = OID['coral']
+    out[(np.abs(q[:, 2] - h[2] * 0.05) < 2.2) & (np.abs(q[:, 1]) > h[1] - 1.0)] = OID['dark']
+    return out
+
+
+def bulkhead_frame(room):
+    """A bulkhead's doorway, baked into the room: two posts against the corridor walls, a lintel,
+    a threshold plate (walked over) and a lamp on top (dead here: the game lights it red while
+    sealed, cyan once the bot opens it)."""
+    f = bulkhead_pt(room)
+    side = np.array([0.0, 1.0, 0.0])
+    up = np.array([0.0, 0.0, 1.0])
+    g = f'bulk_{room}'
+    parts = [P_('lintel', A.RoundBox(f + up * (BULK_H + 1.6), (1.8, CORR_HALF, 1.6), 0.5), 'white', g),
+             P_('threshold', A.RoundBox(f + up * 0.2, (1.9, CORR_HALF - 1.4, 0.2), 0.1), 'dark', g),
+             P_('bulklamp', A.Sphere(f + up * (BULK_H + 3.8), 1.2), 'deadbulb', g)]
+    for s in (1, -1):
+        parts.append(P_('bpost', A.RoundBox(f + side * s * (CORR_HALF - 1.4) + up * BULK_H / 2, (1.6, 1.4, BULK_H / 2), 0.5),
+                        'white', g, decal_bulk_post))
+    return parts
+
+
+def bulkhead_leaves(room, open_=0.0):
+    """Its two leaves, meeting in the middle (open_ 0) or telescoped into the posts (1), the way
+    the airlock door's halves go into their pockets. Drawn as a sprite over the map."""
+    f = bulkhead_pt(room)
+    e = open_ * open_ * (3 - 2 * open_)
+    span = CORR_HALF - 2.8                               # from the middle to a post
+    hw = span / 2 * (1 - 0.9 * e)
+    return [P_('leaf', A.RoundBox(f + np.array([0, s * (span - hw), BULK_H / 2]), (0.7, hw, BULK_H / 2), 0.3), 'steel',
+               f'leaf{s}', decal_bulk_leaf) for s in (1, -1)]
+
+
+def export_bulkheads():
+    """Each bulkhead's leaves opening as sprite frames to lay over the map, and what the game needs
+    to seal its corridor (world, axis, half_width) and to light its lamp (lamp_px)."""
+    out = []
+    for room in SEALED:
+        frames = [M.turned(bulkhead_leaves(room, i / (BULK_FRAMES - 1))) for i in range(BULK_FRAMES)]
+        box = M.sprite_box(frames, pad=3)
+        strip = np.concatenate([M.sprite_rgba(M.render_sprite(fp, box)) for fp in frames], axis=1)
+        fn = f'anim/bulkhead_{room}{M.SFX}.png'
+        Image.fromarray(strip).save(os.path.join(OUT, fn))
+        f = bulkhead_pt(room)
+        out.append(dict(id=room, file=fn, frames=BULK_FRAMES, position=[box[0], box[1]], frame_size=[box[2], box[3]],
+                        sort_y=round(float(M.project(*M.to_view(f))[1]), 1), world=[round(float(f[0]), 2), round(float(f[1]), 2)],
+                        axis=0, half_width=CORR_HALF, height=BULK_H, lamp_px=pxl(f + np.array([0, 0, BULK_H + 3.8]))))
+    return out
+
+
+def bot_info():
+    """Where the bot sleeps (its cradle, world), which way it faces there, how much floor it takes
+    and how tall it is (world units): the game draws it from tools/bot_gen.py's sheet."""
+    c = bot_cradle_pt()
+    return dict(world=[round(float(c[0]), 2), round(float(c[1]), 2)], facing=[0.0, -1.0], radius=BOT_RADIUS, height=14.0)
+
+
+RESERVE = np.array(A.hex2rgb('#7fe6cf'), np.float32)   # screen cyan: the emergency lines' own colour
+
+
+def export_reserve(own, filled, bay_img):
+    """Reserve power: the emergency lines and floor rings brighten and bloom. An additive overlay
+    (dithered, three steps) the game lays over the map once the bot switches reserve power on."""
+    line = (own > 0.3) & filled
+    bloom = np.clip(ndi.gaussian_filter(line.astype(np.float32), 2.5) * 1.8, 0, 1)
+    a = np.maximum(line * 0.7, bloom * 0.45) * filled
+    lv = np.floor(np.clip(a, 0, 1) * 3 + bay_img * 0.99) / 3
+    rgba = np.zeros((*own.shape, 4), np.uint8)
+    rgba[..., :3] = RESERVE.astype(np.uint8)
+    rgba[..., 3] = np.round(np.clip(lv, 0, 1) * 255).astype(np.uint8)
+    Image.fromarray(rgba).save(os.path.join(OUT, f'base_interior_reserve{M.SFX}.png'))
+
+
 # ================================================================== shading
 def wall_layers(P):
     """For wall points: which room (or corridor), its own normal, face kind (0 inner, 1 outer, 2 top),
@@ -1243,6 +1394,8 @@ def build(fixed=frozenset()):
         o_parts = restore_oxygen(o_parts, gen_c, tanks)
         ofx['sparks'], ofx['vapor'] = [], []
         ofx['leds'] = [(p, 'steady') for p, _ in ofx['leds']]
+    # the bot's cradle and the bulkhead frames last, on their own dice: everything above stays put
+    b_parts = cradle_parts() + [p for room in SEALED for p in bulkhead_frame(room)]
     M.VIEW, M.SFX = 0, ''
     set_frame()
     export_machines(p_parts + o_parts, dict(power_generator=reactor_c, oxygen_generator=gen_c))
@@ -1254,7 +1407,7 @@ def build(fixed=frozenset()):
     c = np.arange(N, dtype=np.float32) + 0.5
     U, V = np.meshgrid(c, c, indexing='ij')
     Xg, Yg = (U - V) / M.SQ2, (U + V) / M.SQ2
-    for p in s_parts + p_parts + o_parts:
+    for p in s_parts + p_parts + o_parts + b_parts:
         if p.name in STEP_OVER:
             continue
         cc, r = part_bound(p.sdf)
@@ -1272,7 +1425,7 @@ def build(fixed=frozenset()):
         foot[a0:a1, b0:b1] |= hit.reshape(a1 - a0, b1 - b0)
     foot = ndi.binary_fill_holes(foot)
     ao_grid = ndi.gaussian_filter(foot.astype(np.float32), 3.0)
-    furniture = dict(parts=s_parts + p_parts + o_parts, reactor_c=reactor_c, gen_c=gen_c, pfx=pfx, ofx=ofx, tanks=tanks,
+    furniture = dict(parts=s_parts + p_parts + o_parts + b_parts, reactor_c=reactor_c, gen_c=gen_c, pfx=pfx, ofx=ofx, tanks=tanks,
                      foot=foot, ao_grid=ao_grid, Xg=Xg, Yg=Yg, fixed=fixed)
     for k in M.VIEWS:
         M.VIEW, M.SFX = k, M.view_sfx(k)
@@ -1330,6 +1483,8 @@ def shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, 
     wlit = np.where(np.abs(wglow - 0.6) < 1e-3, wglow, 0.0)            # the emergency line
     wsun = np.where(np.abs(wglow - 0.6) < 1e-3, 0.0, wglow)            # the windows and the holes
     own = np.maximum(fglow, wlit)
+    if not closed:                                        # the lines reserve power lights up (render_view)
+        fur['reserve_src'] = own.copy()
     light = np.maximum.reduce([M.EMIT.astype(np.float32) / 255, own,
                                np.clip(ndi.gaussian_filter(own, 2.0) * 2.2, 0, 0.8),
                                np.clip(ndi.gaussian_filter(em, 3.0) * 2.5, 0, 0.85)])
@@ -1407,19 +1562,22 @@ def render_view(k, fur):
     for field, values in [('light', light), ('sun', sun)]:
         Image.fromarray(np.round(np.clip(values, 0, 1) * 255).astype(np.uint8)).save(
             os.path.join(OUT, f'base_interior_{field}{sfx}.png'))
+    export_reserve(fur.pop('reserve_src'), kind > 0, bay_img)
     M.EMIT = None
 
     # --- game data
     reactor_c, gen_c, pfx, ofx, tanks = fur['reactor_c'], fur['gen_c'], fur['pfx'], fur['ofx'], fur['tanks']
     meta = export_game_data(D, kind, fur['foot'], fur['Xg'], fur['Yg'], world=(M.VIEW == 0))
     meta['game'].update(light_png=f'base_interior_light{sfx}.png', sun_png=f'base_interior_sun{sfx}.png', heading=M.VIEW,
-                        view_center=[float(M.VIEW_C[0]), float(M.VIEW_C[1])])
+                        view_center=[float(M.VIEW_C[0]), float(M.VIEW_C[1])], reserve_png=f'base_interior_reserve{sfx}.png')
     meta.update(name='base_interior', image=f'base_interior{sfx}.png', size=[W, H], origin_px=[M.AX, M.AY], view=M.VIEW,
                 views=[f'base_interior{M.view_sfx(i)}.json' for i in range(4)])
     meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R'],
                                 **({'dome': rm['dome']} if 'dome' in rm else {})) for name, rm in ROOMS.items()}
     meta['zoom'] = dict(max_view_px=[W, H], frames={})
     meta['door'] = export_door()
+    meta['bulkheads'] = export_bulkheads()
+    meta['bot'] = bot_info()
     meta['repair_machines'] = repair_machine_info(reactor_c, gen_c)
     meta['solar_input'] = solar_input_info()
     meta['repair_variants'] = {str(mask): folder + '/base_interior.json' for mask, folder in

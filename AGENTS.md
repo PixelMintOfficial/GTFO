@@ -91,6 +91,8 @@ scripts/
   repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter;
                        window_repair.gd / window_cracks.gd: storage's smashed panes and the cargo box
                        glass_puzzle.gd / glass_repair_ui.gd: live glass jigsaw and sealing scan
+  story/               the opening chapter: StoryState (session), PlayerProfile (the name, user://), Bot,
+                       Bulkhead, BotDialogue, NameEntry, ObjectiveHUD
   crash_site.gd        the satellite crash intro and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
@@ -116,12 +118,15 @@ tools/                 the pipeline (Python): generates everything in assets/
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
   window_repair_gen.py      source-matched window inspections, connected glass pieces and working tool
+  bot_gen.py                the base's bot: SDF model, four views, dormant/wake/idle/talk (BOT_DESIGN)
   solar_field_gen.py        solar mirror/feed sheets and four-view indicator metadata (shared SDF renderer)
   sfx_gen.py                every sound: fetches the recordings, synthesises the alien tech
   requirements.txt          what make env installs
   *_viewer.html             browser previews of the sprites and the map
   wire_repair.html          browser companion to the native circuit panel
 data/repair_circuits.json   authored five-circuit sequences for power and oxygen machines
+data/bot_story.json         every placeholder name (the bot, the previous owner), the bot's lines,
+                            objectives and lore: change a name here and everything follows
 assets/                (lowercase, always)
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
@@ -130,6 +135,8 @@ assets/                (lowercase, always)
   maps/base_interior/       generated interior: map, depth, walk, light, sun, json, anim (door), preview (four views too)
     machines/               the reactor and the oxygen generator as standalone sprites (+ machines.json, 4x previews)
     props/                  the cargo box (whole, 3 cracks, crushed) and ration packs, four views
+    bot/                    the bot's sheet (eight facings x every frame) and bot.json (animations, anchor, face)
+    anim/bulkhead_*         the bulkheads' leaves opening (power, oxygen), four views
   audio/                    generated sound: *.wav, audio.json, viewer.html, SOURCES.md,
                             CREDITS.md (ship this), preview.json
   audio/sources/            the open-licence recordings, git-ignored (make sources)
@@ -187,6 +194,16 @@ brief reflection sweeps, staggered in the world and retained through camera turn
 (`command`: the airlocks are cut into it). When all three panes are mended, that room's dome
 holes outside get their glass back: `DomeFX` lays each hole's `red_planet_fx.json → cracks →
 patch` (the band's glass as it was, glare and trim shade included) over the map at `patch_pos`.
+
+`base_interior.json → bulkheads` lists the two doors sealing storage from the power and oxygen
+rooms (every view and repair variant): `id` (the room), `world` (the doorway's middle), `axis`
+(0: its corridor runs along X), `half_width`, `height`, `lamp_px`, and the leaves' sheet (`file`,
+`frames` closed -> open, `position`, `frame_size`, `sort_y`). Their frames are baked into the room;
+their threshold is walkable. `bot` gives the cradle's `world` (in storage), `facing`, `radius` and
+`height`; the bot's own sheet is `bot/bot.json` (`file`; `facings`: Player.DIRS, one row each, drawn
+once for every view because the light stays put on screen; `frame_size`, `anchor`; `face`: its
+eyes from the foot per facing; `animations`: name -> [first, count, fps, loop]). `game.reserve_png` is the reserve-power
+overlay: the emergency lines and floor rings, bloomed, laid over the map additively once it is on.
 
 `base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
@@ -259,6 +276,10 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | zoom_in / zoom_out (overworld only) | I / O | d-pad up / down | game_camera.gd |
 | turn_left / turn_right (turn the camera a quarter turn) | G / H | d-pad left / right | view_turn.gd |
 | toggle_map (Esc also closes) | M | Back | map_screen.gd |
+| wake the bot (the fix job) | hold F, tool out | hold X | multitool.gd, story/bot.gd |
+| talk to the awake bot (interact) | F | X | story/bot.gd |
+| dialogue_next / dialogue_close | F, Enter, Space / Esc | A, X / B | story/bot_dialogue.gd |
+| name entry | type A-Z 0-9 space -, Backspace, Enter | d-pad, A picks, B deletes, Start | story/name_entry.gd |
 | dev_panel (debug builds only) | F1 | Guide | dev_panel.gd |
 
 F / gamepad X is shared: while a door's prompt is showing, the door sets
@@ -276,6 +297,10 @@ disable movement input while keeping physics, the clock and survival running; le
 closes the panel. F/X must be released before world interactions resume. Drag/click places glass;
 R/right-click/left shoulder rotates clockwise, Tab/right shoulder cycles pieces, Q cycles back,
 WASD/arrows/left stick/d-pad moves the selected fragment, Enter/Space/F/A/X places, Esc/B closes.
+The awake bot's `[F] TALK` prompt and its conversation use independent `bot_suppressed`
+ownership (released only once F/X is let go). The dialogue and the name entry pause the world,
+like the backpack, and take every key, button and click while open, so nothing underneath (the
+map screen, camera turns, the hotbar) acts on them; the name entry cannot be cancelled.
 Solar equipment uses independent `solar_suppressed` proximity/release ownership. F/X
 opens/closes a nearby sun feed or turns a mirror clockwise 22.5 degrees. Q has no solar
 action; left shoulder retains hotbar cycling. No modal/pause;
@@ -314,10 +339,18 @@ camera turns reproject equipment and rays without changing the optical puzzle.
     supplies at overworld spawn while preserving session progress. See docs/survival.md.
     `frozen` (kind -> true) holds needs still - no drain, recovery or damage - set from the
     master control panel; it is kept through rescue.
+  - `story`: `StoryState`: the opening chapter - `bot_awake`, `named`, `player_name`,
+    `reserve_power` (the bulkheads open), `objectives_given`, the lore lines `heard`. Every name
+    and line comes from `data/bot_story.json` (tokens `{BOT}`, `{OWNER}`, `{NAME}`). Objectives
+    are done when their machine's repair reaches 100%. Kept through rescue. The player's name is
+    also remembered between launches in `user://profile.cfg` (`PlayerProfile`: a preference,
+    like the survival HUD's position, not a save file). `skip_intro()` for tests.
   - `solar_field`: `SolarFieldState`: thirteen world mirror orientations, three closed/open
     feeds and cached optical routes. All three complete 4/5/4 routes supply the base reactor;
     `base_powered()` also requires its existing machine repair. State survives turns, airlocks
     and rescue. See docs/solar-field.md for optics, generated art, ownership and test hooks.
+- Inside, the corridors to the power and oxygen rooms are sealed by bulkheads until the bot
+  switches on reserve power: they stand in `MapTerrain.blockers` while sealed.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -452,7 +485,7 @@ consts in the named files.
     | mine | orange `#ff8a3a` | ore rock | hold F for 1.6 s; the rock bursts into chunks |
     | gather | teal `#4fe0c8` | ore chunk, scrap, ration pack | hold F for 0.55 s; a spiral pulls it into the backpack |
     | lift | violet `#b583ff` | crate, cargo box | tap F to float it so it follows you; tap again to set it down (never the box under your feet) |
-    | fix | cyan `#7fd8ff` | dead lamp (none placed now) | hold F for 2.4 s; the lamp flickers back on |
+    | fix | cyan `#7fd8ff` | the sleeping bot; dead lamps (none placed now) | hold F for 2.4 s; the lamp flickers back on, the bot boots up |
 
   - Inventory shows resource stack counts; survival meters above it are approved (§12).
 - **Inventory** (`inventory_ui.gd`): six-slot bottom hotbar; E / Start toggles the paused
@@ -527,6 +560,31 @@ consts in the named files.
     all routes sends a charge wave through receiver cells, lights its crown and pulses outward.
   - Canonical `SolarOptics` and session `SolarFieldState` are separate from `SolarField`
     input, `SolarFieldFX` animation and `SolarPowerInput` wall lenses. No prototype navigation box.
+- **The bot and the opening chapter** (`scripts/story/`, `data/bot_story.json`):
+  - The airlock opens into storage, where the bot sleeps in its charging cradle (south-west
+    floor). The corridors to the power and oxygen rooms are sealed by bulkheads (red lamp
+    blinking; walk up and SEALED shows).
+  - It is a fix job: hold F with the tool out (2.4 s). It boots (1 s: eyes flicker on, it rises
+    off the cradle), then talks. Lines type out with a chirp; F / Enter / A move on.
+  - It takes you for the previous owner (`names.previous_owner`). You tell it your name in the
+    name entry (prefilled with the one you gave last time); from then on it uses it.
+  - It switches on reserve power: a relay clunk, the emergency lines stutter on (the reserve
+    overlay), and both bulkheads open (1.8 s beat, controls held). Then the objectives:
+    RESTORE POWER (the reactor fully repaired) and RESTORE OXYGEN (the O2 generator fully
+    repaired), in either order, shown in the objective line under the time panel (both
+    scenes). It lingers 6 s after both are done, then goes.
+  - Then it leaves the cradle and **follows you round the base** (inside only): it hovers to a
+    spot about 16 units behind and 14 beside you, up to running speed, steering round walls and
+    anything solid (never solid itself). Stuck for 1.5 s, or more than 120 units behind, it
+    blinks back in beside you. It turns with its flight (eight facings) and faces you when it
+    settles. Going out through the airlock, it stays inside (`GameState.story.bot_world`);
+    coming back, it meets you at the door with a hop and a chirp. A quiet `bot_hover` hum
+    goes with it.
+  - `[F] TALK`: while it follows, only when you turn to face it within 22 units, and never
+    while a door, machine, window, the solar field or a tool target has F (so it never takes
+    F from the tool). Lore whose moment has come (power done, oxygen done, the three panes
+    mended, both done), else a reminder of what is left and one piece of trivia not heard yet.
+  - State survives turns and the airlock (`GameState.story`).
 - **Outdoors** there are no loose test props (ore rocks, scrap, crates) and no trail lamps any
   more (owner, §12); the gather/mine/lift/fix jobs remain for the base and what comes next.
 - **Master control panel** (`dev_panel.gd`, editor and debug builds only): F1 / Guide opens it
@@ -586,7 +644,8 @@ the existing renderer (`render_groups` / `render_sprite`).
 | `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | about 8 minutes for the four views (~1.5 per view), several GB of RAM |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
 | `python tools/solar_field_gen.py` | `assets/maps/red_planet/solar/*`, `solar_field.json` | after every map regeneration or equipment change; `make map` includes it | seconds |
-| `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about 25 seconds (four views) |
+| `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about a minute per variant (four views, four variants) |
+| `python tools/bot_gen.py` | `assets/maps/base_interior/bot/*` | you change the bot; `make interior` runs it | seconds |
 | `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
 
 **The generators share code.** `mars_map_gen.py` imports `astronaut_sprite_gen.py` (SDF
@@ -599,6 +658,8 @@ designs can be compared or restored:
 - `BASE_DESIGN` = `v1` | `hex` | `v2` | `v3` (default **v3**) — the main base.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
 - `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
+- `BOT_DESIGN` = `pod` | `lantern` | `orb` (default **pod**) — the bot; lantern and orb are the
+  other two looks from the approved contact sheet (`docs/bot-mockups.png`), kept for rework.
 - `TRAIL_LAMPS` = `0` | `1` (default **0**) — the lamps along the trails (and their light). Off,
   their spots still keep plants and the spawn clear, so the forest and spawn are unchanged.
 - `TEST_PROPS` = `0` | `1` (default **0**) — `props_gen.py`'s ore/scrap/crate test set by the
@@ -648,6 +709,12 @@ F continues to control yaw only, in eight 22.5-degree steps.
 Every interior/repair variant exports `solar_input`: a physical diagonal-wall inlet's
 world/anchor/panel_id, housing/lights sprite paths, position/size and eight connection frames.
 `interior_gen.py --solar-input-only` regenerates these without changing existing room art.
+
+The bot adds (§4.1): `bulkheads`, `bot` and `game.reserve_png` in every interior meta JSON (incl.
+the repaired variants; read by `Bulkhead`, `Bot`, `InteriorFX`), and `bot/bot.json` (read by
+`Bot`). `data/bot_story.json` (read by `StoryState`) owns `names`, `name_entry`, the line groups (`wake`, `correction`, `named`, `reserve`,
+`objectives_intro`, `remind`), `objectives` (`id`, `label`, `machine`) and `lore` (`id`,
+`trigger`: power_done / oxygen_done / panes_done / both_done / talk, `lines`).
 
 The panes and the box add (§4.1): `window_cracks` in every interior meta JSON (incl. the
 repaired variants; read by `WindowCracks`), and `top` / `half` / `yaw` / `contents` /
@@ -779,6 +846,10 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
   - The power room has a smashed reactor with spilling wires and an open service cabinet
     with a circuit board.
   - The oxygen room has a broken oxygen generator, two O2 bottles and scrap.
+  - In storage's south-west, the bot's charging cradle (dark steel plinth, coral ring), its
+    cable run to a socket in the wall behind it.
+  - Bulkheads in the corridors to the power and oxygen rooms: white posts with hazard feet, a
+    lintel and a lamp; steel leaves that telescope into the posts.
 - **Mood:** cozy, clean, beautiful and hopeful. Damage reads as clean, readable shapes
   (cracks, gashes, loose wires, sparks), never grime or gore.
 
@@ -791,7 +862,8 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
 - The **time panel** (top left) is the model for any panel: a dark translucent plate
   (`#120f1d`-ish at 84 %) with a 1 px `#22182c` edge, pixel-rounded corners, a faint top
   highlight, PixelFont text and the part of the day's colour as the accent.
-- No HUD clutter (see §9).
+- No HUD clutter (see §9). The objective line (under the time panel) and the bot's dialogue
+  plate (above the hotbar, the speaker on a tab) reuse the time panel's plate.
 
 ### 7.6 Sound (the ear)
 The same rule as the eye: everything must sound as if one person made it.
@@ -850,6 +922,12 @@ godot --headless --path . res://tests/view_turn_test.tscn             # turning 
 godot --headless --path . res://tests/window_crack_test.tscn          # the cargo box: jump on, lift, crack, break, rations
 godot --headless --path . res://tests/window_glass_test.tscn          # live reach, real input, scans, cost, final collapse
 godot --headless --path . res://tests/dev_panel_test.tscn            # master control panel: time, frozen needs, real keys
+godot --headless --path . res://tests/window_restore_test.tscn       # sealed panes' art and light, every view and variant
+godot --headless --path . res://tests/solar_field_test.tscn          # solar optics, routes, equipment and input
+godot --headless --path . res://tests/survival_test.tscn             # survival needs, damage, rescue
+godot --headless --path . res://tests/survival_hud_test.tscn         # the survival panel (and its layout probes, see make check)
+godot --headless --path . res://tests/bot_story_test.tscn            # bulkheads, waking the bot, its talk, your name, reserve power
+godot --path . res://scenes/interior.tscn -- --bot-wake --name=ASTRO --story-auto=0.5 --capture=wake.png --seconds=1.4 --burst=10 --gap=0.45
 godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
 godot --path . res://tests/repair_gallery.tscn -- --out=ABSOLUTE_DIRECTORY  # all ten native boards + solved states
@@ -870,7 +948,13 @@ Useful hooks:
   `--arrive`, `--exit`, `--repair=power|oxygen`,
   `--repair-done=power|oxygen|both` (both tasks for screenshots),
   `--repair-circuit=power|oxygen` (circuit-only preview), `--repair-bars`
-  (ignore ambient F input during progress-bar captures)
+  (ignore ambient F input during progress-bar captures),
+  `--bot-wake` (beside the bot, tool out, F held: it wakes), `--bot-talk` (talk to it),
+  `--bot-follow` (awake and following, beside you from the start; implies `--story=awake`),
+  `--story-auto=S` (lines move on S seconds after they finish), `--name=NAME` (the name entry
+  types it and confirms; never saved)
+- both: `--story=awake` (the bot awake and named, reserve power on, objectives handed out;
+  inside, `--name=NAME` names you)
 - repair panel: `--reduced-motion` disables turn and completion animation; receiving
   power activates immediately. The browser follows `prefers-reduced-motion`.
 - both: `--time=HOUR` (e.g. `--time=22` for night), `--day=N`, `--day-speed=X` (time runs X
@@ -918,7 +1002,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   since 2026-10-11, §12).
 - The base starts dead and broken; it gets repaired through play.
 - **Compact HUD only**; four survival meters, inventory stack counts, a six-slot hotbar,
-  local machine repair progress and the time panel are approved (§12).
+  local machine repair progress, the time panel and the objective line under it are
+  approved (§12).
 - **A day/night cycle** with four parts of the day; lights stay lit at night.
 - The multitool picks its job from the target. One button (F / gamepad X) uses it.
 - **No zooming indoors.**
@@ -1023,6 +1108,16 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - The overworld's `command` room (storage, inside) has two holes; the interior has three.
     Mending all three inside mends both outside. Habitat's and garage's holes stay open until
     their own rooms get interiors and repairs.
+- **The bot is built** (§5): its cradle in storage, the bulkheads, reserve power, the name, the
+  objectives, the lore, and following you round the base. Open:
+  - every name is a placeholder (`data/bot_story.json → names`): the bot and the previous owner.
+    The lines are drafts;
+  - the bulkheads reuse the airlock's `door_unseal`; a sound of their own (recorded steel)
+    needs `make sources` and `ffmpeg`;
+  - it follows indoors only; objectives after the first two (the solar field) are only
+    mentioned in the lore so far;
+  - more for it to do is listed for the team in `docs/bot-design.md → Ideas for the team
+    meeting` (none of it approved or built).
 - **Nothing outdoors for the multitool yet**: the test props and dead trail lamps were removed
   (`TEST_PROPS=1` / `TRAIL_LAMPS=1` bring them back). Real ore deposits are not placed yet; the
   tool works on the base's scrap, glass, cargo box and rations. The tests bring their own props.
@@ -1224,3 +1319,21 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-11 — Owner requested a master control panel; dev-only by owner's choice (editor and
   debug builds, F1 / Guide): set the time (half-hour steps or a part of the day) and freeze food,
   water and oxygen (`SurvivalState.frozen`). Not part of the shipped HUD. PixelFont gains `<` `>`.
+- 2026-10-12 — The bot (team design; approved by the requester): a new maintenance bay south of
+  storage, where the base's bot sleeps docked in a charging cradle. Woken with the multitool's fix
+  job, it takes you for the previous owner, you give it your name, it switches on reserve power
+  (the emergency lines light; bulkheads sealing the power and oxygen rooms open) and hands out
+  two objectives, restore power and restore oxygen (either order; done when each machine's repair
+  is complete), then drips lore as you progress. Look A (pod) from `docs/bot-mockups.png` is the
+  default; B (lantern) and C (orb) are kept as `BOT_DESIGN`. It stays docked (no following).
+  Every name is a placeholder in `data/bot_story.json`. Approved with it: the objective line
+  under the time panel (a HUD element beyond §9's list), remembering the player's name in
+  `user://profile.cfg`, and PixelFont's `.` `,` `?` `!` `'`. Sounds: bot_boot, bot_chirp and
+  reserve_on are synthesised; the bulkheads reuse the airlock's door_unseal for now.
+- 2026-10-12 — The bot reworked (requester, for the team): no room just for the bot - the
+  maintenance bay and its corridor are removed, and the bot's cradle is in storage, the room the
+  airlock opens into. Once the opening is over, the bot follows the astronaut round the base,
+  inside only (it waits indoors and meets you at the airlock); it is never solid, and its talk
+  prompt only shows when you face it, so F stays with the tool. Its sheet is eight facings drawn
+  once (like the astronaut's) instead of one strip per view; a quiet synthesised `bot_hover`
+  goes with it. Further bot features are listed for the team in `docs/bot-design.md`, not built.
