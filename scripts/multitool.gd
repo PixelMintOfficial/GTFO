@@ -9,7 +9,8 @@ extends Node2D
 ##   gather  teal    ore chunks, scrap, glass, ration packs: a spiral pulls the thing into the lens
 ##   lift    violet  crates, the cargo box: a wavy tether floats it up and it follows you until F
 ##                   sets it down (never the box you are standing on)
-##   fix     cyan    dead lamps: scan lines sweep it, sparks gather, and it flickers back on
+##   fix     cyan    dead lamps, the sleeping bot (add_fixable): scan lines sweep it, sparks
+##                   gather, and it flickers back on
 ## Hold F to mine, gather and fix; tap F to pick a crate up and again to set it down.
 ## A small icon over the nearest thing in reach shows which job the tool will do; a prop with no
 ## job (a wreck) is left alone.
@@ -53,6 +54,8 @@ var repair_suppressed := false
 var window_suppressed := false
 ## Solar equipment owns F independently while in reach, including its release guard.
 var solar_suppressed := false
+## The awake bot's [F] TALK prompt and its dialogue own F independently (Bot).
+var bot_suppressed := false
 ## A live window modal blocks controls but keeps survival and world simulation running.
 var window_panel_open := false
 
@@ -67,6 +70,7 @@ var _glow: Node2D
 var _under: Node2D                   # beams to things behind the astronaut: sorted just behind them
 var _tglow: Node2D                   # light on the thing being worked on, sorted just in front of it
 var _lamp_glows: Array = []          # one light per lamp, sorted with the lamp's foot
+var _fixables: Array = []            # other things the fix job brings back (the sleeping bot): add_fixable
 var _target: Variant = null          # the WorldProp or lamp in reach
 var _working := false
 var _lifted: WorldProp = null
@@ -166,6 +170,22 @@ func add_lamp(l: Dictionary) -> Dictionary:
 	return _lamps[-1]
 
 
+## Something else the fix job works on, like a lamp: a dictionary with world, head (map px, where
+## the sparks gather and the icon floats), base (map px, its foot) and radius. Its owner keeps head
+## and base up to date through camera turns. When the job is done, `fixed` is called (instead of a
+## lamp's light coming on) and it leaves the tool's list.
+func add_fixable(t: Dictionary, fixed: Callable) -> void:
+	t.merge({"job": "fix", "lit": false, "progress": 0.0, "t": 0.0, "fixed": fixed})
+	_fixables.append(t)
+
+
+func remove_fixable(t: Dictionary) -> void:
+	_fixables.erase(t)
+	if is_same(_target, t):
+		_stop_work()
+		_target = null
+
+
 ## This view's drawing of each kind of prop.
 func _load_sheets(k: int) -> void:
 	var views: Array = _props_data.get("sprites_views", [])
@@ -258,7 +278,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed
+	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed and not bot_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()
@@ -345,7 +365,7 @@ func _find_target() -> Variant:
 		if p.top > 0.0 and _player.height_above_floor() > 1.0 and p.covers(_player.world_pos, 2.0):
 			continue                                     # the box under your own feet
 		cands.append(p)
-	for l in _lamps:
+	for l in _lamps + _fixables:
 		if not l["lit"]:
 			cands.append(l)
 	for c in cands:
@@ -424,7 +444,14 @@ func _work(delta: float) -> void:
 			if randf() < 14.0 * delta:
 				var a := randf() * TAU
 				_homing.append([l["head"] + Vector2(cos(a), sin(a)) * randf_range(10, 18), l["head"], 0.0, randf_range(0.35, 0.55), CORES["fix"]])
-			if l["progress"] >= 1.0:
+			if l["progress"] >= 1.0 and l.has("fixed"):     # not a lamp: its owner takes it from here
+				l["lit"] = true
+				_rings.append([l["head"], 0.0, 0.45, COLORS["fix"], 16.0])
+				_stop_work()
+				_target = null
+				_fixables.erase(l)
+				(l["fixed"] as Callable).call()
+			elif l["progress"] >= 1.0:
 				l["lit"] = true
 				l["t"] = 0.0
 				Audio.play("lamp_on", l["head"])

@@ -71,7 +71,8 @@ No art generator run is required. To keep test user data within the sandbox, ver
   consumes that slot when no item is picked up. Existing swaps, tool, F/X interactions remain.
 - Health: in developer mode press F6 to deal 25 damage. Four presses reach zero. Check the
   paused SUIT OFFLINE screen, then Enter/A to rescue. Health cannot become negative.
-- Oxygen: enter the base with F at the airlock; go left to the oxygen room. Reserve empties
+- Oxygen: enter the base with F at the airlock; go left to the oxygen room (its bulkhead opens
+  once the bot in storage is woken - or start the interior with `--story=awake`). Reserve empties
   in 20 active seconds; remain there for two more to see health damage. Leave the room and
   watch oxygen recover to full in five seconds. F/X opens the O2 wiring panel; solving it
   makes that room breathable. The repair panel itself pauses depletion.

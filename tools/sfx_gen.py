@@ -1007,6 +1007,64 @@ def syn_pane_mend(name):
     return run(out, [hp(200), lp(9500), norm(-6.0)])
 
 
+# ---------------------------------------------------------------- the bot and reserve power
+def syn_bot_boot(name):
+    """The bot coming out of hibernation, in step with its wake animation (bot_gen.py: 10
+    frames at 10 fps, eyes flickering on at frames 2, 4 off, 5): a relay clack, a servo whine
+    rising as it straightens and lifts off the cradle, two dry ticks as the eyes catch, and a
+    settling pair of blips at an inharmonic ratio - awake, not a jingle."""
+    rng = seeded(name)
+    sec = 1.15
+    out = np.zeros(_ns(sec))
+    _add(out, 0.55 * modes(0.14, [1650.0, 2710.0, 3930.0], [0.03, 0.02, 0.012], [1.0, 0.6, 0.35]), 0.0)
+    out += 0.4 * sweep(sec, 95.0, 430.0, 1.6) * ramp(sec, [(0, 0), (0.1, 0.0), (0.2, 0.7), (0.8, 0.9), (0.95, 0.0), (1, 0)])
+    out += 0.15 * run(noise(sec, rng), [bp(1200, 6000)]) * ramp(sec, [(0, 0), (0.15, 0.4), (0.8, 0.3), (1, 0)])
+    for at in (0.2, 0.5):                                # the eyes catching
+        _add(out, 0.5 * run(noise(0.03, rng), [bp(2200, 7500), fade(0.001, 0.02)]), at)
+    _add(out, 0.35 * sine(0.25, 1180.0) * dec(0.25, 0.07), 0.86)
+    _add(out, 0.28 * sine(0.25, 1730.0) * dec(0.25, 0.06), 0.93)
+    return run(out, [hp(80), lp(8500), norm(-7.0)])
+
+
+def syn_bot_chirp(name):
+    """The bot's voice as it types: a tiny two-blip chirp with a little glide. Each variant
+    picks its own pitches at an inharmonic ratio, so a sentence never spells out a tune."""
+    rng = seeded(name)
+    sec = rng.uniform(0.06, 0.09)
+    f0 = rng.uniform(900.0, 1500.0)
+    out = 0.6 * sweep(sec, f0, f0 * rng.uniform(1.08, 1.22), 1.0) * dec(sec, sec * 0.45)
+    _add(out, 0.35 * sine(sec * 0.6, f0 * rng.uniform(1.31, 1.47)) * dec(sec * 0.6, sec * 0.2), sec * 0.35)
+    return run(out, [hp(500), lp(7000), norm(-14.0)])
+
+
+def syn_bot_hover(name):
+    """The bot flying with you: a soft airy lift-fan hum with a slow wobble, so it is there
+    when you listen for it and gone when you don't. 2 s, seamless (loop_noise, whole cycles)."""
+    rng = seeded(name)
+    sec = 2.0
+    t = sig(sec)
+    wob = 0.5 + 0.5 * np.sin(TAU * 1.5 * t)
+    body = (0.35 * sine(sec, 172.0) * (0.7 + 0.3 * wob) + 0.18 * sine(sec, 251.0) * (1.0 - 0.4 * wob)
+            + 0.45 * loop_noise(sec, rng, 700, 4200, -0.7) * (0.6 + 0.4 * loop_lfo(sec, rng, 0.5, 2.0)))
+    return run(body, [bp(120, 5200), rms_to(-27.0), limit()])
+
+
+def syn_reserve_on(name):
+    """Reserve power coming on, the way InteriorFX draws it: a heavy relay clunk, then the
+    emergency circuits stuttering up - the hum gated on at 0, 0.27, 0.54, 0.81 s for 0.15 s
+    each, steady from 0.95 s - then settling into a low breath. 1.8 s."""
+    rng = seeded(name)
+    sec = 1.8
+    t = sig(sec)
+    out = np.zeros(_ns(sec))
+    _add(out, 0.8 * modes(0.4, [62.0, 97.0, 151.0, 233.0], [0.16, 0.11, 0.07, 0.04], [1.0, 0.7, 0.45, 0.25]), 0.0)
+    _add(out, 0.4 * run(noise(0.05, rng), [bp(900, 5000), fade(0.001, 0.04)]), 0.0)
+    gate = ((np.mod(t, 0.27) < 0.15) | (t > 0.95)).astype(float)
+    hum = 0.45 * sine(sec, 92.0) + 0.25 * sine(sec, 139.0) + 0.12 * sine(sec, 287.0) + 0.08 * run(noise(sec, rng), [bp(1500, 4000)])
+    out += hum * gate * ramp(sec, [(0, 0.5), (0.53, 0.85), (0.75, 0.7), (1, 0.0)])
+    return run(out, [hp(40), lp(6000), fade(0.002, 0.3), norm(-6.0)])
+
+
 def _add(dst, src, at_sec):
     """Mix src into dst starting at at_sec (clipped to dst)."""
     i = _ns(at_sec) if at_sec > 0 else 0
@@ -1419,6 +1477,21 @@ RECIPES = {
     'repair_done': dict(bus='sfx', gain_db=-9.0, synth=syn_repair_done,
                         note='A machine\'s wiring finished: the warmth of lamp_on, because it '
                              'is the same feeling - something here works again.'),
+
+    # ---------------------------------------------------------------- the bot and reserve power
+    'bot_boot': dict(bus='sfx', gain_db=-9.0, dist=360.0, synth=syn_bot_boot,
+                     note='The bot waking, timed to its 1 s wake animation: relay clack, rising '
+                          'servo, two ticks as its eyes catch, two inharmonic blips.'),
+    'bot_chirp': dict(bus='ui', gain_db=-20.0, pitch=(0.94, 1.08), variants=5, synth=syn_bot_chirp,
+                      note='The bot\'s voice while its words type out, every few letters. Five '
+                           'variants at inharmonic ratios and a pitch spread: a sentence never '
+                           'becomes a tune. Near-threshold, like the UI ticks.'),
+    'bot_hover': dict(bus='sfx', gain_db=-18.0, dist=200.0, loop=True, fade=0.4, synth=syn_bot_hover,
+                      chain=[declick()],
+                      note='The bot following you: a soft lift-fan hum, heard only close by. Seamless 2 s.'),
+    'reserve_on': dict(bus='sfx', gain_db=-8.0, synth=syn_reserve_on,
+                       note='Reserve power: a relay clunk, then the emergency hum stuttering on '
+                            'in step with the flicker InteriorFX draws on the emergency lines.'),
 
     # ---------------------------------------------------------------- UI
     'ui_map_open': dict(bus='ui', gain_db=-13.0,

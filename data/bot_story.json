@@ -1,0 +1,42 @@
+{
+  "names": {"bot": "UNIT", "previous_owner": "COMMANDER"},
+  "note": "Placeholders: change a name here and every line and prompt follows. Tokens in lines: {BOT}, {OWNER}, {NAME}.",
+  "name_entry": {"max_length": 12, "title": "WHO ARE YOU?"},
+  "wake": [
+    "SYSTEMS... ONLINE.",
+    "{BOT} REPORTING. WELCOME BACK, {OWNER}.",
+    "YOU WERE GONE 412 DAYS."
+  ],
+  "correction": "...YOU ARE NOT {OWNER}? THEN WHO ARE YOU?",
+  "named": [
+    "{NAME}. LOGGED.",
+    "SORRY, {NAME}. THE LAST FACE I SAW HERE WAS {OWNER}'S."
+  ],
+  "reserve": [
+    "MAIN POWER IS DOWN. SWITCHING TO RESERVE.",
+    "BULKHEADS OPEN."
+  ],
+  "objectives_intro": [
+    "THE REACTOR IS CRACKED AND THE O2 GENERATOR IS DEAD.",
+    "FIX BOTH, {NAME}. YOU WILL FIND SCRAP NEAR THEM."
+  ],
+  "objectives": [
+    {"id": "power", "label": "RESTORE POWER", "machine": "power"},
+    {"id": "oxygen", "label": "RESTORE OXYGEN", "machine": "oxygen"}
+  ],
+  "remind": {
+    "both": "THE REACTOR AND THE O2 GENERATOR STILL NEED YOU, {NAME}.",
+    "power": "THE REACTOR STILL NEEDS YOU. POWER ROOM, EAST.",
+    "oxygen": "THE O2 GENERATOR STILL NEEDS YOU. OXYGEN ROOM, WEST.",
+    "done": "MAIN SYSTEMS NOMINAL. THANK YOU, {NAME}."
+  },
+  "lore": [
+    {"id": "power_done", "trigger": "power_done", "lines": ["REACTOR STABLE.", "{OWNER} BUILT THAT CORE BY HAND. IT NEVER FAILED BEFORE."]},
+    {"id": "oxygen_done", "trigger": "oxygen_done", "lines": ["AIR IS CLEAN AGAIN.", "THE O2 ROOM WAS SEALED THE NIGHT {OWNER} LEFT. I NEVER LEARNED WHY."]},
+    {"id": "panes_done", "trigger": "panes_done", "lines": ["THE STORAGE GLASS IS WHOLE.", "IT BROKE OUTWARD, {NAME}. SOMETHING HIT IT FROM INSIDE."]},
+    {"id": "both_done", "trigger": "both_done", "lines": ["MAIN SYSTEMS NOMINAL.", "THE SOLAR FIELD OUTSIDE STILL NEEDS ALIGNING BEFORE THE ENGINE CAN RUN."]},
+    {"id": "dust", "trigger": "talk", "lines": ["THE DUST HERE IS FINER THAN FLOUR. IT GETS INTO EVERYTHING."]},
+    {"id": "nursery", "trigger": "talk", "lines": ["THE NURSERY DOME STILL HAS POWER.", "{OWNER} GREW SOMETHING THERE. I WAS NOT ALLOWED INSIDE."]},
+    {"id": "comms", "trigger": "talk", "lines": ["THE COMMS DOME SITS UP ON THE ICE.", "ITS BEACON HAS BEEN CALLING FOR 412 DAYS. NOBODY ANSWERED."]}
+  ]
+}

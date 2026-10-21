@@ -1,7 +1,10 @@
 extends Node2D
 ## Inside the main base: storage (the airlock comes in here), the power room to the right and
 ## the oxygen room to the left. The power is out. F at the airlock door goes back outside.
-## Storage's three smashed panes and the cargo box you stand on to reach them: WindowCracks.
+## Storage's three smashed panes and the cargo box you stand on to reach them: WindowCracks. The
+## bot asleep in its cradle in storage (then following you round the base), the bulkheads sealing
+## the power and oxygen rooms until it switches on reserve power, and the objective line:
+## scripts/story/.
 ##
 ## Test hooks (after "--"): --spawn=X,Y  --walk=DX,DY[,run]  --capture=PATH
 ## --seconds=S  --burst=N  --gap=S  --arrive (play coming in through the door)  --exit (use the door)
@@ -25,6 +28,11 @@ extends Node2D
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
 ## --turn=N (start with the camera turned N quarter turns round; G / H turn it)
 ## --turn-left / --turn-right (turn the camera once after a second, see ViewTurn)
+## --story=awake (the bot already awake and named, reserve power on, objectives handed out)
+## --bot-wake (stand by the bot with the tool out and hold F: the fix job wakes it)
+## --bot-talk (stand by the awake bot and talk to it)  --story-auto=S (lines move on after S seconds)
+## --bot-follow (the bot awake and following, beside you from the start; implies --story=awake)
+## --name=NAME (the name entry types NAME and confirms it; never saved to the profile)
 
 const MAP_JSON := "res://assets/maps/base_interior/base_interior.json"
 const PROPS_JSON := "res://assets/maps/base_interior/interior_props.json"
@@ -37,6 +45,10 @@ var cracks: WindowCracks
 var view_turn: ViewTurn
 var solar_input: SolarPowerInput
 var suit_light: SuitLight
+var bot: Bot
+var bulkheads: Array[Bulkhead] = []
+var dialogue: BotDialogue
+var names: NameEntry
 var _repair_mask := 0
 
 @onready var player: Player = $Actors/Player
@@ -51,6 +63,8 @@ func _ready() -> void:
 	Audio.bed("amb_interior", 1.0)             # wind through the smashed windows, from inside
 	if _args().has("turn"):
 		GameState.heading = posmod(int(_args()["turn"]), 4)
+	if _args().get("story", "") == "awake" or _args().has("bot-follow"):
+		GameState.story.skip_intro(_args().get("name", "TESTER"))
 	_repair_mask = _completed_mask()
 	terrain = MapTerrain.new(_repair_map(_repair_mask), GameState.heading)
 	$Map.texture = terrain.map_texture
@@ -97,6 +111,7 @@ func _ready() -> void:
 	suit_light = SuitLight.new()                       # L: the base is dead, so bring your own
 	add_child(suit_light)
 	suit_light.setup(player, multitool)
+	_setup_story(meta)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
@@ -105,8 +120,36 @@ func _ready() -> void:
 	var args := _args()
 	if GameState.arrive == "interior" or args.has("arrive"):
 		door.arrive()
+		bot.greet_at(door.stand_point())                 # it waited inside; it meets you at the door
 	GameState.arrive = ""
 	_run_test_hooks(args)
+
+
+## The bot, the bulkheads, the conversation and the objective line. The dialogue and name entry
+## come last so they take input before anything else while they are open.
+func _setup_story(meta: Dictionary) -> void:
+	for info in meta["bulkheads"]:
+		var b := Bulkhead.new()
+		$Actors.add_child(b)
+		b.setup(info, terrain.view_json.get_base_dir(), terrain, player)
+		bulkheads.append(b)
+	GameState.story.changed.connect(_story_changed)
+	var objectives := ObjectiveHUD.new()
+	add_child(objectives)
+	objectives.setup(player)
+	dialogue = BotDialogue.new()
+	add_child(dialogue)
+	names = NameEntry.new()
+	add_child(names)
+	bot = Bot.new()
+	$Actors.add_child(bot)
+	bot.setup(meta["bot"], player, multitool, terrain, dialogue, names)
+
+
+func _story_changed() -> void:
+	if GameState.story.reserve_power:
+		for b in bulkheads:
+			b.open()
 
 
 func _setup_door(meta: Dictionary) -> void:
@@ -130,6 +173,11 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	repairs.set_view(meta)
 	solar_input.load_view(meta)
 	cracks.set_view(meta)
+	for info in meta["bulkheads"]:
+		for b in bulkheads:
+			if b.id == info["id"]:
+				b.set_view(info, terrain.view_json.get_base_dir())
+	bot.set_view()
 	door.queue_free()
 	_setup_door(meta)
 
@@ -138,6 +186,9 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 func _window_moved(_heading: int) -> void:
 	player.refresh_window()
 	multitool.refresh_window()
+	bot.refresh_window()
+	for b in bulkheads:
+		b.refresh_window()
 
 
 ## The loose props (scrap, the cargo box, rations), for the camera's swing.
@@ -146,6 +197,9 @@ func _turn_boards() -> Array:
 	for n in $Actors.get_children():
 		if n is WorldProp and not (n as WorldProp).gone:
 			out.append(ViewTurn.prop_board(terrain, n))
+	out.append_array(bot.boards())
+	for b in bulkheads:
+		out.append_array(b.boards())
 	return out
 
 
@@ -244,6 +298,21 @@ func _run_test_hooks(args: Dictionary) -> void:
 					puzzle.scan = clampf(float(args["window-scan"]), 0, 1))
 		if args.has("window-close"):
 			get_tree().create_timer(float(args["window-close"])).timeout.connect(cracks.panel.close)
+	if args.has("name"):
+		names.remember = false
+		names.auto_name = args["name"]
+	if args.has("story-auto"):
+		dialogue.auto_advance = float(args["story-auto"])
+	if args.has("bot-wake") or args.has("bot-talk"):
+		player.teleport(bot.world + Vector2(bot.radius + 14.0, 0))         # beside it, not in front
+		player.facing = Player.DIRS[posmod(int(round(Vector2(-1, 0).angle() / (PI / 4.0))), 8)]
+	if args.has("bot-wake"):
+		player.set_tool_out(true)
+		get_tree().create_timer(0.4).timeout.connect(func() -> void: multitool.forced_use = true)
+	if args.has("bot-follow"):
+		bot.warp_near_player.call_deferred()              # after --spawn has put you somewhere
+	if args.has("bot-talk"):
+		get_tree().create_timer(0.5).timeout.connect(bot.talk)
 	if args.has("face"):
 		var f: PackedStringArray = args["face"].split(",")
 		var sd := Vector2(float(f[0]), float(f[1]))

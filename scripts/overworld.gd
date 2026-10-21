@@ -28,6 +28,7 @@ extends Node2D
 ##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
 ##   --turn-left / --turn-right   turn the camera once after a second (see ViewTurn)
 ##   --dome-mended=ROOM     that base room's dome glass is whole again (command: storage's windows mended)
+##   --story=awake          the bot already awake inside, its objectives handed out (the objective line)
 ##   --solar-at=ID          stand beside A SUN/B SUN/C SUN or reflector A1..C4
 ##   --solar-active / --solar-solved   optical routing capture hooks (ordinary feeds start off)
 
@@ -58,6 +59,8 @@ func _ready() -> void:
 	Audio.enter_scene()
 	if _args().has("turn"):
 		GameState.heading = posmod(int(_args()["turn"]), 4)
+	if _args().get("story", "") == "awake":
+		GameState.story.skip_intro()
 	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
 	var view := terrain.view_json
 	player.setup(terrain)
@@ -98,6 +101,9 @@ func _ready() -> void:
 	suit_light = SuitLight.new()                       # L: the only light out here after dark
 	add_child(suit_light)
 	suit_light.setup(player, multitool)
+	var objectives := ObjectiveHUD.new()                # what the bot asked of you (scripts/story/)
+	add_child(objectives)
+	objectives.setup(player)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
