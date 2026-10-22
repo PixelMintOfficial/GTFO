@@ -40,6 +40,25 @@ ORIGINAL_FLORA_PLACEMENTS = [
     '2bfbfe2139870537050ee00f448220711d22d554f10961e5edf0f7a9508c7fb2',
     'a27ce2debd32bb45551b67ad02f87e0da4c3e1ae5ae035b56de493bb8f95bebb',
 ]
+# Nursery v2's authored entrance clearings omit only three mushroom canopies: tree_8/tree_11
+# by the west door and tree_7 by the east. These fingerprints are the original instance lists
+# with just those trees removed (verified against all four original lists before rendering).
+# Use XY/variant/phase rather than terrain height for either solar layout, as with terraces.
+NURSERY_V2_FLORA_PLACEMENTS = [
+    'ba99c1e023f4975d6df5760104f77f758c9403d897b6d619f8ecb40f4fc8bd4c',
+    '87dd211f9b5fc45e72d0265d8d4f2c40d5a49d3f5408056d3490c4fc6c695007',
+    '4213d321845b07af135edccd36256151d1c15749766049ad669846553d7d784c',
+    'c6a028c7a006ad574804c28bf9e96f1662e03654ab9e3697817bb9646445768e',
+]
+# The smaller shell exposes plants previously baked behind glass. Physical placement
+# was checked against the original four-view stems: every live plant matches within
+# 0.06 world units (export precision). The changed list is visibility, not a reroll.
+NURSERY_COMPACT_FLORA_PLACEMENTS = [
+    'df230050f57fc2e21b4c26957262c02984a54aa5e589b23a262276c8e58f85e3',
+    '4bcce2958e8ed874134f0c5d355ebbddc38dae1addd2c3daeb05fefb0ce94c4b',
+    'cf61d88f15449ef5a3a55c9d427c821057865de1358473b5ae4827e548ca3d0f',
+    '6089f17d229737ff34b771d0f837a7d3f6b4e4ad59e86e7a44b69f87a03823ef',
+]
 
 def placement_hash(flora, terraced=False):
     """Where every plant stands, and nothing else.
@@ -148,8 +167,11 @@ def main():
         fx = read(view['fx'])
         flora = fx['flora']
         terraced = bool(field.get('terrain'))
-        expected = (ORIGINAL_FLORA_PLACEMENTS if terraced else ORIGINAL_FLORA)[heading]
-        assert placement_hash(flora, terraced) == expected, 'the original forest placements changed'
+        nursery_v2 = os.environ.get('NURSERY_DESIGN', 'v2') == 'v2'
+        compact = nursery_v2 and view['domes']['nursery']['radius_world'] < 180
+        expected = (NURSERY_COMPACT_FLORA_PLACEMENTS if compact else NURSERY_V2_FLORA_PLACEMENTS if nursery_v2 else
+                    ORIGINAL_FLORA_PLACEMENTS if terraced else ORIGINAL_FLORA)[heading]
+        assert placement_hash(flora, terraced or nursery_v2) == expected, 'forest placements changed outside the authored clearings'
         mask = art['views'][heading]['receiver_mask']
         assert Image.open(os.path.join(BASE, mask['file'])).size == tuple(mask['size']), 'stale receiver mask'
         for instance in flora['instances']:

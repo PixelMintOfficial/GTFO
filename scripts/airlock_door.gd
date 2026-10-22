@@ -11,6 +11,8 @@ extends Node2D
 ##
 ## The door is a sprite sheet from the map generator (closed -> open). It sits in the y-sorted
 ## actors node, keyed on the door's foot, so the astronaut passes behind it going in.
+## Door proximity jointly owns tool suppression: a distant door cannot release another
+## door's prompt or cutscene while both are present (base and nursery each have two).
 
 signal entered
 signal arrived
@@ -58,6 +60,7 @@ func setup(info: Dictionary, base_dir: String, p: Player, cam: GameCamera, t: Ma
 	camera = cam
 	terrain = t
 	multitool = tool
+	add_to_group("airlock_doors")
 	label = prompt_label
 	world = Vector2(info["world"][0], info["world"][1])
 	dir = Vector2(info["dir"][0], info["dir"][1]).normalized()
@@ -133,8 +136,6 @@ func _process(delta: float) -> void:
 			if _prompt and not _was_prompt:
 				Audio.play("door_prompt")
 			_was_prompt = _prompt
-			if multitool != null:
-				multitool.suppressed = _prompt
 			if _prompt and not multitool.inventory_suppressed and Input.is_action_just_pressed("interact"):
 				_start()
 		State.APPROACH:
@@ -216,10 +217,30 @@ func _process(delta: float) -> void:
 				camera.release_focus()
 				state = State.IDLE
 				arrived.emit()
+	if not is_inside_tree():                           # entered may replace the scene immediately
+		return
 	_tick_lamp()
+	_sync_tool_suppression()
 	_update_gas(delta)
 	_air.queue_redraw()
 	_lit.queue_redraw()
+
+
+func _sync_tool_suppression() -> void:
+	if not is_inside_tree() or not is_instance_valid(multitool):
+		return
+	multitool.suppressed = false
+	for node in get_tree().get_nodes_in_group("airlock_doors"):
+		var d := node as AirlockDoor
+		if d != null and not d.is_queued_for_deletion() and d.multitool == multitool and (d._prompt or d.busy()):
+			multitool.suppressed = true
+			return
+
+
+func _exit_tree() -> void:
+	remove_from_group("airlock_doors")
+	if is_instance_valid(multitool):
+		_sync_tool_suppression()
 
 
 ## Where the door's sounds come from: the foot of the door, in map pixels.

@@ -202,6 +202,8 @@ func _paths(k: int) -> Array[String]:
 			out.append(dir.path_join(d["file"]))
 	if meta.has("door"):                       # the interior's one door is named in its meta
 		out.append(dir.path_join(meta["door"]["file"]))
+	for d in meta.get("doors", []):             # the nursery has two exits in every view
+		out.append(dir.path_join(d["file"]))
 	_paths_of[path] = out
 	return out
 

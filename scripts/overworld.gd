@@ -17,6 +17,7 @@ extends Node2D
 ##   --use                  keep the multitool's use button held (after --equip)
 ##   --face=DX,DY           turn to face this screen direction before working
 ##   --door                 walk up to the base's airlock and go in (the whole cutscene)
+##   --door-id=ID           use a particular base/nursery airlock for transition captures
 ##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ##   --dev-panel / --dev-freeze=hunger,thirst,oxygen   master control panel (F1; see DevPanel)
@@ -188,7 +189,7 @@ func _turn_boards() -> Array:
 	return out
 
 
-## The base's airlock doors: F to go inside.
+## Base and nursery airlocks: generator-owned routes choose the matching interior.
 func _setup_doors() -> void:
 	var meta := ViewData.get_json(terrain.view_json)
 	if not meta.has("fx"):
@@ -199,15 +200,15 @@ func _setup_doors() -> void:
 		$Actors.add_child(d)
 		d.setup(info, terrain.view_json.get_base_dir(), player, player.camera, terrain, multitool, "ENTER")
 		d.set_meta("id", int(info["id"]))
-		d.entered.connect(_go_inside.bind(int(info["id"])))
+		d.entered.connect(_go_inside.bind(int(info["id"]), str(info.get("interior", INTERIOR))))
 		doors.append(d)
 
 
-func _go_inside(id: int) -> void:
+func _go_inside(id: int, scene := INTERIOR) -> void:
 	GameState.arrive = "interior"
 	GameState.door_id = id
 	GameState.tool_out = player.tool_state == Player.Tool.READY
-	get_tree().change_scene_to_file(INTERIOR)
+	get_tree().change_scene_to_file(scene)
 
 
 static func _args() -> Dictionary:
@@ -267,10 +268,14 @@ func _run_test_hooks(args: Dictionary) -> void:
 		var f: PackedStringArray = args["face"].split(",")
 		var sd := Vector2(float(f[0]), float(f[1]))
 		player.facing = Player.DIRS[posmod(int(round(sd.angle() / (PI / 4.0))), 8)]
-	if args.has("door") and not doors.is_empty():
+	if (args.has("door") or args.has("door-id")) and not doors.is_empty():
 		var nearest: AirlockDoor = doors[0]
 		for d in doors:
-			if d.stand_point().distance_to(player.world_pos) < nearest.stand_point().distance_to(player.world_pos):
+			if args.has("door-id") and int(d.get_meta("id")) == int(args["door-id"]):
+				nearest = d
+				player.teleport(d.stand_point())
+				break
+			if not args.has("door-id") and d.stand_point().distance_to(player.world_pos) < nearest.stand_point().distance_to(player.world_pos):
 				nearest = d
 		get_tree().create_timer(0.5).timeout.connect(func() -> void: nearest.call("_start"))
 	if args.has("equip"):
@@ -279,7 +284,7 @@ func _run_test_hooks(args: Dictionary) -> void:
 		get_tree().create_timer(1.2).timeout.connect(func() -> void: multitool.forced_use = true)
 	if args.has("open-map"):
 		get_tree().create_timer(1.0).timeout.connect(map_screen.toggle)
-	if not args.has("capture") or args.has("door"):     # --door: the interior takes the pictures
+	if not args.has("capture") or args.has("door") or args.has("door-id"):
 		return
 	await get_tree().create_timer(float(args.get("seconds", "1.5"))).timeout
 	if args.has("debug"):

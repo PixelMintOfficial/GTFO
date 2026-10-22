@@ -1,0 +1,127 @@
+{
+  "name": "nursery_interior",
+  "image": "nursery.png",
+  "size": [
+    1300,
+    900
+  ],
+  "origin_px": [
+    650.0,
+    1188.4442799572107
+  ],
+  "view": 0,
+  "views": [
+    "nursery.json",
+    "nursery_r1.json",
+    "nursery_r2.json",
+    "nursery_r3.json"
+  ],
+  "game": {
+    "depth_png": "nursery_depth.png",
+    "light_png": "nursery_light.png",
+    "sun_png": "nursery_sun.png",
+    "walk_png": "nursery_walk.png",
+    "depth_scale": 20.0,
+    "height_offset": 100.0,
+    "height_scale": 150.0,
+    "world_units_per_px": 0.43301270189221935,
+    "depth_to_px": 0.5773502691896257,
+    "px_per_unit": 2.0,
+    "character_scale": 0.5,
+    "grid_size": 760,
+    "spawn_world": [
+      0.0,
+      404.0
+    ],
+    "heading": 0,
+    "layout_scale": 0.8,
+    "view_center": [
+      0.0,
+      520.0
+    ]
+  },
+  "zoom": {
+    "max_view_px": [
+      1300,
+      900
+    ],
+    "frames": {}
+  },
+  "doors": [
+    {
+      "id": 1,
+      "file": "anim/door_1.png",
+      "frames": 12,
+      "position": [
+        282,
+        535
+      ],
+      "frame_size": [
+        124,
+        168
+      ],
+      "sort_y": 653,
+      "world": [
+        -133.63712939501946,
+        463.7317349915706
+      ],
+      "dir": [
+        0.9216353751380653,
+        0.38805700005813376
+      ],
+      "lamp_px": [
+        348.23180032349336,
+        583.4501473003173
+      ],
+      "height": 34.04
+    },
+    {
+      "id": 5,
+      "file": "anim/door_5.png",
+      "frames": 12,
+      "position": [
+        805,
+        591
+      ],
+      "frame_size": [
+        150,
+        168
+      ],
+      "sort_y": 709,
+      "world": [
+        100.32627766916414,
+        415.3117102582634
+      ],
+      "dir": [
+        -0.6919053632356148,
+        0.7219882051154248
+      ],
+      "lamp_px": [
+        876.5484175657346,
+        638.1191743821224
+      ],
+      "height": 34.04
+    }
+  ],
+  "rooms": {
+    "nursery": {
+      "label": "NURSERY",
+      "center": [
+        0.0,
+        520.0
+      ],
+      "radius": 148.0
+    }
+  },
+  "fx": {
+    "shafts": [],
+    "leds": [],
+    "core": [
+      0,
+      0
+    ],
+    "tanks": [],
+    "sparks": [],
+    "vapor": []
+  }
+}
