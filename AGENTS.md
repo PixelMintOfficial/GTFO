@@ -69,6 +69,7 @@ project.godot          viewport 384x216, integer scaling, nearest filtering, pix
 scenes/
   overworld.tscn       main scene: the red planet
   interior.tscn        inside the main base (storage / power room / oxygen room)
+  nursery.tscn         the powered nursery, with two working airlocks
   player.tscn          the astronaut: Shadow, AnimatedSprite2D (depth-occlusion shader), GameCamera
 scripts/
   game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
@@ -92,6 +93,7 @@ scripts/
   airlock_door.gd      AirlockDoor: "[F] ENTER/EXIT" prompt and the door cutscene, both ways
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
+  nursery.gd           builds the nursery, both exit doors, four views and test hooks
   repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter;
                        window_repair.gd / window_cracks.gd: storage's smashed panes and the cargo box
                        glass_puzzle.gd / glass_repair_ui.gd: live glass jigsaw and sealing scan
@@ -123,6 +125,8 @@ tools/                 the pipeline (Python): generates everything in assets/
   mars_map_gen.py           the overworld: terrain, biomes, domes, props, plants, all map data
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
+  nursery_gen.py            the approved nursery interior, walk grid and two airlocks, four views
+  check_nursery.py          nursery floor/door-layer/screen/scale QA against native models and sheets
   window_repair_gen.py      source-matched window inspections, connected glass pieces and working tool
   bot_gen.py                the base's bot: SDF model, eight facings, dormant/wake/idle/talk/move (BOT_DESIGN)
   solar_field_gen.py        solar mirror/feed sheets and four-view indicator metadata (shared SDF renderer)
@@ -143,6 +147,7 @@ assets/                (lowercase, always)
     props/                  the cargo box (whole, 3 cracks, crushed) and ration packs, four views
     bot/                    the bot's sheet (eight facings x every frame) and bot.json (animations, anchor, face)
     anim/bulkhead_*         the bulkheads' leaves opening (power, oxygen), four views
+  maps/nursery_interior/    generated nursery: colour, depth, walk, light, sun, metadata, animated doors and previews
   audio/                    generated sound: *.wav, audio.json, viewer.html, SOURCES.md,
                             CREDITS.md (ship this), preview.json
   audio/sources/            the open-licence recordings, git-ignored (make sources)
@@ -225,6 +230,16 @@ overlay: the emergency lines and floor rings, bloomed, laid over the map additiv
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
 `interior_gen.py` derives these from the actual machine model centres; its
 `--repair-metadata-only` option updates just this data using the existing projection origin.
+
+`nursery_interior/nursery.json` uses the same map layers and projection. Its `doors` array
+contains both animated airlocks (stable overworld IDs 1 and 5), with canonical `world`/`dir`
+and per-view `file`, `position`, `frame_size`, `sort_y` and `lamp_px`. Overworld FX door
+entries carry `interior`, the destination scene path: base doors lead to `interior.tscn`,
+nursery doors to `nursery.tscn`. `make nursery` regenerates the room and runs the map
+generator's `--doors-only` export, preserving all terrain, vegetation and map tiles.
+`game.layout_scale` describes the nursery's authored room/furniture scale; it does not
+change the shared `character_scale`. Landing pads are baked into the map only, outside
+the animated door sprites, so the door's sort order cannot cover the player's legs.
 
 ### 4.2 Coordinates: one projection everywhere
 - **World**: X right, Y away from the camera, Z up, in *world units*. Gameplay lives here.
@@ -385,6 +400,10 @@ camera turns reproject equipment and rays without changing the optical puzzle.
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
   you went in by.
+- Both nursery airlocks lead into `nursery.tscn`. Entering uses the matching inside doorway;
+  leaving through either doorway returns to that doorway outside, including when it differs
+  from the entry. Shared `AirlockDoor` proximity ownership keeps the multitool suppressed
+  while any door offers interaction. The clock, inventory, tool and suit lamp carry through.
 
 ### 4.7 Effects pattern
 FX scripts draw procedurally in `_draw()`:
@@ -734,6 +753,17 @@ If you change shared code (a ramp, the renderer, `hole_shape`, the outline) you 
 **Design versions** are switched with environment variables. They are kept so earlier approved
 designs can be compared or restored:
 - `BASE_DESIGN` = `v1` | `hex` | `v2` | `v3` (default **v3**) — the main base.
+- `NURSERY_DESIGN` = `v1` | `v2` (default **v2**) — the earlier clear ribbed nursery or the
+  approved tinted honeycomb dome: larger panes, a taller white/coral base and a tiny round cap.
+  Both entrances use the existing framed white/coral airlock model and enter the playable
+  nursery. The v1 wind gauge and rim LEDs stay with the earlier design.
+  V2 clears the three tall trees covering the door faces, retaining the forest's random
+  placement sequence and all other plants, including the low growth at the entrances.
+- `NURSERY_SIZE` = `compact` (default) | `original` — v2's owner-approved 150-world-unit
+  exterior radius or its earlier 200-unit radius. Door dimensions stay at the shared scale.
+  The original terrain clearing, forest exclusion and random stream are retained.
+- `NURSERY_INTERIOR_SCALE` = `0.8` (default) — room, furniture, collision and specimen glass
+  scale together; `1` restores the earlier room size. Astronaut/airlock scale stays shared.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
 - `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
 - `SOLAR_FIELD_LAYOUT` = `v1` | `v2` (default **v2**) — earlier 4/5/4 ground field or the
@@ -1009,8 +1039,10 @@ Or by hand:
 godot --headless --path . --import                                   # re-import after regenerating
 godot --headless --path . res://scenes/overworld.tscn --quit-after 20000 -- --no-intro --quit=4
 godot --headless --path . res://scenes/interior.tscn --quit-after 20000 -- --quit=4
+godot --headless --path . res://tests/nursery_test.tscn                # both nursery airlocks, turns, collision and state
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
+godot --path . res://scenes/nursery.tscn -- --time=12 --capture=nursery.png
 godot --path . res://scenes/overworld.tscn -- --door --capture=in.png   # through the airlock; the interior takes the shot
 godot --path . res://scenes/overworld.tscn -- --no-intro --time=22 --capture=night.png   # check a change by night too
 godot --headless --path . res://tests/inventory_test.tscn             # inventory integration suite
@@ -1240,7 +1272,7 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - no volume controls and nothing saved (there are no settings and no save file yet);
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
-- **Not built yet:** interiors for the nursery and comms domes, saving and loading (the clock
+- **Not built yet:** nursery minigames, the comms interior, saving and loading (the clock
   would be saved with `GameState.clock`, the suit lamp with `GameState.suit_light`), anything
   else that depends on the time of day - no sleep and no night dangers, so the dark costs you
   nothing but your bearings yet - music (and there will not be any, §9).
@@ -1547,3 +1579,32 @@ Write one line per decision: date — decision (who approved it).
   The suit lamp needed nothing: it ignores presses while the bot's dialogue or name entry pause
   the world. Under the dark night the following bot shows only its eye glow outside the lamp's
   beam; kept that way, as the darkness rule asks (requester).
+- 2026-10-21 — Nursery exterior v2 (owner approved the larger-base/larger-pane mockup, then
+  requested its in-game replacement and properly fitted doors): use the main base's reflective
+  tinted honeycomb material over the hemisphere, a 10-degree lower wall boundary, approximately
+  32-world-unit hex sides, a tiny round white cap and a broad white/coral footing. Stretching at
+  the top is accepted. Both trail entrances use the existing white/coral portal frames and
+  closed split doors. The older clear ribbed shell, rim LEDs and wind gauge remain available
+  with `NURSERY_DESIGN=v1`; v2 is the default. No nursery interior or scene transition is added.
+  In-game inspection also cleared the three mushroom trees whose canopies covered the door
+  faces (105-world-unit trunk clearance from either outer door), with all other forest
+  placements retained. The omitted placements still consume their original random draws and
+  spacing, and contribute neither shadows, collision nor glow.
+- 2026-10-22 — Implement the approved aligned_v12 nursery interior and functional doors
+  (owner): three rear living walls, two hydroponic towers, one central specimen pod with its
+  coaxial halo on straight supports, a shallow cyan propagation channel, bottom control panel
+  and forward right oxygen tank. Remove the crossing boards, bench and extra cabinets/pods.
+  `nursery_gen.py` owns all four native SDF views, collision, daylight/powered-light masks and
+  animated portals. Stable exterior IDs 1 and 5 route into the room and either exit returns
+  through its matching exterior door. `make nursery` and `make check` include regeneration
+  and real keyboard/gamepad transition, collision, camera-turn and state-continuity checks.
+  Nursery minigames remain future work.
+- 2026-10-22 — Nursery QA corrections (owner): reduce the exterior radius by 25% and the
+  interior room/furnishings by 20%, retaining the shared astronaut and usable door dimensions.
+  Inlay the propagation ring flush with the floor and put matching screens on both monitor
+  faces. Landing pads are static floor inlays, excluded from animated door sheets: the old
+  y-sorted landing covered the astronaut's body during arrival. `check_nursery.py` checks the
+  actual sheet's landing transparency plus native floor, monitor and scale geometry; the
+  integration suite retains movement, both-door and four-view coverage at the smaller size.
+  The compact exterior is applied after the original terrain/scatter pass, as with solar
+  grading: only its plinth/material/light footprint changes, preserving the original flora.

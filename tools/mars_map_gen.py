@@ -43,7 +43,10 @@ Pipeline
      editors/diff viewers hold the previous version open on Windows.
 
     MAP_VIEWS=0 python tools/mars_map_gen.py     # only some of the views (default 0123)
+    NURSERY_DESIGN=v1 python tools/mars_map_gen.py  # earlier clear, ribbed nursery (default v2)
+    NURSERY_SIZE=original python tools/mars_map_gen.py  # restore the earlier 200-unit radius
     python tools/mars_map_gen.py --tiles-only    # re-cut the tiles from the pictures on disk
+    python tools/mars_map_gen.py --doors-only    # regenerate airlock sheets and routes on existing maps
 """
 import contextlib
 import gc
@@ -267,6 +270,12 @@ DOMES['base']['Z'] = DOMES['nursery']['Z'] = 0.0
 #   v3   three smooth white rooms joined by corridors, a ring of honeycomb glass round each
 BASE_DESIGN = os.environ.get('BASE_DESIGN', 'v3')
 BASE_DOME = {'v1': 'glass', 'hex': 'hex', 'v2': 'rooms', 'v3': 'rooms'}[BASE_DESIGN]
+NURSERY_DESIGN = os.environ.get('NURSERY_DESIGN', 'v2')  # v1: clear ribs; v2: approved tinted honeycomb
+NURSERY_SIZE = os.environ.get('NURSERY_SIZE', 'compact')  # owner QA: smaller shell; door scale stays usable
+if NURSERY_DESIGN == 'v2' and NURSERY_SIZE == 'compact':
+    DOMES['nursery']['R0'] = 60.0
+# Keep the original forest exclusion/spacing so shrinking the building does not reroll plants.
+DOMES['nursery']['flora_radius'] = 80.0 * DOME_SCALE
 BASE_POWERED = False              # the base is dead when the game starts: no lights, nothing turning
 for _name, _d in DOMES.items():
     _d['powered'] = BASE_POWERED if _name == 'base' else True
@@ -296,8 +305,11 @@ def dome_units():
                                        R=r['R'], R0=r['R'] / DOME_SCALE, freq=r['freq'],
                                        style='band' if BASE_DESIGN == 'v3' else 'hex'))
             else:
+                style = 'hex' if name == 'base' and BASE_DOME == 'hex' else 'glass'
+                if name == 'nursery' and NURSERY_DESIGN == 'v2':
+                    style = 'band'
                 _UNITS.append(dict(d, name=name, owner=name, freq=HEX_FREQ,
-                                   style='hex' if name == 'base' and BASE_DOME == 'hex' else 'glass'))
+                                   style=style))
     return _UNITS
 DOMES['comms']['Z'] = 108.0       # up on the ice massif
 # The comms dome stands on a stepped charcoal massif: tiers (radius, height, centre offset from
@@ -388,17 +400,29 @@ def smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
+def _replace_generated(path):
+    """Give Windows importers time to release a just-read generated asset."""
+    for attempt in range(50):
+        try:
+            os.replace(path + '.tmp', path)
+            return
+        except PermissionError:
+            if attempt == 49:
+                raise
+            time.sleep(.1)
+
+
 def save_png(image, path):
     """Never truncate an image that an editor/viewer may still have memory-mapped."""
     image.save(path + '.tmp', format='PNG')
-    os.replace(path + '.tmp', path)
+    _replace_generated(path)
 
 
 def save_text(text, path):
     """Replace generated metadata/viewers without truncating an open prior version."""
     with open(path + '.tmp', 'w', encoding='utf-8') as stream:
         stream.write(text)
-    os.replace(path + '.tmp', path)
+    _replace_generated(path)
 
 
 BAYER = (np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]], np.float32) + 0.5) / 16 - 0.5
@@ -585,6 +609,23 @@ def airlock_ends():
     return out
 
 
+def nursery_entry_clearance(X, Y):
+    """Keep tall mushroom canopies off the nursery doors without rerolling the forest.
+
+    Only three original trees fall in these small entrance clearings. Low plants stay;
+    accepted tree placements still consume their original random draws and spacing below.
+    """
+    if NURSERY_DESIGN != 'v2':
+        return False
+    for d, direction in airlock_ends():
+        if d['owner'] != 'nursery':
+            continue
+        reach = (80.0 + 14.4) * DOME_SCALE  # preserve the original three authored canopy clearings
+        if math.hypot(X - d['X'] - direction[0] * reach, Y - d['Y'] - direction[1] * reach) < 105.0:
+            return True
+    return False
+
+
 def trail_thinning(species, path_d, u, v):
     """How likely a plant may grow at grid point (u, v), given the distance to the trails. The
     forest thins out gradually and unevenly toward a trail, so the way through reads as a natural
@@ -628,7 +669,7 @@ def path_lamps(curves=None):
             nrm = np.array([-tdir[1], tdir[0]])
             X, Y = cp[i] + nrm * (PATH_HALF + 5.5) * side
             side = -side
-            if min(math.hypot(X - d['X'], Y - d['Y']) - d['R'] for d in DOMES.values()) < 40:
+            if min(math.hypot(X - d['X'], Y - d['Y']) - d.get('flora_radius', d['R']) for d in DOMES.values()) < 40:
                 continue
             lamps.append((float(X), float(Y)))
     bd = DOMES['base']
@@ -752,6 +793,57 @@ def crash_relief(along, lat, r):
 
 
 def build_world():
+    """Keep the authored scatter, then resize only the nursery's physical footprint.
+
+    Like solar pads, nursery geometry is applied after procedural placement: using
+    the smaller radius during terrain/scatter rejection shifts later random draws.
+    """
+    global _UNITS
+    nursery = DOMES['nursery']
+    radius, design_radius = nursery['R'], nursery['R0']
+    if radius >= 80. * DOME_SCALE:
+        return _build_world()
+    nursery.update(R=80. * DOME_SCALE, R0=80.)
+    _UNITS = None
+    try:
+        world = _build_world()
+    finally:
+        nursery.update(R=radius, R0=design_radius)
+        _UNITS = None
+    _compact_nursery_ground(world)
+    return world
+
+
+def _compact_nursery_ground(G):
+    """Remove the former outer plinth while retaining the original flat clearing."""
+    d = DOMES['nursery']
+    u, v = np.meshgrid(np.arange(N) + .5, np.arange(N) + .5, indexing='ij')
+    x, y = (u - v) / SQ2, (u + v) / SQ2
+    radius = np.hypot(x - d['X'], y - d['Y'])
+    apron = (radius >= d['R']) & (radius < 80. * DOME_SCALE) & (G['mat'] == 5)
+    G['H'][apron], G['mat'][apron] = d['Z'], 0
+    spill_width = 34. * 1.6
+    old_spill = radius < 80. * DOME_SCALE + spill_width
+    G['glow'][old_spill] = 0.
+    inside = radius < d['R']
+    G['glow'][inside] = .55 * np.clip(1 - (radius[inside] / d['R']) ** 2, 0, 1)
+    spill = (radius >= d['R']) & (radius < d['R'] + spill_width)
+    G['glow'][spill] = .42 * np.clip(1 - (radius[spill] - d['R']) / spill_width, 0, 1) ** 1.5
+    del x, y, radius, apron, old_spill, inside, spill
+    # Same normal/AO/shadow refresh used after authored solar grading.
+    hu, hv = np.gradient(G['H'])
+    dx, dy = (hu - hv) / SQ2, (hu + hv) / SQ2
+    inv = 1. / np.sqrt(dx * dx + dy * dy + 1.)
+    for key, values in [('nX', -dx * inv), ('nY', -dy * inv), ('nZ', inv)]:
+        G[key] = values.astype(np.float32)
+    G['ao'] = (np.clip((ndi.gaussian_filter(G['H'], 4) - G['H']) / 5., 0, 1) * .8
+               + np.clip((ndi.gaussian_filter(G['H'], 14) - G['H']) / 18., 0, 1) * .6).astype(np.float32)
+    G['shadow'] = shadow_map(G['H'])
+    stamp_plant_shadows(G, u, v)
+    print('nursery compact footprint applied after the original world scatter', flush=True)
+
+
+def _build_world():
     t0 = time.time()
     c = np.arange(N, dtype=np.float32) + 0.5
     U, V = np.meshgrid(c, c, indexing='ij')
@@ -762,7 +854,9 @@ def build_world():
     dome_r = {k: np.hypot(Xg - d['X'], Yg - d['Y']) for k, d in DOMES.items()}
     units = dome_units()
     unit_r = [np.hypot(Xg - u['X'], Yg - u['Y']) for u in units]
-    rim_d = np.minimum.reduce([r - u['R'] for r, u in zip(unit_r, units)])
+    # The nursery's smaller shell keeps its original flat clearing and terrain/RNG
+    # exclusion. Changing those would move unrelated rocks and plants across the map.
+    rim_d = np.minimum.reduce([r - u.get('flora_radius', u['R']) for r, u in zip(unit_r, units)])
     crash_d, c_along, c_lat = crash_field(Xg, Yg)
     su, sv = to_grid(SOLAR['X'], SOLAR['Y'])
     # Preserve the original terrain and random-placement stream for either solar design.
@@ -924,7 +1018,8 @@ def build_world():
     # --- level the ground around the domes, the crash site and the solar field, then lay the
     # roads (graded ramps where they climb)
     for k, d in DOMES.items():
-        Hf = d['Z'] + (Hf - d['Z']) * smoothstep(d['R'] + 15, d['R'] + 100, dome_r[k])
+        clearing = d.get('flora_radius', d['R'])
+        Hf = d['Z'] + (Hf - d['Z']) * smoothstep(clearing + 15, clearing + 100, dome_r[k])
     Hf *= 0.3 + 0.7 * smoothstep(0, 60, crash_d)
     Hf *= smoothstep(0, 30, solar_d)
     w = smoothstep(PATH_HALF - 2, PATH_HALF + 9, path_d)
@@ -1254,7 +1349,7 @@ def place_flora(G, U, V, rs):
             if rs.uniform() > trail_thinning(name, G['path_d'], u, v):
                 continue
             X, Y = to_cam(u, v)
-            if min(math.hypot(X - d['X'], Y - d['Y']) - d['R'] for d in DOMES.values()) < 40:
+            if min(math.hypot(X - d['X'], Y - d['Y']) - d.get('flora_radius', d['R']) for d in DOMES.values()) < 40:
                 continue
             if len(lamp_xy) and np.min(np.hypot(lamp_xy[:, 0] - X, lamp_xy[:, 1] - Y)) < 14:
                 continue
@@ -1267,6 +1362,9 @@ def place_flora(G, U, V, rs):
             var = int(rs.integers(variant_count(name)))
             plants.append(dict(species=name, variant=var, X=float(X), Y=float(Y), z=z))
             count += 1
+            if name == 'tree' and nursery_entry_clearance(X, Y):
+                plants.pop()                            # keep the RNG/spacing sequence, omit this canopy and its light
+                continue
             if name in ('tree', 'bulbs'):
                 lr = 26.0 if name == 'tree' else 12.0
                 w_ = int(lr) + 2
@@ -1867,7 +1965,7 @@ def decal_door_half(part, P):
 
 
 def airlock(d, dirv, open_=0.0):
-    """The airlock tunnel out of a dome and its door. The base's airlocks (white rooms) have a
+    """The airlock tunnel out of a dome and its door. White-enamel domes have a
     portal frame and a door of two halves that slide away into side pockets (open_ 0..1),
     showing the dark lock chamber and its amber light behind."""
     C = cam(d['X'], d['Y'], d['Z'])
@@ -1902,6 +2000,11 @@ def airlock(d, dirv, open_=0.0):
 
 def dome_ring(d):
     C = cam(d['X'], d['Y'], d['Z'] + 1.4)
+    if d.get('owner') == 'nursery' and NURSERY_DESIGN == 'v2':
+        # The approved mockup's broad white footing and fine coral lower edge, at design scale.
+        return [P_('footing', A.Disc(C + np.array([0, 0, 1.0]), d['R0'] + 1.2, 2.4, 0.8, UPAX),
+                   'white', 'ring'),
+                P_('edge', A.Torus(C - np.array([0, 0, 0.2]), d['R0'] + 1.2, 0.64), 'coral', 'ring')]
     return [P_('ring', A.Torus(C, d['R0'], 2.6), 'dark', 'ring', decal_ring if d['powered'] else None)]
 
 
@@ -2093,6 +2196,12 @@ def nursery_interior(d):
         lp, head = lamp(X, Y, 0.6)
         parts += [P_(p.name, p.sdf, p.ramp, f'lamp{k}') for p in lp]
         lights.append(head)
+    # The exterior's old furnishings were authored for R0=80. Fit them with the
+    # compact shell as well; otherwise the front reservoir pokes through the glass.
+    fit = min(1., d.get('R0', 80.) / 80.)
+    if fit != 1.:
+        parts = scaled(parts, C, fit, 'nursery_fit')
+        lights = [scale_pt(head, C, fit) for head in lights]
     return parts, lights
 
 
@@ -3398,8 +3507,16 @@ def _h(a, b, k):
 
 def band_grid(d):
     """The honeycomb round a v3 room: n panes per row, two rows filling a band that is cut
-    straight top and bottom through the panes' corners. Band y runs 0 .. 2.5a."""
+    straight top and bottom through the panes' corners. The nursery extends the same material
+    from its taller base to a tiny circular cap, using the approved larger panes."""
     R = d['R']
+    if d.get('owner') == 'nursery' and NURSERY_DESIGN == 'v2':
+        bottom, top = math.radians(10.0), math.radians(44.0) + 0.74
+        mid = (bottom + top) / 2
+        circ = 2 * math.pi * R * math.cos(mid)
+        n = max(8, int(round(circ / (math.sqrt(3) * 32.0))))
+        a = circ / (n * math.sqrt(3))
+        return dict(R=R, n=n, a=a, w=math.sqrt(3) * a, h=(top - bottom) * R, mid=mid)
     circ = 2 * math.pi * R * math.cos(GLASS_MID)
     a0 = GLASS_FILL * R / 2.5
     n = max(8, int(round(circ / (math.sqrt(3) * a0))))
@@ -3411,12 +3528,12 @@ def band_xy(u, g):
     """Band coordinates (along the ring, up from the band's bottom) of unit directions u."""
     az = np.arctan2(u[:, 1], u[:, 0])
     el = np.arcsin(np.clip(u[:, 2], -1, 1))
-    return az / (2 * math.pi) * g['n'] * g['w'], (el - GLASS_MID) * g['R'] + g['h'] / 2, el, az
+    return az / (2 * math.pi) * g['n'] * g['w'], (el - g.get('mid', GLASS_MID)) * g['R'] + g['h'] / 2, el, az
 
 
 def band_point(d, g, x, y):
     az = x * 2 * math.pi / (g['n'] * g['w'])
-    el = GLASS_MID + (y - g['h'] / 2) / g['R']
+    el = g.get('mid', GLASS_MID) + (y - g['h'] / 2) / g['R']
     return cam(d['X'], d['Y'], d['Z']) + d['R'] * vrot([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
 
 
@@ -3728,11 +3845,13 @@ def band_dome(img, D, kind, gid, d, gid_val):
             xc = g['a'] * math.sqrt(3) * (qi + ri / 2)
             yc = g['a'] * 1.5 * ri + g['a'] / 2
             azc = xc * 2 * math.pi / (g['n'] * g['w'])
-            elc = GLASS_MID + (yc - g['h'] / 2) / R
+            elc = g.get('mid', GLASS_MID) + (yc - g['h'] / 2) / R
             nf = vrot(np.stack([np.cos(elc) * np.cos(azc), np.cos(elc) * np.sin(azc), np.sin(elc)], -1))
             nmix = nf * 0.7 + n_s[gl] * 0.3
             nmix /= np.linalg.norm(nmix, axis=1)[:, None]
             envg, glg = env_reflect(nmix, by[gl], 0.9975)
+            if d.get('owner') == 'nursery':
+                glg[:] = False                                      # keep large panes tinted, as in the approved study
             lum = envg.mean(axis=1) / 255.0
             fres = 1 - np.abs(n_s[gl] @ F)
             k = np.clip(np.floor(0.6 + lum * 5.0 + fres * 2.4 + by[gl] * 0.8 + 0.4 * _h(qi, ri, 5)), 0, 7).astype(int)
@@ -3772,7 +3891,7 @@ def band_dome(img, D, kind, gid, d, gid_val):
             xc = g['a'] * math.sqrt(3) * (qi + ri / 2)
             yc = g['a'] * 1.5 * ri + g['a'] / 2
             azc = xc * 2 * math.pi / (g['n'] * g['w'])
-            elc = GLASS_MID + (yc - g['h'] / 2) / R
+            elc = g.get('mid', GLASS_MID) + (yc - g['h'] / 2) / R
             nf = vrot(np.stack([np.cos(elc) * np.cos(azc), np.cos(elc) * np.sin(azc), np.sin(elc)], -1))
             nmix = nf * 0.7 + n_s[ho] * 0.3
             nmix /= np.linalg.norm(nmix, axis=1)[:, None]
@@ -3797,6 +3916,8 @@ def band_dome(img, D, kind, gid, d, gid_val):
         D[jj[mf], ii[mf]] = Q[:, 1]
         kind[jj[mf], ii[mf]] = 3
         gid[jj[mf], ii[mf]] = gid_val
+        if EMIT is not None and d.get('owner') == 'nursery':
+            EMIT[jj[mf], ii[mf]] = 0                    # opaque reflective glass hides the old interior's lamps
     edge = front_all & ~ndi.binary_erosion(front_all)
     ey, ex = np.nonzero(edge)
     img[ey + y0, ex + x0] = OUTLINE
@@ -4201,8 +4322,9 @@ def export_animated(D):
 
     if DOMES['base']['powered']:
         sheet('base_radar', apex_radar, DOMES['base'], 24, 8, DOMES['base']['R0'] + 5, 12.0)
-    sheet('nursery_anemometer', apex_anemometer, DOMES['nursery'], 8, 14, DOMES['nursery']['R0'] + 4, 9.5,
-          turn=2 * math.pi / 3)
+    if NURSERY_DESIGN == 'v1':
+        sheet('nursery_anemometer', apex_anemometer, DOMES['nursery'], 8, 14, DOMES['nursery']['R0'] + 4, 9.5,
+              turn=2 * math.pi / 3)
     sheet('comms_dish', tower_dish_frame, DOMES['comms'], 24, 6, 121.0, 21.0)
 
     def visible(P):
@@ -4214,6 +4336,8 @@ def export_animated(D):
         name = d['owner']
         if not d['powered']:
             continue
+        if d['owner'] == 'nursery' and NURSERY_DESIGN == 'v2':
+            continue                                      # the new footing is white/coral, without the old rim LEDs
         C = cam(d['X'], d['Y'], d['Z'] + 0.0)
         n = 40
         for k in range(n):
@@ -4227,7 +4351,8 @@ def export_animated(D):
             continue
         C = cam(d['X'], d['Y'], d['Z'] + 0.0)
         dv = np.array([dirv[0], dirv[1], 0.0])
-        P = scale_pt(C + dv * (d['R0'] + 15.6) + np.array([0, 0, 14.6]), C, DOME_SCALE)
+        offset, height = (15.3, 13.9) if d['owner'] == 'nursery' and NURSERY_DESIGN == 'v2' else (15.6, 14.6)
+        P = scale_pt(C + dv * (d['R0'] + offset) + np.array([0, 0, height]), C, DOME_SCALE)
         ok, px = visible(P)
         if ok:
             out['door_lights'].append(px + [round(k * 0.37 % 1.0, 3)])
@@ -4535,7 +4660,7 @@ def export_game_data(G, D, kind, debris=(), body=None, world=True):
 
 # ================================================================== build
 def export_doors(D, kind):
-    """The base's airlock doors opening, as sprites to lay over the map: every frame of each door
+    """The base and nursery airlocks opening, as sprites to lay over the map: every frame of each door
     (closed -> open), where it sits, where its foot is (for sorting with the astronaut), and the
     door's place in the world (its middle on the ground, and which way it faces)."""
     adir = os.path.join(OUT, 'anim')
@@ -4543,7 +4668,7 @@ def export_doors(D, kind):
     with canonical():
         ends0 = airlock_ends()
     for k, ((d, dirv), (d0, dirv0)) in enumerate(zip(airlock_ends(), ends0)):
-        if d.get('owner') != 'base' or d.get('style') != 'band':
+        if d.get('owner') not in ('base', 'nursery') or d.get('style') != 'band':
             continue
         C = cam(d['X'], d['Y'], d['Z'])
         C0 = cam(d0['X'], d0['Y'], d0['Z'])
@@ -4570,8 +4695,9 @@ def export_doors(D, kind):
         foot0 = to_canon(foot)                                  # the game keeps the world in view 0's frame
         lamp = scale_pt(f + dv3 * 1.4 + np.array([0, 0, 7.9]), C, DOME_SCALE)
         lx, ly = project(*lamp)
-        out.append(dict(id=k, file=fn, frames=DOOR_FRAMES, position=[box[0], box[1]], frame_size=[box[2], box[3]],
-                        sort_y=round(float(project(*foot)[1]), 1), world=[round(float(foot0[0]), 2), round(float(foot0[1]), 2)],
+        out.append(dict(id=k, interior='res://scenes/nursery.tscn' if d['owner'] == 'nursery' else 'res://scenes/interior.tscn',
+                        file=fn, frames=DOOR_FRAMES, position=[box[0], box[1]], frame_size=[box[2], box[3]],
+                        sort_y=round(float(project(*foot)[1])), world=[round(float(foot0[0]), 2), round(float(foot0[1]), 2)],
                         dir=[round(float(dirv0[0]), 4), round(float(dirv0[1]), 4)], lamp_px=[round(float(lx), 1), round(float(ly), 1)],
                         height=round(float(14.8 * DOME_SCALE), 1)))
     print(f'doors: {len(out)} animated airlock doors')
@@ -4692,7 +4818,8 @@ def render_view(G, G0, k):
                      if name in ('base', 'command') and not d0['powered'] else [])
         gb = render_groups(turned(ring), img, D, kind, gid, gb)
         gb = render_groups(turned(parts), img, D, kind, gid, gb)
-        for i, hp in enumerate(ilights if d['powered'] else []):
+        visible_lights = d['powered'] and not (name == 'nursery' and NURSERY_DESIGN == 'v2')
+        for i, hp in enumerate(ilights if visible_lights else []):
             col = A.hex2rgb('#7fe6cf') if name == 'comms' and i == 0 else A.hex2rgb('#ffcf87')
             lights.append((to_view(scale_pt(hp, C, DOME_SCALE)), 8 * DOME_SCALE * gp * 0.6, col, 0.38))
         if radar:
@@ -4914,6 +5041,25 @@ def render_view(G, G0, k):
     print(f'view {k} rendered in {time.time() - t_start:.1f}s')
 
 
+def doors_only():
+    """Refresh sheets and routes without re-rendering unchanged terrain, art or walk grids."""
+    global VIEW, SFX, W, H, AX, AY
+    _snapshot()
+    os.makedirs(os.path.join(OUT, 'anim'), exist_ok=True)
+    for k in VIEWS:
+        VIEW, SFX = k, view_sfx(k)
+        apply_view_constants(k)
+        meta = json.load(open(os.path.join(OUT, f'red_planet_map{SFX}.json')))
+        W, H = meta['size']
+        AX, AY = meta['origin_px']
+        path = os.path.join(OUT, meta['fx'])
+        fx = json.load(open(path))
+        fx['doors'] = export_doors(None, None)
+        save_text(json.dumps(fx, separators=(',', ':')), path)
+    VIEW, SFX = 0, ''
+    apply_view_constants(0)
+
+
 def tiles_only():
     """Re-cut the tiles from the whole pictures already on disk, without re-rendering anything.
 
@@ -4949,5 +5095,7 @@ if __name__ == '__main__':
     np.seterr(all='ignore')
     if '--tiles-only' in sys.argv:
         tiles_only()
+    elif '--doors-only' in sys.argv:
+        doors_only()
     else:
         build()

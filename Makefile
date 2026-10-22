@@ -9,12 +9,13 @@
 #   make props          regenerate the test props (fast, needs the map's data)
 #   make solar          regenerate solar mirror/feed sheets and four-view anchors
 #   make interior       regenerate the base interior and its bot (about a minute)
+#   make nursery        regenerate the nursery interior and overworld airlock routes
 #   make windows        regenerate only glass inspection assets
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
 #   make map            regenerate the overworld (~35 min for four views, several GB of RAM)
 #   make tiles          re-cut the map's tiles from the pictures on disk (fast)
 #   make import         re-import assets into Godot (always after a regeneration)
-#   make check          both scenes + the test suites; fails on any error or warning
+#   make check          all rooms + the test suites; fails on any error or warning
 #   make shot           screenshot a scene: make shot ARGS="--spawn=-827,1440"
 #   make sounds         open assets/audio/viewer.html to listen to every sound
 #   make verify         import + check (what "done" needs, minus looking at it)
@@ -28,8 +29,8 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props solar interior windows astronaut astronaut-quick map tiles all import check \
-        check-overworld check-interior check-tests shot sounds verify clean-shots
+.PHONY: help env sources sfx props solar interior nursery windows astronaut astronaut-quick map tiles all import check \
+        check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots
 
 help:
 	@sed -n '2,/^$$/p' $(MAKEFILE_LIST) | sed 's/^# \{0,1\}//'
@@ -64,6 +65,10 @@ interior: $(PY)
 	$(PY) tools/window_repair_gen.py
 	$(PY) tools/bot_gen.py
 
+nursery: $(PY)
+	$(PY) tools/nursery_gen.py
+	$(PY) tools/mars_map_gen.py --doors-only
+
 windows: $(PY)
 	$(PY) tools/window_repair_gen.py
 
@@ -85,14 +90,14 @@ map: $(PY)
 tiles: $(PY)
 	$(PY) tools/mars_map_gen.py --tiles-only
 
-all: astronaut map interior sfx import
+all: astronaut map interior nursery sfx import
 
 # ---------------------------------------------------------------- Godot
 import:
 	$(GODOT) --headless --path . --import
 
 # Headless runs print errors and warnings to stderr; any of either fails the check.
-check: check-overworld check-interior check-tests
+check: check-overworld check-interior check-nursery check-tests
 
 # --quit=S (not --quit-after) lets the scene shut the sound down before it quits: a playback
 # still running at teardown is reported as leaked. --quit-after counts FRAMES, and a headless
@@ -111,6 +116,11 @@ check-interior:
 		2>&1 | tee /tmp/gtfo-interior.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|SCRIPT ERROR|WARNING|Parse Error' /tmp/gtfo-interior.log \
 		|| { echo "interior: errors above" >&2; exit 1; }
+
+check-nursery:
+	$(PY) tools/check_nursery.py
+	@$(GODOT) --headless --path . res://tests/nursery_test.tscn 2>&1 | tee /tmp/gtfo-nursery.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-nursery.log
 
 # The regression suites: the inventory's real input events, the circuit repair model over a
 # thousand shuffled boards, the camera's turn, the cargo box under storage's smashed panes, and the bot.
