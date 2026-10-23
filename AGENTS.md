@@ -595,7 +595,9 @@ consts in the named files.
   Five circuit layouts per machine retain their 30-active-second replacement and bolted wires.
   A matching route earns the other 50%. Both tasks persist through closes/airlocks. After both,
   generated restored machine geometry replaces broken room art, debris, depth, walk and light
-  data in all four views, with fault sparks/leaks removed. Six gatherable scraps in the base
+  data in all four views, with fault sparks/leaks removed. Power completion also closes its
+  service cabinet, stows its exposed board/leads, and reconnects the torn battery feed.
+  Six gatherable scraps in the base
   use the existing prop sheets and normal multitool gathering. Reduced motion disables sparks.
 - **Storage's smashed panes and the cargo box** (`scripts/repair/window_cracks.gd`):
   - Three panes are smashed in storage's window band: two in the wall you face coming in, the
@@ -1221,10 +1223,12 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
     - `red_planet_fx.json → cracks` has, per hole: room, id, shape, outline polygon, crack
       strokes, centre, world position, and patch image and position;
     - the images are in `assets/maps/red_planet/anim/cracks/`.
-  - **The power room cabinet art** remains the original generated asset:
+  - **The power room cabinet and battery feed** restore with the completed reactor:
     - `base_interior.json → fx.circuit_board` has `center`, `socket`, the 4 `corners`
       (map px) and `world`;
-    - `interior_fx.gd` pulses the empty socket.
+    - `interior_fx.gd` pulses the empty socket while broken; repaired power variants omit it.
+    - `restore_power` closes the existing cabinet and reconnects the original battery cable
+      route; broken and oxygen-only variants retain the damage.
   - **Reactor/O2 wiring is implemented:** F/X, five circuits each, timed replacement,
     session state, bolted wires and local progress bars. The native panel uses octagons,
     detailed PCB housings, a blue-green recess and neon green power (owner-approved).
@@ -1570,6 +1574,10 @@ Write one line per decision: date — decision (who approved it).
   sounds (`suit_light_on` / `suit_light_off`) baked with `--only`, no new packs. No HUD was
   added (§9): the beam itself is the indicator. `tests/suit_light_test.tscn` covers it and is
   part of `make check`.
+- 2026-10-17 — Completing power's crack and circuit repairs also automatically closes its
+  service cabinet and reconnects the torn battery cable circled by the owner. Restore these
+  parts in the existing repaired power/both variants, including depth/walk/light data and all
+  four views; preserve damage before completion and when only oxygen is repaired (owner).
 - 2026-10-19 — Merge main into the bot branch (requester): the suit lamp, the map window, the
   terraced solar field and the performance pass come in alongside the bot. The bot and the
   bulkheads now bind main's depth window (`MapStream.bind()`, re-bound on `_window_moved`), and
@@ -1608,3 +1616,6 @@ Write one line per decision: date — decision (who approved it).
   integration suite retains movement, both-door and four-view coverage at the smaller size.
   The compact exterior is applied after the original terrain/scatter pass, as with solar
   grading: only its plinth/material/light footprint changes, preserving the original flora.
+- 2026-10-23 — Integrate the automatic power cabinet/cable restoration onto current main,
+  preserving the bot, bulkheads, reserve lighting and nursery. Regenerate the interior and
+  repair variants from merged sources before publishing to GitHub (owner, requested).

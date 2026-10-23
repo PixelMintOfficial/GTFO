@@ -34,6 +34,8 @@ Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _li
 and machines/: the power room's reactor and the oxygen generator on their own, as transparent sprites.
 Also writes repaired_power/, repaired_oxygen/, repaired_both/: all four room views with
 restored machines, matching depth/walk/light data, and no fault effects for repaired equipment.
+Power completion also reconnects the torn battery feed and closes the service cabinet,
+removing its exposed damaged board and dangling leads in every repaired power view.
 machines.json retains three projected repair sites on each actual machine for reference.
 CrackRepairUI uses the owner's exact supplied panel PNGs, unchanged under machines/reference/.
 REPAIR_PANEL_DESIGN=reference (default) | equipment | detailed | simple retains earlier designs.
@@ -1784,9 +1786,14 @@ def export_machines(parts, feet):
 
 
 def restore_power(parts, c):
-    """Reassemble the approved reactor: sealed housing, three mounted coils and a level cap."""
+    """Restore the whole power assembly: reactor, battery feed and closed service cabinet.
+    Reuse the original fixtures/route so no extra random calls move the room's furniture."""
     pick = MACHINES['power_generator'][1]
-    out = [p for p in parts if not pick(p.group)]
+    cabinet = next(p.sdf for p in parts if p.name == 'svc')
+    battery = next(p.sdf for p in parts if p.name == 'cabinet' and p.group == 'cab3')
+    feed = next(p.sdf for p in parts if p.name == 'cable' and p.group == 'cable3')
+    out = [p for p in parts if not pick(p.group) and p.group not in ('pcb', 'svcdoor', 'cable3')
+           and not p.group.startswith(('pcbw', 'cable3w')) and p.name != 'svcrecess']
     out += [P_('plinth', A.Disc(c + [0, 0, 1.2], 15, 1.2, .5, M.UPAX), 'steel', 'reactor'),
             P_('housing', A.Disc(c + [0, 0, 15], 9.5, 13, 2, M.UPAX), 'white', 'reactor', decal_reactor),
             P_('cap', A.Ellipsoid(c + [0, 0, 30], (9.6, 9.6, 3)), 'white', 'cap'),
@@ -1794,6 +1801,18 @@ def restore_power(parts, c):
             P_('status', A.Sphere(c + [0, -9.5, 19], .7), 'ledcyan', 'reactor')]
     for z in (7, 15.5, 24):
         out.append(P_('coil', A.Torus(c + [0, 0, z], 10.6, 1.3), 'mustard', 'coil7'))
+    # Complete the existing cable's route into the battery instead of leaving its bare tip.
+    end = battery.c.copy()
+    end[2] = .9
+    out += [P_('cable', A.RoundCone(feed.a, feed.b, 1.05, 1.05), 'cable', 'cable3'),
+            P_('cable', A.RoundCone(feed.b, end, 1.05, 1.05), 'cable', 'cable3')]
+    # Shut the original hinged cover; keep its white/coral casing, add a latch and ready LED.
+    R = cabinet.R
+    front = cabinet.c + R @ [0, -3.8, 0]
+    out += [P_('svcdoor', A.RoundBox(front, (7.4, .32, 9), .3, R), 'white', 'svcdoor'),
+            P_('svcdoorline', A.RoundBox(front + R @ [0, -.04, 6.4], (7, .36, .45), .15, R), 'coral', 'svcdoor'),
+            P_('svclatch', A.RoundBox(front + R @ [5.4, -.45, -1.6], (.35, .25, 1.4), .15, R), 'steel', 'svcdoor'),
+            P_('svcstatus', A.Sphere(front + R @ [-5.4, -.4, 6.4], .5), 'ledcyan', 'svcdoor')]
     return out
 
 

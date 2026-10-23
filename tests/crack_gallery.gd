@@ -2,11 +2,13 @@ extends Node
 ## Native visual QA for the whole repair sequence. Runs real pointer welding, captures
 ## the flat machine casing, hot seam/sparks, transient seal glow, then fixed world art
 ## by day/night from all four headings. Run crack_gallery.tscn -- --out=ABSOLUTE_DIRECTORY.
+## Repress after window focus loss; bounded touch-up laps handle slow capture frames.
 
 var _out := "res://shots/crack-repair"
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="):
 			_out = arg.trim_prefix("--out=")
@@ -40,19 +42,28 @@ func _ready() -> void:
 			var captured := false
 			# Unfocused GUI windows run at a lower frame rate. Move at a measured pixel/sec
 			# speed rather than advancing one recorded pixel per frame.
-			while traveled < seam.size() + 5:
+			var last_tick := Time.get_ticks_usec()
+			while traveled < (seam.size() + 5) * 3:
 				await get_tree().process_frame
-				traveled += 65 * get_process_delta_time()
+				var now := Time.get_ticks_usec()
+				# Keep each step near the perimeter even if one render stalls at a corner.
+				traveled += minf(2.0, 65 * float(now - last_tick) / 1000000.0)
+				last_tick = now
 				var j := int(traveled) % seam.size()
 				var point := seam[j].lerp(seam[(j + 1) % seam.size()], fmod(traveled, 1))
+				if not panel._held:
+					await _pointer(panel, point, true)
 				var motion := InputEventMouseMotion.new()
 				motion.position = panel._canvas.get_global_transform() * point
 				get_viewport().push_input(motion, true)
 				if i == 0 and traveled > 30 and not captured:
 					captured = true
 					await _shot(machine + "-welding")
+				if traveled > seam.size() and model.sealed[i] == 1:
+					break
 			await _pointer(panel, seam[0], false)
 			if model.sealed[i] != 1:
+				await _shot(machine + "-failed")
 				push_error("Native pointer failed to seal %s hole %d: coverage %.3f heat %.3f" % [machine, i, model.coverage(i), model.heat])
 				await Audio.quit(1)
 				return

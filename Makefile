@@ -62,6 +62,7 @@ solar: $(PY)
 
 interior: $(PY)
 	$(PY) tools/interior_gen.py
+	$(PY) tests/test_power_restore.py
 	$(PY) tools/window_repair_gen.py
 	$(PY) tools/bot_gen.py
 

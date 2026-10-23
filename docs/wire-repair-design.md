@@ -62,10 +62,15 @@ are blocked until cracks are complete. Progress, placements, welds, orientations
 time survive scene transitions; restarting resets the session.
 
 Completing both tasks replaces the broken machine with restored generator geometry, including
-its loose parts, depth map, walk grid, light masks and fault emitters. `interior_gen.py` writes
-all four headings into `repaired_power`, `repaired_oxygen` and `repaired_both`. The room keeps
+its loose parts, depth map, walk grid, light masks and fault emitters.
+Power's restored assembly also reconnects the torn battery cable and closes the service
+cabinet, removing the exposed burnt board and dangling leads automatically.
+`interior_gen.py` writes all four headings into `repaired_power`, `repaired_oxygen` and
+`repaired_both`. The room keeps
 its shared MapTerrain instance when switching variants, so player/tool/camera references and
 world positions stay consistent. Six gatherable scraps inside the base use existing prop art.
+`make interior` also checks physical cable continuity and service-cover closure through
+`tests/test_power_restore.py`.
 
 ## Code ownership
 
