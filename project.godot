@@ -56,6 +56,22 @@ bp_mask={
 "type": "sampler2D",
 "value": ""
 }
+bp_nursery_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 1)
+}
+bp_nursery_active={
+"type": "float",
+"value": 0.0
+}
+bp_nursery_mask={
+"type": "sampler2D",
+"value": ""
+}
+dn_power={
+"type": "float",
+"value": 1.0
+}
 dn_mul={
 "type": "vec3",
 "value": Vector3(1, 1, 1)

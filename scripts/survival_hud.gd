@@ -1,14 +1,14 @@
 class_name SurvivalHUD
 extends CanvasLayer
-## One draggable parent panel with four SurvivalMeter children; top right by default.
-## Grip only: left-drag moves, right-click resets; Home/left-stick click also resets.
-## SurvivalHUDLayout persists normalized UI placement in user://survival_hud.cfg.
+## Four compact SurvivalMeter children, anchored at the top left in every facility/view.
+## Fixed placement: pointer input and old saved HUD positions cannot move the stats.
+## Compact O2 reserve counter only after O2 repair while mains are off; hides again on mains.
 ## Owns scene ticking/input only; vitals remain in GameState. Pauses in ordinary modals and
 ## cutscenes; the live window inspection keeps survival ticking along with world physics.
 ## Explicit development mode: --survival-debug enables F6 damage, F7 air, F8 empty needs,
 ## F9 refill, F10 60x time. --vitals=H,O,F,W and --survival-speed=N require that flag.
 ## --hud-preview=H,O,F,W is UI-only; F11 cycles 0/25/50/75/100, F12 restores live display.
-## GUI preferences resize the entire group while retaining normalized placement and hitboxes.
+## GUI preferences resize the entire group while retaining fixed top-left placement.
 
 const COLORS := [Color("#ec7a5a"), Color("#7fe6cf"), Color("#efb950"), Color("#4fc6b4")]
 const ICONS := {
@@ -17,21 +17,17 @@ const ICONS := {
 	"hunger": ["..###..", ".#####.", ".#####.", "..###..", "...#...", "..###.."],
 	"thirst": ["...#...", "..###..", "..###..", ".#####.", ".#####.", "..###.."],
 }
-const PANEL_SIZE := Vector2(138, 34)
-const HANDLE := Rect2(2, 6, 9, 22)
-const METER_ORIGIN := Vector2(11, 2)
+const PANEL_SIZE := Vector2(128, 34)
+const METER_ORIGIN := Vector2(2, 2)
 const METER_SPACING := 31
 const MARGIN := Vector2(6, 6)
 var _player: Player
 var _tool: Multitool
 var _canvas: Control
+var oxygen_counter: Node2D
 var _panel: Control
 var meters: Array[SurvivalMeter] = []
-var layout: SurvivalHUDLayout
 var _bounds := Rect2(0, 0, 384, 216)
-var _dragging := false
-var _drag_offset := Vector2.ZERO
-var _hover_grip := false
 var _preview_step := -1
 var debug_enabled := false
 var speed := 1.0
@@ -48,7 +44,9 @@ func setup(player: Player, tool: Multitool) -> void:
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.draw.connect(_draw_hud)
 	add_child(_canvas)
-	layout = SurvivalHUDLayout.new()
+	oxygen_counter = Node2D.new()
+	oxygen_counter.draw.connect(_draw_oxygen_supply)
+	_canvas.add_child(oxygen_counter)
 	_panel = Control.new()
 	_panel.size = PANEL_SIZE
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -71,14 +69,6 @@ func setup(player: Player, tool: Multitool) -> void:
 		var pad := InputEventJoypadButton.new()
 		pad.button_index = JOY_BUTTON_RIGHT_STICK
 		InputMap.action_add_event("consume_item", pad)
-	if not InputMap.has_action("reset_survival_hud"):
-		InputMap.add_action("reset_survival_hud")
-		var key := InputEventKey.new()
-		key.physical_keycode = KEY_HOME
-		InputMap.action_add_event("reset_survival_hud", key)
-		var pad := InputEventJoypadButton.new()
-		pad.button_index = JOY_BUTTON_LEFT_STICK
-		InputMap.action_add_event("reset_survival_hud", pad)
 	var args := OS.get_cmdline_user_args()
 	debug_enabled = OS.is_debug_build() and args.has("--survival-debug")
 	if debug_enabled:
@@ -108,32 +98,16 @@ func _refresh() -> void:
 
 
 func _position_panel() -> void:
-	var travel := (_bounds.size - PANEL_SIZE - MARGIN * 2).max(Vector2.ZERO)
-	_panel.position = (_bounds.position + MARGIN + travel * layout.normalized).round()
+	_panel.position = (_bounds.position + MARGIN).round()
 
 
-func _move_panel(point: Vector2) -> void:
-	var travel := (_bounds.size - PANEL_SIZE - MARGIN * 2).max(Vector2.ZERO)
-	var low := _bounds.position + MARGIN
-	var pos := point.clamp(low, low + travel)
-	layout.normalized = Vector2((pos.x - low.x) / travel.x if travel.x > 0 else 0,
-			(pos.y - low.y) / travel.y if travel.y > 0 else 0)
-	_position_panel()
+## Shared preference scale for all persistent HUD elements; the compact default is Small.
+static func compact_scale(canvas: CanvasItem) -> float:
+	var view := canvas.get_viewport_rect().size
+	return minf(view.x / 384.0, view.y / 216.0) * GameState.settings.gui_factor(canvas)
 
 
-func reset_position() -> void:
-	_dragging = false
-	if layout.reset() != OK:
-		push_warning("Could not save survival HUD position")
-	_position_panel()
-
-
-func _save_position() -> void:
-	if layout.save() != OK:
-		push_warning("Could not save survival HUD position")
-
-
-## Labels in a UI canvas or the world can avoid the moved panel in their own coordinates.
+## Labels in a UI canvas or the world can avoid the fixed panel in their own coordinates.
 ## Including the canvas transform handles the world's camera/zoom as well as UI scaling.
 static func plate_position(canvas: CanvasItem, desired: Rect2) -> Vector2:
 	var hud := canvas.get_tree().get_first_node_in_group("survival_hud") as SurvivalHUD
@@ -152,31 +126,33 @@ static func toast_position(canvas: CanvasItem, desired: Vector2, width: int) -> 
 	return plate_position(canvas, plate) + Vector2(8, 5)
 
 
-var _shell_drawn := Vector2i(-1, -1)
 var _hud_drawn := []
+var _air_state := ""
+var _air_notice := 0.0
 
 
 func _layout() -> void:
 	var view := _canvas.get_viewport_rect().size
-	var factor := minf(view.x / 384.0, view.y / 216.0) * GameState.settings.gui_factor(_canvas)
+	var factor := compact_scale(_canvas)
 	_canvas.scale = Vector2.ONE * factor
-	_canvas.position = ((view - Vector2(384, 216) * factor) * 0.5).floor()
+	_canvas.position = Vector2.ZERO
 	# Cover the whole viewport even when inventory centers its 16:9 logical canvas.
 	_bounds = Rect2(-_canvas.position / factor, view / factor)
 	_position_panel()
 
 
 func _process(delta: float) -> void:
+	var air_state := GameState.facility_air.status() + str(GameState.facility_air.sealed())
+	if air_state != _air_state:
+		_air_state = air_state
+		_air_notice = 8.0
+	if not get_tree().paused:
+		_air_notice = maxf(0., _air_notice - delta)
 	_layout()
 	_panel.visible = _player.controls_enabled and not _player.puppet and not get_tree().paused and not GameState.survival.dead
-	if _dragging and (not _panel.visible or _player.turning):
-		_dragging = false
-		_save_position()
-	_hover_grip = HANDLE.has_point(_canvas.get_local_mouse_position() - _panel.position)
-	var shell := Vector2i(1 if _dragging else 0, 1 if _hover_grip else 0)
-	if shell != _shell_drawn:                             # the panel only changes when you grab it
-		_shell_drawn = shell
-		_panel.queue_redraw()
+	_canvas.visible = not get_tree().paused or GameState.survival.dead
+	oxygen_counter.visible = GameState.facility_air.status() in ["reserve", "empty"] \
+			and _player.controls_enabled and not _player.puppet and not GameState.survival.dead
 	if not get_tree().paused and (_player.controls_enabled or _tool.window_panel_open) and not _player.puppet and not _player.turning:
 		GameState.survival.advance(delta * speed, _player.can_breathe(), _player.sprinting)
 	if GameState.survival.dead:
@@ -191,16 +167,11 @@ func _process(delta: float) -> void:
 		meter.pulse = _pulse
 		meter.refresh()
 	var hud := [_player.controls_enabled, _player.can_breathe(), GameState.survival.dead,
-			debug_enabled, meters[0].preview]
+			debug_enabled, meters[0].preview, _air_state, _air_notice > 0., roundi(GameState.facility_air.reserve_fraction() * 100.)]
 	if hud != _hud_drawn:                                 # a few lines of text, and only on a change
 		_hud_drawn = hud
 		_canvas.queue_redraw()
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT and _dragging:
-		_dragging = false
-		_save_position()
+		oxygen_counter.queue_redraw()
 
 
 func _input(event: InputEvent) -> void:
@@ -209,26 +180,6 @@ func _input(event: InputEvent) -> void:
 		if not event.is_echo() and event.is_action_pressed("inventory_accept"):
 			GameState.rescue()
 		return
-	if get_tree().paused or not _player.controls_enabled or _player.puppet or _player.turning:
-		return
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _dragging:
-		_dragging = false
-		_save_position()
-		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and _dragging:
-		_move_panel(_canvas.get_global_transform().affine_inverse() * event.position - _drag_offset)
-		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed:
-		var local: Vector2 = _canvas.get_global_transform().affine_inverse() * event.position
-		if HANDLE.has_point(local - _panel.position):
-			if event.button_index == MOUSE_BUTTON_LEFT:
-				_dragging = true
-				_drag_offset = local - _panel.position
-			elif event.button_index == MOUSE_BUTTON_RIGHT:
-				reset_position()
-			else:
-				return
-			get_viewport().set_input_as_handled()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -240,9 +191,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed("consume_item"):
 		Audio.play("ui_place" if GameState.consume_slot(GameState.selected_slot) else "ui_deny")
-		get_viewport().set_input_as_handled()
-	if event.is_action_pressed("reset_survival_hud"):
-		reset_position()
 		get_viewport().set_input_as_handled()
 	if debug_enabled and event is InputEventKey and event.pressed:
 		match event.physical_keycode:
@@ -280,17 +228,6 @@ func _draw_container() -> void:
 		if y >= 1 and y < PANEL_SIZE.y - 1:
 			_panel.draw_rect(Rect2(inset + 1, y, PANEL_SIZE.x - inset * 2 - 2, 1), Color("#14111f"))
 	_panel.draw_rect(Rect2(11, 1, PANEL_SIZE.x - 22, 1), Color("#332d42"))
-	var grip := InventoryUI.TEAL if _dragging else InventoryUI.WHITE if _hover_grip else InventoryUI.MUTED
-	for y in 3:
-		for x in 2:
-			_panel.draw_rect(Rect2(4 + x * 3, 12 + y * 4, 2, 2), grip)
-	if _hover_grip or _dragging:
-		var hint := "DRAG - RIGHT CLICK RESET"
-		var pos := Vector2(4, PANEL_SIZE.y + 3)
-		if _panel.position.y + PANEL_SIZE.y + 11 > _bounds.end.y:
-			pos.y = -10
-		_panel.draw_rect(Rect2(pos - Vector2.ONE, Vector2(PixelFont.width(hint) + 2, 7)), InventoryUI.VOID)
-		PixelFont.draw(_panel, pos, hint, InventoryUI.MUTED)
 
 
 func _draw_hud() -> void:
@@ -301,10 +238,34 @@ func _draw_hud() -> void:
 		PixelFont.draw(_canvas, Vector2(6, 39), "DEV %dX AIR %s" % [int(speed), "ON" if _player.can_breathe() else "OFF"], InventoryUI.GOLD)
 		if meters[0].preview >= 0:
 			PixelFont.draw(_canvas, Vector2(6, 47), "HUD PREVIEW - F12 LIVE", InventoryUI.GOLD)
-	if not _player.can_breathe():
-		PixelFont.draw(_canvas, Vector2(145, 137), "O2 RESERVE IN USE", InventoryUI.GOLD)
+	if _air_notice > 0. and not get_tree().paused:
+		var messages := GameState.facility_air.message()
+		for i in messages.size():
+			var width := PixelFont.width(messages[i])
+			var at := Vector2((_bounds.size.x - width) * .5, _bounds.end.y - 73 + i * 9).round()
+			_canvas.draw_rect(Rect2(at - Vector2(3, 2), Vector2(width + 6, 9)), InventoryUI.VOID)
+			PixelFont.draw(_canvas, at, messages[i], InventoryUI.GOLD)
 	if state.dead:
 		_canvas.draw_rect(_bounds, Color(InventoryUI.VOID, 0.9))
-		PixelFont.draw(_canvas, Vector2(132, 80), "SUIT OFFLINE", InventoryUI.CORAL, 2)
-		PixelFont.draw(_canvas, Vector2(192 - PixelFont.width(state.cause) / 2, 102), state.cause, InventoryUI.WHITE)
-		PixelFont.draw(_canvas, Vector2(110, 122), "ENTER / A - RETURN TO BASE", InventoryUI.TEAL)
+		var center := _bounds.get_center()
+		PixelFont.draw(_canvas, center + Vector2(-60, -28), "SUIT OFFLINE", InventoryUI.CORAL, 2)
+		PixelFont.draw(_canvas, center + Vector2(-PixelFont.width(state.cause) / 2, -6), state.cause, InventoryUI.WHITE)
+		PixelFont.draw(_canvas, center + Vector2(-82, 14), "ENTER / A - RETURN TO BASE", InventoryUI.TEAL)
+
+
+## Temporary reserve battery beside the clock; the owning node hides before repair/on mains.
+func _draw_oxygen_supply() -> void:
+	var air := GameState.facility_air
+	var status := air.status()
+	var at := Vector2(86, 44)
+	var label := "O2 RESERVE" if status == "reserve" else "O2 MAIN" if status == "online" else "O2 NO POWER" if status == "empty" else "O2 OFFLINE"
+	var col := InventoryUI.GOLD if status == "reserve" else InventoryUI.TEAL if status == "online" else InventoryUI.CORAL
+	oxygen_counter.draw_rect(Rect2(at, Vector2(84, 28)), DayClock.PLATE)
+	oxygen_counter.draw_rect(Rect2(at, Vector2(84, 28)), DayClock.EDGE, false)
+	PixelFont.draw(oxygen_counter, at + Vector2(4, 3), label, col)
+	var fraction := air.reserve_fraction() if status == "reserve" else 1. if status == "online" else 0.
+	for i in 10:
+		oxygen_counter.draw_rect(Rect2(at + Vector2(4 + i * 5, 12), Vector2(4, 4)), col if fraction * 10. > i else Color("#3b3253"))
+	PixelFont.draw(oxygen_counter, at + Vector2(57, 12), "%d%%" % roundi(fraction * 100.), col)
+	var detail := "AIR LEAK" if status in ["reserve", "online"] and not air.sealed() else "AIR OK" if air.breathable() else "NO O2"
+	PixelFont.draw(oxygen_counter, at + Vector2(4, 21), detail, InventoryUI.MUTED)

@@ -69,7 +69,7 @@ project.godot          viewport 384x216, integer scaling, nearest filtering, pix
 scenes/
   overworld.tscn       main scene: the red planet
   interior.tscn        inside the main base (storage / power room / oxygen room)
-  nursery.tscn         the powered nursery, with two working airlocks
+  nursery.tscn         the damaged nursery, growing beds and two working airlocks
   player.tscn          the astronaut: Shadow, AnimatedSprite2D (depth-occlusion shader), GameCamera
 scripts/
   game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
@@ -94,6 +94,12 @@ scripts/
   overworld.gd         builds the overworld, doors, intro, test hooks
   interior.gd          builds the interior, exit door, test hooks
   nursery.gd           builds the nursery, both exit doors, four views and test hooks
+  nursery_cleanup.gd   removable native litter for nursery and base, shared UNIT cleanup controller
+  reserve_meter.gd     compact physical O2 wall reserve readout, native generated frames
+  facility_air.gd       shared base/nursery O2 reserve, sealing and generator/solar supply
+  cultivation_state.gd session nursery repairs, growing beds and wild seed cooldowns
+  cultivation_world.gd F/X seed gathering, simple repairs, planting and harvesting
+  crop_visual.gd       native crop depth/glow, four views and camera-swing boards
   repair/              circuit model/catalog, machine state, power-flow timeline, native panel, world adapter;
                        window_repair.gd / window_cracks.gd: storage's smashed panes and the cargo box
                        glass_puzzle.gd / glass_repair_ui.gd: live glass jigsaw and sealing scan
@@ -129,6 +135,11 @@ tools/                 the pipeline (Python): generates everything in assets/
   interior_gen.py           the base interior: rooms, machines, data
   nursery_gen.py            the approved nursery interior, walk grid and two airlocks, four views
   check_nursery.py          nursery floor/door-layer/screen/scale QA against native models and sheets
+  cultivation_models.py     approved crop, wild seed plant and modest nursery damage models
+  cultivation_gen.py        wild sheets, crop depth/glow and native inventory icons
+  cultivation_placement.py  reachable forest seed clearings, preserving the original scatter stream
+  nursery_cultivation.py    nursery repair variants and independent crop overlays
+  check_cultivation.py      forest/approach/atlas/crop/repair-state QA
   window_repair_gen.py      source-matched window inspections, connected glass pieces and working tool
   bot_gen.py                the base's bot: SDF model, eight facings, dormant/wake/idle/talk/move (BOT_DESIGN)
   solar_field_gen.py        solar mirror/feed sheets and four-view indicator metadata (shared SDF renderer)
@@ -137,9 +148,11 @@ tools/                 the pipeline (Python): generates everything in assets/
   *_viewer.html             browser previews of the sprites and the map
   wire_repair.html          browser companion to the native circuit panel
 data/repair_circuits.json   authored five-circuit sequences for power and oxygen machines
+data/cultivation.json       repair/crop IDs, growth/yields, wild scales and clearing balance
 data/bot_story.json         every placeholder name (the bot, the previous owner), the bot's lines,
                             objectives and lore: change a name here and everything follows
 assets/                (lowercase, always)
+  cultivation/             four-view wild plants, native colour/depth/glow sheets and inventory icons
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
   maps/red_planet/          generated overworld: map, depth, walk, biome, light, fx, props, flora, anim, previews;
@@ -225,8 +238,9 @@ rooms (every view and repair variant): `id` (the room), `world` (the doorway's m
 their threshold is walkable. `bot` gives the cradle's `world` (in storage), `facing`, `radius` and
 `height`; the bot's own sheet is `bot/bot.json` (`file`; `facings`: Player.DIRS, one row each, drawn
 once for every view because the light stays put on screen; `frame_size`, `anchor`; `face`: its
-eyes from the foot per facing; `animations`: name -> [first, count, fps, loop]). `game.reserve_png` is the reserve-power
-overlay: the emergency lines and floor rings, bloomed, laid over the map additively once it is on.
+eyes from the foot per facing; `animations`: name -> [first, count, fps, loop]). `game.reserve_png` retains its historical name but is the mains lighting
+overlay: emergency lines and floor rings appear only with repaired generator + all solar routes.
+Unlocking maintenance access and the O2-only reserve never switch these lights on.
 
 `base_interior.json → repair_machines` contains `id`, `label`, `world`, `stand_world`
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
@@ -283,8 +297,8 @@ the animated door sprites, so the door's sort order cannot cover the player's le
   pixels**. Half-pixel offsets tie and swap draw order at random.
 
 ### 4.4 Day and night: how things are lit
-`DayNight` sets four shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`) and
-`SuitLight` two more (`dn_lamp`, `dn_beam`); all six are declared in `project.godot`. Everything
+`DayNight` sets five shader globals every frame (`dn_mul`, `dn_add`, `dn_sat`, `dn_night`, `dn_power`) and
+`SuitLight` two more (`dn_lamp`, `dn_beam`); all seven are declared in `project.godot`. Everything
 in the world must take them:
 - **A shader that draws the world** `#include`s `res://shaders/day_night.gdshaderinc` and passes
   its sunlit colour through `day_night(colour, map_px)` (or `dn_sky(colour)` when it has no map
@@ -306,6 +320,29 @@ in the world must take them:
 - **Sunlight effects fade at night**: multiply them by `DayNight.daylight` (sun glints, the
   interior's shafts and their dust).
 - UI on its own `CanvasLayer` is never graded.
+
+Facilities use `DayNight.facility`: without their power source, rooms and fixtures are dim at
+every hour. Base lighting requires generator plus all solar routes. Nursery lighting requires
+its repaired console screen, independently of base mains. Nursery sets DayNight's
+`facility_power_source` to `GameState.nursery_powered`; the default remains base mains.
+`dn_power` gates map/turn fixture emission; `DayNight.darkness` controls the suit lamp independently
+of astronomical `night`. O2 repair starts its own 24-hour reserve and never powers the rest of
+the base. A compact battery beside the clock appears only after O2 repair while mains are
+off, showing reserve percent/empty and leaks. It disappears once generator + solar restore mains.
+When empty, O2 production stops and indoor suit oxygen drains until mains are restored.
+
+Exterior mains lighting uses `BasePower` and two compact crops per view. Generated
+`power/catalog.json` retains `views` for the main base and adds `nursery_views` for the nursery,
+each with `file` and map-pixel `rect`. RGB stores illumination, damaged glass emission and
+restored glass emission. Both facilities share the same glow/spill strengths. Shader globals
+`bp_nursery_rect` / `bp_nursery_mask` extend the existing base mask, with independent
+`bp_nursery_active` driven by the console repair; camera reliefs receive each
+view's own pair. No texture spans the empty distance between facilities. `make base-power`
+regenerates both, using actual shell geometry and final depth to avoid foreground glare.
+
+Opaque band-dome shells must occlude old interior emission as well as colour. The map generator's
+`opaque_dome_pixels` checks actual ray hits against final scene depth; `--dome-light-only`
+refreshes only derived light masks/tiles. `tools/check_dome_light.py` checks all four views.
 
 ### 4.5 Input
 Actions are registered **in code**, in each script's static `_ensure_actions()`, with a
@@ -362,13 +399,20 @@ camera turns reproject equipment and rays without changing the optical puzzle.
 Escape closes an existing inventory, map, repair, F1 panel or dialogue before it opens options.
 Options own pause and consume all input; independent `options_suppressed` keeps multitool F/X
 blocked until released after resume. Gamepad B resumes without switching the suit lamp.
+Cultivation uses independent `cultivation_suppressed` proximity/release ownership.
+F/X taps collect ripe wild seeds, plant a dead bed or harvest. Repair nursery UNIT before its systems. Nursery repairs require
+the equipped multitool (T/Y) and its existing held F/X fix job: use pose and cyan scanner,
+2.4 seconds per system. Unfinished scans resume after releases, unequipping, turns or airlocks.
+Airlocks take priority; modals, cutscenes, jumps and turns block cultivation. Completing a
+held scan cannot also plant or start another job before release. No minigames or new buttons.
+See docs/cultivation.md.
 
 ### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
   - `settings`: `GameSettings`, master volume and GUI size. `user://settings.cfg` keeps these
     preferences between launches; it is separate from gameplay saving. `changed` updates UI
     immediately, including while paused. Large preserves the original size; Small/Medium use
-    smaller pixel-snapped display scales. Invalid/missing preferences use Large and full volume.
+    smaller pixel-snapped display scales. Invalid/missing preferences use compact Small and full volume.
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
   - `tool_out`: the multitool stays out across the airlock;
@@ -380,6 +424,8 @@ blocked until released after resume. Gamepad B resumes without switching the sui
     quick access. Empty slots are `{}`. Item kinds are `multitool`, `ore_chunk`, `scrap`, `glass`, `ration`, `water`;
     resources/rations/water stack to 99. Use `store_item`, `swap_slots`, `select_slot` and listen to
     `inventory_changed`. A full bag leaves gathered props in the world.
+    Cultivation adds `emberpod_seed`, `dewpod_seed`, `emberpod`, `dewpod`, also stacking to 99.
+    `can_store_items` / `store_items` preflight complete handfuls and harvests atomically.
   - `removed_props`, `spawned_props`: session ledger for gathered props/mined rocks and
     their loose chunks. IDs derive from props JSON path/index, with `/chunk/N` for mined
     chunks and `/spill/N` for the cargo box's rations; `spawned_props` entries keep their `kind`
@@ -388,7 +434,7 @@ blocked until released after resume. Gamepad B resumes without switching the sui
     taken (one per pane), where it was last set down, and whether it broke. Its `puzzles` keep
     independent `GlassPuzzle` placements/rotations and unfinished scan progress through closes,
     views and airlocks. Six glass are consumed atomically only when that pane's scan completes.
-    `dome_mended` is `"base"` when every pane is mended, restoring all three main-base domes
+    `dome_mended` is `"base"` when every pane is mended, restoring the three command/storage holes
     (read by `DomeFX`); `""` retains damage. Single-room IDs remain developer previews. Reset with the
     world ledger (`reset_inventory`), which holds its spilled rations.
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
@@ -401,21 +447,30 @@ blocked until released after resume. Gamepad B resumes without switching the sui
     supplies at overworld spawn while preserving session progress. See docs/survival.md.
     `frozen` (kind -> true) holds needs still - no drain, recovery or damage - set from the
     master control panel; it is kept through rescue.
+  - `facility_air`: `FacilityAir`: `reserve_started_at` on the game clock, full O2 repair,
+    three storage seals, and generator/solar supply shared by base and nursery. The scene's
+    `Player.air_source` queries it indoors; outdoors is always unbreathable. See docs/survival.md.
   - `story`: `StoryState`: the opening chapter - `bot_awake`, `named`, `player_name`,
-    `reserve_power` (the bulkheads open), `objectives_given`, the lore lines `heard`, and
-    `bot_world` (where the bot was last, following you; null while it is in its cradle). Every
+    `access_opened` (mechanical maintenance bulkheads open, without lighting the base), `objectives_given`, the lore lines `heard`, and
+    `bot_world` (main patrol position), `nursery_bot_world`, `nursery_awake`,
+    `nursery_introduced`, `body_repair_progress`, `cleanup_progress`, `maintenance_waits` and `guidance_seen`. Every
     name and line comes from `data/bot_story.json` (tokens `{BOT}`, `{OWNER}`, `{NAME}`).
-    Objectives are done when their machine's repair reaches 100%. Kept through rescue. The
+    Seven objectives query full machine repair, three seals, feed states and solar routes. Kept through rescue. The
     player's name is also remembered between launches in `user://profile.cfg` (`PlayerProfile`:
-    a preference, like the survival HUD's position, not a save file). `skip_intro()` for tests.
+    a name preference, not a save file). HUD placement is fixed. `skip_intro()` for tests.
   - `solar_field`: `SolarFieldState`: ten world mirror orientations, three closed/open
     feeds and cached optical routes. All three complete 3/3/4 Amber/Jade/Coral routes supply the base reactor;
-    `base_powered()` also requires BOTH power and oxygen machines fully repaired (cracks and
+    `base_powered()` also requires the power machine fully repaired (cracks and
     wiring). Full power lights the main base indoors and outdoors through day and night.
-    The bot's reserve power is independent. State survives turns, airlocks
+    The O2-only reserve is independent and does not light the base. State survives turns, airlocks
     and rescue. See docs/solar-field.md for optics, generated art, ownership and test hooks.
+  - `cultivation`: `CultivationState`: three nursery repair bits, `repair_progress` (scan fractions), planted-bed ready times
+    and wild seed cooldowns, plus successful first crop-kind `harvested` flags. Uses the existing clock and survives views, airlocks and rescue;
+    explicit inventory/world reset resets it. `data/cultivation.json` owns balance/IDs.
+    Crops start dead, need collected seeds and regrow after harvesting. Emberpods restore
+    hunger; Dewpods restore thirst via the existing C action. See docs/cultivation.md.
 - Inside, the corridors to the power and oxygen rooms are sealed by bulkheads until the bot
-  switches on reserve power: they stand in `MapTerrain.blockers` while sealed.
+  releases maintenance access: they stand in `MapTerrain.blockers` while sealed.
 - Going in: an overworld door emits `entered`, then `overworld.gd` sets `GameState` and
   changes to `interior.tscn`, which plays `door.arrive()`. Going out works the same way in
   reverse. Both base airlocks lead into the same storage room. You come back out of the one
@@ -424,6 +479,23 @@ blocked until released after resume. Gamepad B resumes without switching the sui
   leaving through either doorway returns to that doorway outside, including when it differs
   from the entry. Shared `AirlockDoor` proximity ownership keeps the multitool suppressed
   while any door offers interaction. The clock, inventory, tool and suit lamp carry through.
+
+`NurseryCleanup` loads six reachable soil/leaf/tray-chip piles per facility from
+`nursery_interior/cleanup/cleanup.json` or `base_interior/cleanup/cleanup.json`, generated by
+`tools/nursery_cleanup_gen.py` with the
+existing cultivation colour/local-depth exporter and native ramps. Four diminishing frames
+per view disappear only after UNIT vacuums in reach. `StoryState.cleanup_progress` stores each
+pile's fraction. Native `clean_start`, `clean`, `clean_end` frames deploy/sweep/stow the intake;
+`bot.json.nozzle_tips` anchors graded pickup particles to the actual attachment. Ordinary
+patrols continue between jobs and after all piles are gone. `maintenance.stroll_seconds`
+(16–30 seconds) and `idle_seconds` (1.2–3.5) in bot_story.json control random roaming breaks;
+`StoryState.maintenance_waits` preserves each body's remaining delay through airlocks. Jobs
+choose actual unfinished piles only; empty floor never runs a vacuum animation. The floor
+graph validates movement segments around curved walls and tries alternate nearby approaches.
+Leaving, talking, pausing or turning cannot clean remotely.
+The nursery checklist shows player body/system repairs, planting 0/3 and 0/2, and first harvests.
+UNIT's autonomous cleanup is not a player task and does not block checklist completion.
+`CultivationState.harvested` records successful crop-kind harvests only after inventory accepts them.
 
 ### 4.7 Effects pattern
 FX scripts draw procedurally in `_draw()`:
@@ -539,6 +611,9 @@ process, which moves by about 11 MB - see §12.
   with a bounds test, and **a pixel outside the window counts as sky** so a sprite there draws
   whole instead of being wrongly hidden. `MapStream.bind(material, terrain)` points a material
   at the current window; re-point on the scene's `_window_moved` as well as on a view switch.
+- **The map's light mask must follow the same publication.** Call `DayNight.set_masks()` from
+  `_window_moved`: zooming or a map-edge resize can allocate a new light texture. Keeping the
+  previous texture stretches old light patches over new ground, most visibly at night.
 - **Small maps are not streamed.** The interior has no `tiles` block, so `MapTerrain.streaming`
   is false, its layers are loaded whole, and its window is the whole map - the same shaders and
   the same code path, with the window simply never moving.
@@ -645,15 +720,15 @@ consts in the named files.
     white reflections, matching the owner's floor-glass reference. The three storage barrels
     and their collision are removed to leave room for carrying the cargo box.
   - State survives the airlock (`GameState.window_repair`). No `[F] EXIT` prompt while up on a box.
-  - With all three mended, all three main-base domes outside are mended too: command, habitat
-    and garage show whole glass over their six breaks in every view, by day and night and
-    through the camera's swing. Partial completion retains the exterior damage.
+  - Storage's three holes exist outside too: front burst/crescent and rear gash on the
+    command dome. Mending the three interior panes restores all of them in every view.
+    Habitat and garage glass is intact; they have no exterior holes.
 - **Solar field** (`scripts/solar/`, `data/solar_field.json`):
   - Three elevated, closed sun feeds and 3/3/4 Amber/Jade/Coral reflectors surround one conical receiver
     (three yellow, three blue/teal, four red). Relays descend from hilltops into the clearing.
     F/X opens a feed or turns a nearby mirror clockwise 22.5 degrees. No Q reverse action.
     Movement, survival and the clock continue. Every assigned reflector is required.
-    Local solar prompts and bars avoid the movable survival HUD using its canvas-aware
+    Local solar prompts and bars avoid the fixed survival HUD using its canvas-aware
     `plate_position`; prompts sit beside the equipment's feet to stay readable at close zoom.
   - The receiver's local bar has three channel segments. Its cable goes into the base's
     power conduit; all three complete paths plus the fully repaired reactor AND oxygen
@@ -669,29 +744,28 @@ consts in the named files.
     input, `SolarFieldFX` animation and `SolarPowerInput` wall lenses. No prototype navigation box.
 - **The bot and the opening chapter** (`scripts/story/`, `data/bot_story.json`):
   - The airlock opens into storage, where the bot sleeps in its charging cradle (south-west
-    floor). The corridors to the power and oxygen rooms are sealed by bulkheads (red lamp
-    blinking; walk up and SEALED shows).
+    floor). The corridors to the power and oxygen rooms are sealed by bulkheads (their lamps
+    require mains; walk up and SEALED shows).
   - It is a fix job: hold F with the tool out (2.4 s). It boots (1 s: eyes flicker on, it rises
     off the cradle), then talks. Lines type out with a chirp; F / Enter / A move on.
   - It takes you for the previous owner (`names.previous_owner`). You tell it your name in the
     name entry (prefilled with the one you gave last time); from then on it uses it.
-  - It switches on reserve power: a relay clunk, the emergency lines stutter on (the reserve
-    overlay), and both bulkheads open (1.8 s beat, controls held). Then the objectives:
-    RESTORE POWER (the reactor fully repaired) and RESTORE OXYGEN (the O2 generator fully
-    repaired), in either order, shown in the objective line under the time panel (both
-    scenes). It lingers 6 s after both are done, then goes.
-  - Then it leaves the cradle and **follows you round the base** (inside only): it hovers to a
-    spot about 16 units behind and 14 beside you, up to running speed, steering round walls and
-    anything solid (never solid itself). Stuck for 1.5 s, or more than 120 units behind, it
-    blinks back in beside you. It turns with its flight (eight facings) and faces you when it
-    settles. Going out through the airlock, it stays inside (`GameState.story.bot_world`);
-    coming back, it meets you at the door with a hop and a chirp. A quiet `bot_hover` hum
-    goes with it.
-  - `[F] TALK`: while it follows, only when you turn to face it within 22 units, and never
-    while a door, machine, window, the solar field or a tool target has F (so it never takes
-    F from the tool). Lore whose moment has come (power done, oxygen done, the three panes
-    mended, both done), else a reminder of what is left and one piece of trivia not heard yet.
-  - State survives turns and the airlock (`GameState.story`).
+  - It releases maintenance access with a relay clunk and both bulkheads open (1.8 s beat,
+    controls held). Main lighting remains off. Then the objectives:
+    O2, glass, generator, then solar instructions. Seven checklist tasks cover O2, the three-pane
+    seal, generator, open sun feeds, and Amber/Jade/Coral alignment. Actions can be completed
+    out of order; UNIT explains the earliest unfinished stage. An exclamation shows new advice
+    until heard. Glass advice resolves the current turn-key bindings.
+  - Awake UNIT patrols cleaning sites instead of following the player. Native clean poses
+    deploy/sweep/stow a vacuum intake while actual nursery litter shrinks. Walk-grid routes avoid walls and loose props.
+    It never blocks the player or teleports to follow an airlock. Its position is session state.
+  - The nursery has a second dormant UNIT body using the same sheet and shared mind. Repair
+    it first with the equipped tool's 2.4-second held scanner; partial scans survive airlocks.
+    Its mandatory introduction explains Emberpods/racks/food, Dewpods/silos/water, Moonwell
+    seeds only at NIGHT (20:00–05:00), and full-day crop growth. It then cleans independently.
+  - F/X talks when facing UNIT within reach; doors, repair targets and modals retain ownership.
+    Dialogue/name entry pause survival and time. Release F/X before the next world action.
+  - State survives turns, airlocks and rescue (`GameState.story`).
 - **Outdoors** there are no loose test props (ore rocks, scrap, crates) and no trail lamps any
   more (owner, §12); the gather/mine/lift/fix jobs remain for the base and what comes next.
 - **Master control panel** (`dev_panel.gd`, editor and debug builds only): F1 / Guide opens it
@@ -699,20 +773,27 @@ consts in the named files.
   of the day (dawn, morning, noon, evening, night; same day), and freeze food, water and
   oxygen where they are (`GameState.survival.frozen`). The clock runs on while it is open; the
   astronaut stands still. Arrows / d-pad, Enter / A, Esc / B / F1 closes; mouse works too.
-  Four task toggles complete oxygen repair, power repair (both cracks and wiring), all three
-  storage glass cracks, or all solar reflection routes remotely, without materials or puzzles.
+  Eight task toggles complete oxygen repair, power repair (both cracks and wiring), all three
+  storage glass cracks, all solar reflection routes, nursery UNIT, nursery screen, grow light
+  or food rack remotely, without materials or puzzles. The taller plate keeps every row visible.
   DONE reflects real session progress, including manual play; toggle again to reset that task
   for replay. Reset solar restores initial mirror angles and closed feeds. Glass reset clears
   pane puzzles and restores damaged interior/exterior glass and lighting, preserving cargo-box
   history. Machine reset clears that machine's puzzles. These use the existing session objects
   and notifications, so room art, safe air and full-power lighting update immediately and state
-  carries through turns and airlocks; no story skip or extra supplies are granted.
+  carries through turns and airlocks; no main-story skip or extra supplies are granted.
+  `CultivationState.debug_complete(id, completed)` changes only that repair bit/progress.
+  `StoryState.debug_complete_nursery(completed)` completes or resets the nursery body/intro;
+  its live Bot listens to the existing story signal, updating scanner/patrol state immediately.
+  UNIT reset preserves all crop/system/cleanup progress. Screen reset also removes nursery
+  lighting/glow; completing it restores them. The main-base story remains independent.
 - **Pause/options** (`pause_menu.gd`): Escape pauses gameplay, the clock and survival in all
   three scenes. An 85%-opaque dark-grey overlay leaves 15% of the current game visible.
   VOLUME sits above a horizontal master slider (0–100%, zero mutes); GUI SCALE sits above
-  SMALL / MEDIUM / LARGE. Sizes apply to the hotbar, E backpack, day/night clock and stat panel.
-  The backpack stays centred, the hotbar stays at the bottom and the stats retain their saved
-  normalized location and scaled hitboxes. The options themselves keep a steady size. Mouse,
+  SMALL / MEDIUM / LARGE, default Small. Sizes apply to the hotbar, E backpack, day/night clock,
+  stat panel, tasks and reserve counter. The backpack stays centred, the hotbar stays at the
+  bottom and stats retain their fixed top-left location. Scaled hitboxes follow the art.
+  The options themselves keep a steady size. Mouse,
   arrows/d-pad and Enter/A operate the controls; Escape/B resumes and saves preferences.
   Existing modal/cutscene ownership is retained. See docs/options.md.
 - **Doors** (`airlock_door.gd`):
@@ -736,7 +817,7 @@ consts in the named files.
     anywhere. Nothing lights the astronaut for them any more.
   - The time panel sits top left, and a "DAY N" title comes up at dawn. It is hidden during the
     crash intro and comes in with "DAY 1" when it ends.
-  - Time changes nothing else in play yet (no sleep, no night dangers).
+  - Moonwell seed plants open only during NIGHT (20:00–05:00). There is no sleep or night danger.
 - **The suit lamp** (`suit_light.gd`):
   - L / gamepad B switches it on and off. It **starts off**, every time, and stays as you left
     it through the airlock (`GameState.suit_light`). Nothing else turns it on.
@@ -747,8 +828,9 @@ consts in the named files.
   - The beam's origin follows the raised, pixel-snapped sprite during jumps, falls and while
     standing on a cargo box; it never stays at the ground sorting position. Camera reliefs
     use the same suit anchor. Standing on the ground retains the original beam placement.
-  - Its strength follows `DayNight.night`, so it is worth nothing at noon and everything at
-    2 a.m., and it can never wash the daylight out.
+  - Its strength follows `DayNight.darkness`: astronomical night outdoors, power status
+    indoors. It lights an unpowered facility at noon too; each facility's repaired power source
+    lights its interior at all hours.
   - It is two shader globals, not a light node (§4.4): it costs nothing per lit thing, and it
     follows the camera's quarter turns because its direction is worked out in the current view.
 - **Sound** (§4.8, §7.6): the three lands each have their own ambience, crossfaded by the land
@@ -783,6 +865,8 @@ the existing renderer (`render_groups` / `render_sprite`).
 | `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | ~35 min for the four views (~9 each, measured on an 8-core laptop), several GB of RAM. `--tiles-only` re-cuts the tiles from the pictures already on disk in a couple of minutes |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
 | `python tools/solar_field_gen.py` | `assets/maps/red_planet/solar/*`, `solar_field.json` | after every map regeneration or equipment change; `make map` includes it | seconds |
+| `python tools/cultivation_gen.py` | `assets/cultivation/*` | wild seed models, opening frames or inventory icons change; `make map` includes it | seconds |
+| `python tools/nursery_gen.py` | `assets/maps/nursery_interior/*` | nursery geometry, repairs or growing beds change; `make nursery` also refreshes exterior door routes | a few minutes |
 | `python tools/interior_gen.py` | `assets/maps/base_interior/*` | you change the interior | about 2.5 minutes (four views × four machine variants, ~40 s each) |
 | `python tools/bot_gen.py` | `assets/maps/base_interior/bot/*` | you change the bot; `make interior` runs it | seconds |
 | `python tools/sfx_gen.py` | `assets/audio/*` | you change any sound | fast (needs `make sources` once) |
@@ -806,6 +890,9 @@ designs can be compared or restored:
   The original terrain clearing, forest exclusion and random stream are retained.
 - `NURSERY_INTERIOR_SCALE` = `0.8` (default) — room, furniture, collision and specimen glass
   scale together; `1` restores the earlier room size. Astronaut/airlock scale stays shared.
+- `NURSERY_CONDITION` = `damaged` (default) | `restored` — eight cultivation repair
+  combinations with dead/reseeded overlays, or the earlier intact room export for comparison.
+  The runtime chooses repair combinations from `GameState.cultivation`.
 - `TOOL_DESIGN` = `v1` | `v2` (default **v2**) — the multitool.
 - `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
 - `SOLAR_FIELD_LAYOUT` = `v1` | `v2` (default **v2**) — earlier 4/5/4 ground field or the
@@ -879,8 +966,10 @@ world/anchor/panel_id, housing/lights sprite paths, position/size and eight conn
 The bot adds (§4.1): `bulkheads`, `bot` and `game.reserve_png` in every interior meta JSON (incl.
 the repaired variants; read by `Bulkhead`, `Bot`, `InteriorFX`), and `bot/bot.json` (read by
 `Bot`). `data/bot_story.json` (read by `StoryState`) owns `names`, `name_entry`, the line groups (`wake`, `correction`, `named`, `reserve`,
-`objectives_intro`, `remind`), `objectives` (`id`, `label`, `machine`) and `lore` (`id`,
-`trigger`: power_done / oxygen_done / panes_done / both_done / talk, `lines`).
+`nursery_intro`, `nursery_remind`), ordered `guidance` (oxygen/glass/power/solar/done),
+`objectives` (`id`, `label`, optional `machine`/`route`) and talk `lore` (`id`, `trigger`, `lines`).
+Camera hints use `{TURN_LEFT}` / `{TURN_RIGHT}` resolved from InputMap. Nursery metadata
+adds `bot.body`, `world`, `facing`, `radius`, and canonical `cleaning_spots` for its body.
 
 The panes and the box add (§4.1): `window_cracks` in every interior meta JSON (incl. the
 repaired variants; read by `WindowCracks`), and `top` / `half` / `yaw` / `contents` /
@@ -1008,7 +1097,7 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
   - two smashed holes per room, each a different irregular shape.
 - **The base is dead at the start** (`BASE_POWERED = False`): no lights, nothing turning.
   The nursery and the comms dome are powered.
-  Once both machines and all solar routes are repaired, `BasePower` keeps the base lit
+  Once the generator and all solar routes are repaired, `BasePower` keeps the base lit
   at every hour. Interior surfaces and the existing strips stay steadily lit; outside,
   the existing glass emits teal and the white shell/corridors catch reflected light.
   `tools/base_power_gen.py` owns compact four-view RGB masks under `red_planet/power/`:
@@ -1096,6 +1185,8 @@ godot --headless --path . --import                                   # re-import
 godot --headless --path . res://scenes/overworld.tscn --quit-after 20000 -- --no-intro --quit=4
 godot --headless --path . res://scenes/interior.tscn --quit-after 20000 -- --quit=4
 godot --headless --path . res://tests/nursery_test.tscn                # both nursery airlocks, turns, collision and state
+godot --headless --path . res://tests/cultivation_test.tscn            # seeds, repairs, growth, harvests, real F/X and views
+python tools/check_cultivation.py                                   # all clearings, stable approaches and repair art
 godot --path . res://scenes/overworld.tscn -- --spawn=-827,1440 --capture=shot.png --seconds=2
 godot --path . res://scenes/interior.tscn -- --spawn=-236,492 --walk=0,-1 --capture=walk.png --seconds=3
 godot --path . res://scenes/nursery.tscn -- --time=12 --capture=nursery.png
@@ -1111,7 +1202,7 @@ godot --headless --path . res://tests/suit_light_test.tscn           # the suit 
 godot --headless --path . res://tests/window_restore_test.tscn       # sealed panes' art and light, every view and variant
 godot --headless --path . res://tests/solar_field_test.tscn          # solar optics, routes, equipment and input
 godot --headless --path . res://tests/survival_test.tscn             # survival needs, damage, rescue
-godot --headless --path . res://tests/survival_hud_test.tscn         # the survival panel (and its layout probes, see make check)
+godot --headless --path . res://tests/survival_hud_test.tscn         # the fixed compact survival panel
 godot --headless --path . res://tests/bot_story_test.tscn            # bulkheads, waking the bot, its talk, your name, reserve power, following
 godot --path . res://scenes/interior.tscn -- --bot-wake --name=ASTRO --story-auto=0.5 --capture=wake.png --seconds=1.4 --burst=10 --gap=0.45
 godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
@@ -1304,17 +1395,14 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - **Dead path lamps** by the base can be fixed with the tool (the `fix` job).
   - **Storage's three smashed panes**: native glass jigsaws, collected glass and resumable
     multitool scans are built (§5). The box breaks only after all three repairs complete.
-  - The overworld's `command` room (storage, inside) has two holes; the interior has three.
-    Mending all three inside restores all six exterior breaks across command, habitat and
-    garage. F1 glass completion and reset use the same exterior state.
+  - Storage has matching three-pane damage inside/outside. Habitat and garage glass is intact.
 - **The bot is built** (§5): its cradle in storage, the bulkheads, reserve power, the name, the
-  objectives, the lore, and following you round the base. Open:
+  ordered repair guidance, the lore, and two independent maintenance bodies. Open:
   - every name is a placeholder (`data/bot_story.json → names`): the bot and the previous owner.
     The lines are drafts;
   - the bulkheads reuse the airlock's `door_unseal`; a sound of their own (recorded steel)
     needs `make sources` and `ffmpeg`;
-  - it follows indoors only; objectives after the first two (the solar field) are only
-    mentioned in the lore so far;
+  - outdoor companion behaviour remains unimplemented; solar repairs are tracked;
   - more for it to do is listed for the team in `docs/bot-design.md → Ideas for the team
     meeting` (none of it approved or built).
 - **Nothing outdoors for the multitool yet**: the test props and dead trail lamps were removed
@@ -1324,6 +1412,10 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   swaps. Resources are gathered through the existing tool; ration/water consumption is
   implemented, and three scraps per successful crack repair are consumed atomically.
   Crafting and disk saving remain unimplemented.
+- **Nursery restoration and cultivation are built:** three simple F/X repairs, dead beds
+  replanted with wild seeds, Emberpod food racks and Dewpod water silos. Sixteen Cindercoils
+  and sixteen night-opening Moonwells inhabit small forest clearings. Harvests restore
+  hunger/thirst, beds regrow, and all progress uses the session clock/state. See docs/cultivation.md.
 - **Sound is built** (§4.8, §7.6): ambience for the three lands and the dead base, positional
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
   the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel,
@@ -1332,9 +1424,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
 - **Not built yet:** nursery minigames, the comms interior, saving and loading (the clock
-  would be saved with `GameState.clock`, the suit lamp with `GameState.suit_light`), anything
-  else that depends on the time of day - no sleep and no night dangers, so the dark costs you
-  nothing but your bearings yet - music (and there will not be any, §9).
+  would be saved with `GameState.clock`, the suit lamp with `GameState.suit_light`), sleep
+  and night dangers, music (and there will not be any, §9).
 
 ---
 
@@ -1699,3 +1790,105 @@ Write one line per decision: date — decision (who approved it).
   of gameplay visible, a master-volume slider and Small/Medium/Large GUI controls. Large keeps
   the original UI; smaller choices resize hotbar, clock, stat panel and E backpack together,
   retaining placement and pointer geometry. Save these preferences separately from game state.
+- 2026-10-25 — Implement the approved modest nursery damage and native crop/wild-plant
+  mockups (owner). F/X taps repair the console, grow light and irrigation, then plant or
+  harvest the three Emberpod food racks and two Dewpod water silos. Minigames remain future
+  work. Crops begin dead and need wilderness seeds; one handful covers a crop type's beds.
+  Cindercoil is woody curled scrub with dry seed cases, without edible-looking wild fruit.
+  Moonwell opens at NIGHT (20:00–05:00), exposing glowing Dewpod seeds for F/X collection.
+  Sixteen of each, roughly astronaut height, occupy small reachable forest clearings; only
+  filler undergrowth is removed, preserving trees and the original scatter stream.
+  Native four-view crop/depth/glow sheets, eight nursery repair combinations, inventory fruit
+  and game-clock regrowth use existing controls, survival and GameState ownership. Retain the
+  earlier intact room with `NURSERY_CONDITION=restored`. Balance/data/test hooks are documented
+  in docs/cultivation.md; seeds/fruit are not granted at the start.
+- 2026-10-25 — Nursery repairs require the equipped multitool (owner). Hold F/X for the
+  existing 2.4-second cyan scanner fix job, including the astronaut's use pose and tool beam
+  sound. T/Y equips it. Unfinished `repair_progress` survives release, unequipping, camera
+  turns and airlocks; completion requires a release before another action. Planting,
+  harvesting and wild seed gathering retain taps. The nursery generator owns `scan_height`
+  per system; `make nursery-metadata` refreshes anchors across all repair variants/views.
+- 2026-10-25 — Nursery visual cleanup (owner screenshots): floor feeds remain intact;
+  the dry propagation channel is grey steel. Remove console/grower hanging wire bundles.
+  The console instead has a chipped monitor bezel and screen fractures. The centre rear
+  growing rack has one sagging middle shelf and a damaged support, restored by the same
+  multitool scanner. `rack` replaces `irrigation` as repair bit 4, retaining three quick
+  repairs. Its dead crop overlay follows the bent shelf until repaired; all three systems
+  restore circulation and normal growing. All eight combinations retain four native views.
+- 2026-10-25 — Crop pacing (owner): Emberpods and Dewpods take a full in-game day
+  (24 game hours) from planting to ripeness, and another full day after each harvest.
+  `data/cultivation.json` owns both delays. At the normal clock speed this is 12 real
+  minutes per growth cycle; pauses still stop growth and time away still counts.
+
+- 2026-10-26 — Owner: compact inventory/stats/clock/objective HUD, fixed top-left stats,
+  no dragging or saved placement. UNIT patrols/cleans instead of following; an initially
+  dormant nursery body must be repaired before its systems. Same-mind introduction explains
+  both crops, night Moonwell seeds and day-long growth. Independent body positions and partial
+  repair progress live in StoryState; bot_gen.py owns native clean frames, nursery metadata
+  owns its body and cleaning floor anchors.
+- 2026-10-26 — Owner: ordered UNIT advice O2 → three storage panes (rear-pane hint resolves
+  current turn keys) → generator → solar; seven tracked tasks and an unread exclamation.
+  FacilityAir in GameState makes outdoors/unpressurized rooms drain suit O2 at 0.1/s (a full
+  tank lasts 16m40s). Refill is 20/s only in sealed facilities with O2 supply. Full O2 repair
+  starts 24 game hours of reserve (12 real minutes); the repaired generator and three solar
+  routes sustain it. The nursery tank shares that supply. Reserve uses the game clock,
+  survives airlocks/rescue and resets with explicit world reset. Compact notices explain it.
+- 2026-10-26 — Owner: exterior command/storage rear gash added; habitat/garage holes removed.
+  All three command panes restore together through the existing dome_mended patches.
+
+- 2026-10-26 — Owner: reserve is O2-only, with a persistent battery/status indicator. Maintenance
+  access is `StoryState.access_opened`, mechanically opening bulkheads without restoring light.
+  `DayNight.facility`, `darkness`, `fixture_power` and shader `dn_power` keep unpowered interiors
+  dim at every hour; generator + all solar routes restore proper lighting day and night. The
+  suit lamp works indoors at noon. Empty reserve stops indoor O2/refill and resumes suit drain.
+- 2026-10-26 — Owner: remove broken exterior glare. Opaque band domes clear stale emission from
+  their earlier interior render; native ray/depth masking and light-only regeneration cover
+  all four views without changing terrain, vegetation or colour. Add dome-light regression QA.
+- 2026-10-26 — Owner: nursery checklist and actual cleanup. Six native dirt/leaf/tray-chip
+  overlays shrink as UNIT reaches and vacuums them. Extend the approved bot with a deployable
+  native intake, sweep/stow frames and generated nozzle anchors. Cleaned-pile fractions persist
+  in StoryState; successful first food/water harvests persist in CultivationState. No extra inputs
+  or minigames. `make nursery` generates cleanup art; native cleanup/power tests join `make check`.
+
+- 2026-10-26 — Owner: hide the reserve HUD until O2 is repaired, and hide it again on full
+  generator/solar mains. Add a compact physical RESERVES side-wall gauge. The revised native
+  housing contains its own 3x5 lettering and ten charge segments; the label is never a floating
+  UI plate. `tools/reserve_meter_gen.py` owns housing/eleven levels and `reserve_meter` metadata
+  across four views/all machine variants. Authored wall repeaters are selected against every
+  variant's final depth so tanks cannot cover the face. `clear_fraction` exports this check.
+  `make reserve-meter` or `interior_gen.py --meter-only` refreshes only that overlay. Before O2
+  repair and on mains the physical readout is dark; the wall hardware remains in place.
+- 2026-10-26 — Owner: UNIT cleans occasionally, with a quieter local vacuum. Both bodies now
+  remove six real litter overlays instead of vacuuming empty patrol stops. Random roaming and
+  brief idle intervals are data-owned; partial dirt progress remains session state. The new
+  `bot_vacuum` recipe in sfx_gen.py uses filtered lift-fan synthesis at -27 dB gain, 120 px reach
+  and 0.3 s fades, independently of multitool gathering. Release it on pause/talk/turn/stroll.
+
+- 2026-10-26 — Owner requested merging main (PR #25) into the nursery branch. Keep Escape
+  options, volume, GUI preferences, admin task toggles, raised suit-lamp anchor and exact
+  nighttime sunlight removal. One shared GUI factor replaces the duplicate compact scaling;
+  Small defaults to the compact HUD, with Medium/Large available. Stats stay fixed top-left;
+  nursery/base checklists and reserve counter scale with the clock and inventory. Preserve
+  O2-only reserves, generator/solar mains in both facilities, real UNIT cleanup and the three
+  storage exterior holes (other domes intact). Options release guards also cover cultivation.
+
+- 2026-10-26 — Owner: give the nursery the same nighttime exterior glow as the main base.
+  Extend the existing generator/solar mains masks with four compact nursery crops, using
+  identical teal glass emission, shell illumination and 100-world-unit ground spill. Keep
+  the original base masks pixel-identical. Both live shaders and camera reliefs sample the
+  extra crop, gated by the existing mains state; O2-only reserves leave it dark.
+
+- 2026-10-26 — Owner: nursery console screen must be repaired before nursery power comes on.
+  `GameState.nursery_powered()` derives from the existing console repair bit. DayNight uses
+  the nursery power callback; exterior masks use independent `bp_nursery_active`, including
+  camera turns. Screen repair lights nursery immediately even before base generator/solar;
+  base mains cannot bypass the broken screen. O2 remains piped from FacilityAir and still
+  requires main-base O2 repair, supply and seals. Remove UNIT cleaning from the eight player
+  checklist tasks; autonomous cleanup/progress continues without blocking checklist completion.
+
+- 2026-10-26 — Owner: add nursery repairs to Master Control. Extend the existing Complete/Reset
+  rows with nursery UNIT, screen, grow light and food rack. Toggle real session repair state,
+  clear the selected scan on reset, and refresh live art/power/body behaviour. UNIT completion
+  bypasses only its nursery introduction for immediate patrol; reset restores its dormant
+  repair job. Preserve main story, inventory, crops, harvests and cleaned dirt. Keep all eight
+  task rows visible on the native 384x216 panel; keyboard, pad and pointer input retain one list.

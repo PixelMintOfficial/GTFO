@@ -1,0 +1,140 @@
+{
+  "wild": {
+    "cindercoil": [
+      {
+        "file": "cindercoil.png",
+        "data": "cindercoil_data.png",
+        "frames": 2,
+        "frame_size": [
+          46,
+          63
+        ],
+        "anchor": [
+          22.0,
+          53.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0
+      },
+      {
+        "file": "cindercoil_r1.png",
+        "data": "cindercoil_r1_data.png",
+        "frames": 2,
+        "frame_size": [
+          42,
+          57
+        ],
+        "anchor": [
+          20.0,
+          47.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0
+      },
+      {
+        "file": "cindercoil_r2.png",
+        "data": "cindercoil_r2_data.png",
+        "frames": 2,
+        "frame_size": [
+          46,
+          56
+        ],
+        "anchor": [
+          24.0,
+          45.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0
+      },
+      {
+        "file": "cindercoil_r3.png",
+        "data": "cindercoil_r3_data.png",
+        "frames": 2,
+        "frame_size": [
+          42,
+          61
+        ],
+        "anchor": [
+          22.0,
+          51.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0
+      }
+    ],
+    "moonwell": [
+      {
+        "file": "moonwell.png",
+        "data": "moonwell_data.png",
+        "frames": 18,
+        "frame_size": [
+          53,
+          64
+        ],
+        "anchor": [
+          26.0,
+          51.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0,
+        "glow": "moonwell_glow.png"
+      },
+      {
+        "file": "moonwell_r1.png",
+        "data": "moonwell_r1_data.png",
+        "frames": 18,
+        "frame_size": [
+          53,
+          64
+        ],
+        "anchor": [
+          27.0,
+          51.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0,
+        "glow": "moonwell_r1_glow.png"
+      },
+      {
+        "file": "moonwell_r2.png",
+        "data": "moonwell_r2_data.png",
+        "frames": 18,
+        "frame_size": [
+          53,
+          64
+        ],
+        "anchor": [
+          27.0,
+          51.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0,
+        "glow": "moonwell_r2_glow.png"
+      },
+      {
+        "file": "moonwell_r3.png",
+        "data": "moonwell_r3_data.png",
+        "frames": 18,
+        "frame_size": [
+          53,
+          64
+        ],
+        "anchor": [
+          26.0,
+          51.0
+        ],
+        "depth_offset": 64.0,
+        "local_depth_scale": 512.0,
+        "glow": "moonwell_r3_glow.png"
+      }
+    ]
+  },
+  "icons": {
+    "emberpod_seed": "icons/emberpod_seed.png",
+    "dewpod_seed": "icons/dewpod_seed.png",
+    "emberpod": "icons/emberpod.png",
+    "dewpod": "icons/dewpod.png"
+  },
+  "character_height": 22.0,
+  "bloom_frames": 9
+}

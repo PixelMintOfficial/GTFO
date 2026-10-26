@@ -8,7 +8,7 @@ extends Node2D
 ## Sit this node between the map and the player: its lights draw under the player, its
 ## sprites (on top of the domes) draw over anyone walking behind a dome.
 ##
-## Mended glass: once storage's three windows are mended from inside, all three base rooms
+## Mended glass: once storage's three windows are mended from inside, its authored exterior holes
 ## (GameState.window_repair.dome_mended = "base") get their glass back - the patch the
 ## map generator exported with it (red_planet_fx.json -> cracks), laid over the map like the map
 ## itself, so the hole, its bright rim and its cracks are gone in every view.

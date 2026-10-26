@@ -1,4 +1,4 @@
-"""Generated base-light masks: geometry coverage, crop safety and four-view ownership.
+"""Generated base/nursery-light masks: geometry coverage, crop safety and four-view ownership.
 Window spill must reach every azimuth evenly, fade outward and survive terrain height.
 Run after make base-power; masks never replace or brighten the rest of the planet.
 """
@@ -33,8 +33,12 @@ class BasePowerArt(unittest.TestCase):
     def test_four_geometry_masks(self):
         root = ROOT / 'assets/maps/red_planet'
         catalog = json.loads((root / 'power/catalog.json').read_text())
-        self.assertEqual(len(catalog['views']), 4)
-        for k, info in enumerate(catalog['views']):
+        for owner, key in [('base', 'views'), ('nursery', 'nursery_views')]:
+            self.assertEqual(len(catalog[key]), 4)
+            self._check_region(root, catalog[key], owner)
+
+    def _check_region(self, root, views, owner):
+        for k, info in enumerate(views):
             M.VIEW = k
             M.apply_view_constants(k)
             meta = json.loads((root / f'red_planet_map{M.view_sfx(k)}.json').read_text())
@@ -60,7 +64,7 @@ class BasePowerArt(unittest.TestCase):
             self.assertEqual(np.count_nonzero(rgb[:, 0]) + np.count_nonzero(rgb[:, -1]), 0)
             self.assertFalse(np.any(rgb[raw == 65535]))
             for d in M.dome_units():
-                if d['owner'] != 'base':
+                if d['owner'] != owner:
                     continue
                 M.AX, M.AY = meta['origin_px']
                 px, py = M.project(d['X'], d['Y'], d['Z']+d['R']*.7)

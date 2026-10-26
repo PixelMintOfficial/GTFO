@@ -987,6 +987,19 @@
    "note": "The bot following you: a soft lift-fan hum, heard only close by. Seamless 2 s.",
    "group": "Other"
   },
+  "bot_vacuum": {
+   "files": [
+    "bot_vacuum.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -27.0,
+   "loop": true,
+   "seconds": 2.0,
+   "dist": 120.0,
+   "fade": 0.3,
+   "note": "UNIT intake: soft filtered lift-fan suction, near-threshold and local. Replaces the much louder multitool gather beam only for real cleaning jobs. Seamless 2 s; stops during strolling, pauses and conversations.",
+   "group": "Other"
+  },
   "reserve_on": {
    "files": [
     "reserve_on.wav"

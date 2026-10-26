@@ -1,0 +1,374 @@
+{
+  "beds": [
+    {
+      "id": "rack0",
+      "kind": "food",
+      "world": [
+        44.43762574361725,
+        635.7639728856531
+      ],
+      "stand_world": [
+        34.1166287967126,
+        608.8768566025336
+      ],
+      "views": [
+        {
+          "file": "crops/rack0.png",
+          "data": "crops/rack0_data.png",
+          "frames": 3,
+          "frame_size": [
+            86,
+            133
+          ],
+          "anchor": [
+            50.624300740901035,
+            126.8829982268046
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack0_r1.png",
+          "data": "crops/rack0_r1_data.png",
+          "frames": 3,
+          "frame_size": [
+            54,
+            150
+          ],
+          "anchor": [
+            47.34544363196932,
+            149.86787041323976
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack0_r2.png",
+          "data": "crops/rack0_r2_data.png",
+          "frames": 3,
+          "frame_size": [
+            86,
+            134
+          ],
+          "anchor": [
+            35.375699259098965,
+            148.22844185877392
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack0_r3.png",
+          "data": "crops/rack0_r3_data.png",
+          "frames": 3,
+          "frame_size": [
+            54,
+            149
+          ],
+          "anchor": [
+            6.654556368030683,
+            141.2435696723387
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "rack1",
+      "kind": "food",
+      "world": [
+        7.59281015471359e-15,
+        644.0
+      ],
+      "stand_world": [
+        5.829318763941402e-15,
+        615.2
+      ],
+      "views": [
+        {
+          "file": "crops/rack1.png",
+          "data": "crops/rack1_data.png",
+          "frames": 4,
+          "frame_size": [
+            90,
+            124
+          ],
+          "anchor": [
+            45.000000000000014,
+            121.37285328376208
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack1_r1.png",
+          "data": "crops/rack1_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            34,
+            152
+          ],
+          "anchor": [
+            39.365733518054355,
+            146.5557200427893
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack1_r2.png",
+          "data": "crops/rack1_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            90,
+            124
+          ],
+          "anchor": [
+            44.999999999999986,
+            143.73858680181644
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack1_r3.png",
+          "data": "crops/rack1_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            34,
+            152
+          ],
+          "anchor": [
+            -5.3657335180543555,
+            146.5557200427893
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "rack2",
+      "kind": "food",
+      "world": [
+        -44.43762574361724,
+        635.7639728856531
+      ],
+      "stand_world": [
+        -34.11662879671259,
+        608.8768566025336
+      ],
+      "views": [
+        {
+          "file": "crops/rack2.png",
+          "data": "crops/rack2_data.png",
+          "frames": 3,
+          "frame_size": [
+            86,
+            133
+          ],
+          "anchor": [
+            35.37569925909898,
+            126.8829982268046
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack2_r1.png",
+          "data": "crops/rack2_r1_data.png",
+          "frames": 3,
+          "frame_size": [
+            54,
+            149
+          ],
+          "anchor": [
+            47.34544363196932,
+            141.2435696723387
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack2_r2.png",
+          "data": "crops/rack2_r2_data.png",
+          "frames": 3,
+          "frame_size": [
+            86,
+            134
+          ],
+          "anchor": [
+            50.62430074090102,
+            148.22844185877392
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/rack2_r3.png",
+          "data": "crops/rack2_r3_data.png",
+          "frames": 3,
+          "frame_size": [
+            54,
+            149
+          ],
+          "anchor": [
+            6.654556368030683,
+            148.86787041323976
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "silo0",
+      "kind": "water",
+      "world": [
+        -98.4,
+        524.8
+      ],
+      "stand_world": [
+        -75.2,
+        518.4
+      ],
+      "views": [
+        {
+          "file": "crops/silo0.png",
+          "data": "crops/silo0_data.png",
+          "frames": 4,
+          "frame_size": [
+            71,
+            88
+          ],
+          "anchor": [
+            30.754934046963314,
+            101.01315745856891
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/silo0_r1.png",
+          "data": "crops/silo0_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            67,
+            89
+          ],
+          "anchor": [
+            36.08512516844071,
+            101.93318706627088
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/silo0_r2.png",
+          "data": "crops/silo0_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            71,
+            90
+          ],
+          "anchor": [
+            40.245065953036686,
+            103.09828262700955
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/silo0_r3.png",
+          "data": "crops/silo0_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            67,
+            88
+          ],
+          "anchor": [
+            30.914874831559292,
+            102.17825301930753
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "silo1",
+      "kind": "water",
+      "world": [
+        95.2,
+        588.8
+      ],
+      "stand_world": [
+        69.60000000000001,
+        584.8
+      ],
+      "views": [
+        {
+          "file": "crops/silo1.png",
+          "data": "crops/silo1_data.png",
+          "frames": 3,
+          "frame_size": [
+            63,
+            88
+          ],
+          "anchor": [
+            30.85498250740949,
+            101.11232300229676
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/silo1_r1.png",
+          "data": "crops/silo1_r1_data.png",
+          "frames": 3,
+          "frame_size": [
+            61,
+            89
+          ],
+          "anchor": [
+            30.886794080984885,
+            101.48321129649395
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/silo1_r2.png",
+          "data": "crops/silo1_r2_data.png",
+          "frames": 3,
+          "frame_size": [
+            63,
+            90
+          ],
+          "anchor": [
+            32.14501749259051,
+            102.9991170832817
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "crops/silo1_r3.png",
+          "data": "crops/silo1_r3_data.png",
+          "frames": 3,
+          "frame_size": [
+            61,
+            88
+          ],
+          "anchor": [
+            30.113205919015115,
+            102.62822878908446
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    }
+  ]
+}

@@ -34,6 +34,7 @@ extends Node2D
 ##   --story=awake          the bot already awake inside, its objectives handed out (the objective line)
 ##   --solar-at=ID          stand beside A SUN/B SUN/C SUN or reflector A1..C4
 ##   --solar-active / --solar-solved   optical routing capture hooks (ordinary feeds start off)
+##   --forage-at=ID         stand beside a generated wild seed plant (moonwell_00/cindercoil_00)
 
 const MAP_JSON := "res://assets/maps/red_planet/red_planet_map.json"
 const PROPS_JSON := "res://assets/maps/red_planet/red_planet_props.json"
@@ -45,6 +46,7 @@ var view_turn: ViewTurn
 var stream: MapStream
 var solar: SolarField
 var suit_light: SuitLight
+var cultivation: CultivationWorld
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -67,6 +69,7 @@ func _ready() -> void:
 	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
 	var view := terrain.view_json
 	player.setup(terrain)
+	player.air_source = func() -> bool: return false # the red planet's atmosphere is not breathable
 	player.camera.setup(player, $Map, terrain.max_view_px, terrain.streaming)
 	# The window has to exist before anything that samples the depth map is set up, and it is
 	# built around where the camera is, so it comes straight after the camera.
@@ -89,6 +92,9 @@ func _ready() -> void:
 	solar = SolarField.new()
 	add_child(solar)
 	solar.setup(player, multitool, terrain, $Actors)
+	cultivation = CultivationWorld.new()
+	add_child(cultivation)
+	cultivation.setup(player, multitool, terrain, $Actors)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
@@ -117,7 +123,7 @@ func _ready() -> void:
 			if d.get_meta("id") == GameState.door_id:
 				d.arrive()
 	GameState.arrive = ""
-	var skip := args.has("no-intro") or args.has("spawn") or args.has("walk") or GameState.intro_done or arriving
+	var skip := args.has("no-intro") or args.has("spawn") or args.has("walk") or args.has("forage-at") or GameState.intro_done or arriving
 	if args.has("intro") or not skip:
 		crash.finished.connect(func() -> void: GameState.intro_done = true)
 		day_night.clock_panel.visible = false            # the time panel comes in once the crash is over
@@ -163,6 +169,7 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	ambience.load_view(view)
 	multitool.set_view()
 	solar.load_view()
+	cultivation.load_view()
 	for d in doors:
 		d.queue_free()
 	doors.clear()
@@ -172,10 +179,14 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 ## The window has moved under the world (MapStream): everything that samples the depth map has
 ## to be told where it is now. Same fan-out as a view switch, and for the same reason.
 func _window_moved(_heading: int) -> void:
+	# A resized stitch allocates a new light texture; keep it paired with the map image.
+	day_night.set_masks(terrain.light_mask)
 	player.refresh_window()
 	biome_fx.refresh_window()
 	multitool.refresh_window()
 	solar.refresh_window()
+	if cultivation != null:
+		cultivation.refresh_window()
 
 
 ## What stands in the world, for the camera's swing: the plants in view, the loose props and
@@ -189,6 +200,7 @@ func _turn_boards() -> Array:
 			out.append(ViewTurn.prop_board(terrain, n))
 	out.append_array(dome_fx.boards())
 	out.append_array(solar.beam_boards())
+	out.append_array(cultivation.boards())
 	return out
 
 
@@ -251,6 +263,8 @@ func _run_test_hooks(args: Dictionary) -> void:
 					solar.state.rotate(id)
 	if args.has("solar-at") and solar.equipment.has(args["solar-at"]):
 		player.teleport(solar.interaction_point(args["solar-at"]))
+	if args.has("forage-at") and cultivation.targets.has(args["forage-at"]):
+		player.teleport(cultivation.interaction_point(args["forage-at"]))
 	if args.has("suit-light") and not suit_light.on():
 		suit_light.toggle()
 	if args.has("dome-mended"):

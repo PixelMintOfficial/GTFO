@@ -6,7 +6,8 @@ extends Node
 ## the pixels in it are the pixels the generator wrote (or the depth map would hide the
 ## astronaut in the wrong places). Walking, running, jumping, teleporting, zooming and turning
 ## all move the window; each is checked here.
-## Every world depth material, including reflector replays, must follow the published window.
+## Every world depth material, including reflector replays, and the map's nighttime light
+## mask must follow the published window, including reallocations when zooming or near an edge.
 ## Run: godot --headless --path . res://tests/map_stream_test.tscn  (failures exit nonzero)
 
 var _checks := 0
@@ -47,6 +48,9 @@ func _covers(world: Node, where: String) -> void:
 
 func _bindings(world: Node, where: String) -> void:
 	var terrain: MapTerrain = world.terrain
+	var map_material := world.get_node("Map").material as ShaderMaterial
+	_check(map_material.get_shader_parameter("light_mask") == terrain.light_mask,
+			"%s: nighttime light mask follows the map's current window" % where)
 	var win := terrain.window
 	var expected := Vector4(win.position.x, win.position.y, win.size.x, win.size.y)
 	var pending: Array[Node] = [world]

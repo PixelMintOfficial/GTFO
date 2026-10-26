@@ -4,8 +4,9 @@ extends Node
 ## Run headless for assertions, or -- --gallery=shots/base-power for native evidence.
 ## Prerequisites use the real repair transaction and real solar rotations/feeds.
 ## Broken storage glass keeps daylight by day, but no baked beam-shaped darkness at night.
-## All storage glass repairs restore all six exterior holes; window spill and patches
+## Storage glass repairs restore its three exterior holes; window spill and patches
 ## follow all four actual camera swings, with the planet beyond the base staying dark.
+## Nursery exterior uses the same glow/spill, controlled by its own repaired console.
 
 var _checks := 0
 var _failures := 0
@@ -70,6 +71,49 @@ func _shot(scene: Node2D, label: String) -> void:
 		child.visible = true
 
 
+func _focus_nursery(world: Node2D) -> Vector2:
+	var box: Array = ViewData.get_json(world.terrain.view_json)["domes"]["nursery"]["bbox_px"]
+	var center := Vector2((float(box[0]) + float(box[2])) * .5, (float(box[1]) + float(box[3])) * .5)
+	world.player.camera.focus_override = center
+	world.player.camera.snap_to(center)
+	world.stream.refresh(true)
+	return center
+
+
+func _nursery_exterior(world: Node2D) -> void:
+	GameState.story.nursery_awake = true
+	_check(GameState.cultivation.repair("console"), "nursery screen powers its own exterior circuit")
+	for door in world.doors:
+		if door.get_meta("id") == 1:
+			world.player.teleport(door.stand_point())
+			break
+	world.player.camera.set_level(2)
+	for heading in 4:
+		var center := _focus_nursery(world)
+		await _frames()
+		_check(BasePower.light_at(BasePower.current, center) > .5, "nursery dome receives full light in view %d" % heading)
+		_check(BasePower.current["nursery_rect"] == BasePower.view_data(world.terrain)["nursery_rect"], "nursery mask follows view %d" % heading)
+		await _shot(world, "nursery-powered-night-view-%d" % heading)
+		world.player.camera.focus_override = null
+		world.view_turn.request(1)
+		await get_tree().create_timer(1.2).timeout
+		_check(not world.view_turn.busy and BasePower.active, "nursery stays powered through camera turn %d" % heading)
+	_focus_nursery(world)
+	GameState.clock = 12.
+	await _frames()
+	await _shot(world, "nursery-powered-day")
+	GameState.clock = 22.
+	GameState.solar_field.toggle_feed(0)
+	await _frames()
+	_check(not BasePower.active and BasePower.nursery_active, "nursery console lighting survives main-base mains loss")
+	_check(GameState.facility_air.status() == "reserve", "O2 reserve remains independent of nursery lighting")
+	await _shot(world, "nursery-with-main-power-off")
+	GameState.solar_field.toggle_feed(0)
+	await _frames()
+	_check(BasePower.active, "restoring mains relights nursery exterior")
+	world.player.camera.focus_override = null
+
+
 func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--gallery="):
@@ -87,7 +131,7 @@ func _ready() -> void:
 			_repair("oxygen")
 		if mask & 4:
 			_solar()
-		_check(GameState.base_powered() == (mask == 7), "prerequisites combination %d" % mask)
+		_check(GameState.base_powered() == ((mask & 5) == 5), "generator/solar prerequisites combination %d" % mask)
 	GameState.machine_repairs.clear()
 	GameState.story.skip_intro()
 	GameState.intro_done = true
@@ -103,10 +147,10 @@ func _ready() -> void:
 	await _shot(world, "outside-incomplete-night")
 	_repair("power")
 	await _frames()
-	_check(not BasePower.active, "reactor plus solar still dark")
+	_check(BasePower.active, "reactor plus solar powers lights without requiring O2")
 	GameState.repair_for("oxygen").complete_task("cracks")
 	await _frames()
-	_check(not BasePower.active, "partial O2 still dark")
+	_check(BasePower.active and not GameState.facility_air.breathable(), "partial O2 leaves lights on but cannot supply air")
 	GameState.repair_for("oxygen").complete_task("wiring")
 	await _frames()
 	_check(BasePower.active, "last repair turns base lights on live")
@@ -114,7 +158,7 @@ func _ready() -> void:
 	await _shot(world, "outside-powered-night")
 	GameState.window_repair.debug_complete(true, ViewData.get_json("res://assets/maps/base_interior/base_interior.json"))
 	await _frames()
-	_check(world.dome_fx._glass.size() == 6, "all three base domes mend immediately")
+	_check(world.dome_fx._glass.size() == 2, "both storage holes visible in the entry view mend immediately")
 	await _shot(world, "outside-mended-night")
 	for hour in [0.0, 5.0, 12.0, 18.0, 22.0]:
 		GameState.clock = hour
@@ -147,7 +191,7 @@ func _ready() -> void:
 	world.player.camera.focus_override = null
 	GameState.window_repair.debug_complete(false, ViewData.get_json("res://assets/maps/base_interior/base_interior.json"))
 	await _frames()
-	_check(world.dome_fx._glass.is_empty(), "reset reopens all six holes immediately")
+	_check(world.dome_fx._glass.is_empty(), "reset reopens storage holes immediately")
 	world.player.teleport(SolarOptics.point(GameState.solar_field.field["collector"]["world"]))
 	world.stream.refresh(true)
 	await _frames()
@@ -158,6 +202,7 @@ func _ready() -> void:
 	GameState.solar_field.toggle_feed(0)
 	await _frames()
 	_check(BasePower.active, "restored solar route relights base")
+	await _nursery_exterior(world)
 	world.queue_free()
 	await _frames()
 	_check(not BasePower.active, "scene exit clears shader publication")
@@ -188,7 +233,7 @@ func _ready() -> void:
 		await _shot(base, "inside-view-%d" % base.terrain.heading)
 	GameState.solar_field.toggle_feed(1)
 	await _frames()
-	_check(not BasePower.active and base.fx._reserve.visible, "loss returns to independent bot reserve")
+	_check(not BasePower.active and not base.fx._reserve.visible, "loss leaves O2-only reserve without facility lighting")
 	await _shot(base, "inside-reserve-night")
 	GameState.solar_field.toggle_feed(1)
 	await _frames()

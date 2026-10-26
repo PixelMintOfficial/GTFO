@@ -59,6 +59,16 @@ NURSERY_COMPACT_FLORA_PLACEMENTS = [
     'cf61d88f15449ef5a3a55c9d427c821057865de1358473b5ae4827e548ca3d0f',
     '6089f17d229737ff34b771d0f837a7d3f6b4e4ad59e86e7a44b69f87a03823ef',
 ]
+# 2026-10-25: the approved 32 forest seed clearings remove 130 filler plants.
+# Verified against 8da7e52 in every view: each remaining instance is unchanged,
+# every omitted instance is undergrowth within 24 units of a seed site, and no
+# tree/ice instance is removed. The original fingerprints above remain available.
+CULTIVATION_FLORA_PLACEMENTS = [
+    '43d30d8fdf166a9cf1befba93fdb387a1de49e0ae324cceb623fab0fd2d54883',
+    'db616e7275401afaf3f8a38728f81b6d6d44b0efa9f062e2b1538af6d4df467b',
+    'c1d656b88b98da9d994ebf51b0da6c2e8ce672fbfd7c9c89e052214b47ccee69',
+    '6731715b2d33dd4da24f6cc9767bf407b919ac374468ae90aa4068fc7d37f9ca',
+]
 
 def placement_hash(flora, terraced=False):
     """Where every plant stands, and nothing else.
@@ -171,6 +181,8 @@ def main():
         compact = nursery_v2 and view['domes']['nursery']['radius_world'] < 180
         expected = (NURSERY_COMPACT_FLORA_PLACEMENTS if compact else NURSERY_V2_FLORA_PLACEMENTS if nursery_v2 else
                     ORIGINAL_FLORA_PLACEMENTS if terraced else ORIGINAL_FLORA)[heading]
+        if compact and os.path.exists(os.path.join(BASE, 'forage_sites.json')):
+            expected = CULTIVATION_FLORA_PLACEMENTS[heading]
         assert placement_hash(flora, terraced or nursery_v2) == expected, 'forest placements changed outside the authored clearings'
         mask = art['views'][heading]['receiver_mask']
         assert Image.open(os.path.join(BASE, mask['file'])).size == tuple(mask['size']), 'stale receiver mask'

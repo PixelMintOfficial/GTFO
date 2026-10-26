@@ -1489,6 +1489,11 @@ RECIPES = {
     'bot_hover': dict(bus='sfx', gain_db=-18.0, dist=200.0, loop=True, fade=0.4, synth=syn_bot_hover,
                       chain=[declick()],
                       note='The bot following you: a soft lift-fan hum, heard only close by. Seamless 2 s.'),
+    'bot_vacuum': dict(bus='sfx', gain_db=-27.0, dist=120.0, loop=True, fade=0.3,
+                       synth=syn_bot_hover, chain=[hp(110), lp(1000), rms_to(-28.0), declick()],
+                       note='UNIT intake: soft filtered lift-fan suction, near-threshold and local. '
+                            'Replaces the much louder multitool gather beam only for real cleaning jobs. '
+                            'Seamless 2 s; stops during strolling, pauses and conversations.'),
     'reserve_on': dict(bus='sfx', gain_db=-8.0, synth=syn_reserve_on,
                        note='Reserve power: a relay clunk, then the emergency hum stuttering on '
                             'in step with the flicker InteriorFX draws on the emergency lines.'),

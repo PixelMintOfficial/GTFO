@@ -8,9 +8,14 @@
 #   make sfx            regenerate all sound     (fast; needs make sources first)
 #   make props          regenerate the test props (fast, needs the map's data)
 #   make solar          regenerate solar mirror/feed sheets and four-view anchors
-#   make base-power     regenerate four compact base lighting masks from map geometry
+#   make base-power     regenerate four-view base/nursery lighting masks from map geometry
 #   make interior       regenerate the base interior and its bot (about a minute)
 #   make nursery        regenerate the nursery interior and overworld airlock routes
+#   make nursery-metadata refresh nursery repair/scanner anchors without rendering
+#   make nursery-cleanup regenerate removable native litter sheets
+#   make reserve-meter  regenerate the physical O2 side-wall reserve meter
+#   make dome-light     refresh opaque-dome light occlusion without rerendering the map
+#   make cultivation    regenerate wild seed plants and inventory icons
 #   make windows        regenerate only glass inspection assets
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
 #   make map            regenerate the overworld (~35 min for four views, several GB of RAM)
@@ -30,8 +35,8 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props solar base-power interior nursery windows astronaut astronaut-quick map tiles all import check \
-        check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots
+.PHONY: help env sources sfx props solar base-power interior nursery cultivation windows astronaut astronaut-quick map tiles all import check \
+        check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots nursery-metadata nursery-cleanup dome-light reserve-meter
 
 help:
 	@sed -n '2,/^$$/p' $(MAKEFILE_LIST) | sed 's/^# \{0,1\}//'
@@ -71,10 +76,27 @@ interior: $(PY)
 	$(PY) tests/test_night_sunlight.py
 	$(PY) tools/window_repair_gen.py
 	$(PY) tools/bot_gen.py
+	$(PY) tools/nursery_cleanup_gen.py
 
 nursery: $(PY)
 	$(PY) tools/nursery_gen.py
+	$(PY) tools/nursery_cleanup_gen.py
 	$(PY) tools/mars_map_gen.py --doors-only
+
+nursery-metadata: $(PY)
+	$(PY) tools/nursery_gen.py --repair-metadata-only
+
+nursery-cleanup: $(PY)
+	$(PY) tools/nursery_cleanup_gen.py
+
+reserve-meter: $(PY)
+	$(PY) tools/reserve_meter_gen.py
+
+dome-light: $(PY)
+	$(PY) tools/mars_map_gen.py --dome-light-only
+
+cultivation: $(PY)
+	$(PY) tools/cultivation_gen.py
 
 windows: $(PY)
 	$(PY) tools/window_repair_gen.py
@@ -93,6 +115,7 @@ map: $(PY)
 	$(PY) tests/test_base_power_art.py
 	$(PY) tools/props_gen.py
 	$(PY) tools/solar_field_gen.py
+	$(PY) tools/cultivation_gen.py
 	$(PY) tools/check_solar_field.py
 
 # Tiling is a pure function of the pictures, so it does not need the planet rendered again.
@@ -142,6 +165,18 @@ check-tests:
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-options.log
 	@$(GODOT) --headless --path . res://tests/base_power_test.tscn 2>&1 | tee /tmp/gtfo-base-power.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-base-power.log
+	@$(GODOT) --headless --path . res://tests/nursery_power_test.tscn 2>&1 | tee /tmp/gtfo-nursery-power.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-nursery-power.log
+	$(PY) tools/check_dome_light.py
+	@$(GODOT) --headless --path . res://tests/facility_power_test.tscn 2>&1 | tee /tmp/gtfo-facility-power.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-facility-power.log
+	@$(GODOT) --headless --path . res://tests/nursery_cleanup_test.tscn 2>&1 | tee /tmp/gtfo-cleanup.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-cleanup.log
+	@$(GODOT) --headless --path . res://tests/facility_restoration_test.tscn 2>&1 | tee /tmp/gtfo-facilities.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-facilities.log
+	@$(PY) tools/check_cultivation.py
+	@$(GODOT) --headless --path . res://tests/cultivation_test.tscn 2>&1 | tee /tmp/gtfo-cultivation.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-cultivation.log
 	@$(GODOT) --headless --path . res://tests/solar_field_test.tscn 2>&1 | tee /tmp/gtfo-solar.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-solar.log
 	@$(GODOT) --headless --path . res://tests/solar_beam_test.tscn 2>&1 | tee /tmp/gtfo-beams.log | grep -v '^$$' || true
@@ -149,8 +184,6 @@ check-tests:
 	@$(GODOT) --headless --path . res://tests/survival_test.tscn 2>&1 | tee /tmp/gtfo-survival.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-survival.log
 	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn 2>&1 | tee /tmp/gtfo-hud.log | grep -v '^$$' || true
-	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn -- --save-layout-probe 2>&1 | tee -a /tmp/gtfo-hud.log | grep -v '^$$' || true
-	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn -- --load-layout-probe 2>&1 | tee -a /tmp/gtfo-hud.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-hud.log
 	@$(GODOT) --headless --path . res://tests/inventory_test.tscn 2>&1 | tee /tmp/gtfo-tests.log | grep -v '^$$' || true
 	@$(GODOT) --headless --path . res://tests/repair_test.tscn 2>&1 | tee -a /tmp/gtfo-tests.log | grep -v '^$$' || true

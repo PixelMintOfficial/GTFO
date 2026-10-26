@@ -79,7 +79,7 @@ var facing := "SE"
 var forced_input := Vector2.ZERO
 var forced_run := false
 ## Environment adapters can disable suit air or mark the head submerged. Scenery pools
-## currently have no swimming volume; the intact suit supplies breathable air by default.
+## currently have no swimming volume. Each scene supplies its atmosphere through air_source.
 var breathable := true
 var head_submerged := false
 ## Scene callback reports local air safety using authored world metadata.

@@ -9,7 +9,7 @@ extends Node2D
 ##   gather  teal    ore chunks, scrap, glass, ration packs: a spiral pulls the thing into the lens
 ##   lift    violet  crates, the cargo box: a wavy tether floats it up and it follows you until F
 ##                   sets it down (never the box you are standing on)
-##   fix     cyan    dead lamps, the sleeping bot (add_fixable): scan lines sweep it, sparks
+##   fix     cyan    dead lamps, the sleeping bot and nursery systems (add_fixable): scan lines sweep it, sparks
 ##                   gather, and it flickers back on
 ## Hold F to mine, gather and fix; tap F to pick a crate up and again to set it down.
 ## A small icon over the nearest thing in reach shows which job the tool will do; a prop with no
@@ -19,6 +19,7 @@ extends Node2D
 ## GameState.spawned_props with their kind, and reload only in the scene whose props JSON owns
 ## their session ID.
 ## Options own an independent release guard so holding F/X across pause cannot resume work.
+## Cultivation owns F independently for seed gathering, nursery repairs and growing beds.
 
 signal inventory_full
 
@@ -58,6 +59,7 @@ var window_suppressed := false
 var solar_suppressed := false
 ## The awake bot's [F] TALK prompt and its dialogue own F independently (Bot).
 var bot_suppressed := false
+var cultivation_suppressed := false
 ## A live window modal blocks controls but keeps survival and world simulation running.
 var window_panel_open := false
 
@@ -280,7 +282,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not options_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed and not bot_suppressed
+	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not options_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed and not bot_suppressed and not cultivation_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()

@@ -11,12 +11,16 @@ global uniform vec3 dn_mul;      // the daylight's colour: multiplies everything
 global uniform vec3 dn_add;      // sky light lifting the shadows a little
 global uniform float dn_sat;     // colour saturation (the night greys things out a little)
 global uniform float dn_night;   // 0 by day .. 1 in the deep of night
-// Full base lighting uses a cropped map-space mask (R illumination, G/B glass emission).
+// Each powered facility uses a compact map-space mask (R illumination, G/B glass emission).
 // G preserves damage; B is intact glass, used only on the existing restoration patches.
 global uniform float bp_active;
+global uniform float bp_nursery_active; // nursery console circuit, independent of main-base mains
 global uniform float bp_indoor;
 global uniform vec4 bp_rect;
 global uniform sampler2D bp_mask : filter_nearest, hint_default_black;
+global uniform vec4 bp_nursery_rect;
+global uniform sampler2D bp_nursery_mask : filter_nearest, hint_default_black;
+global uniform float dn_power;   // facility mains fixtures, independent of O2 reserve; 1 outdoors
 global uniform vec4 dn_lamp;     // the suit lamp: map px x, y, how far it throws (px), strength
 global uniform vec4 dn_beam;     // the way it points (x, y, in the flattened ground below), the
                                  // cosine of its half width, how much of the throw the spill
@@ -54,8 +58,9 @@ vec3 base_power_sample(vec2 p, sampler2D mask, vec4 rect, float indoor) {
 }
 
 vec3 base_power_at(vec2 p) {
-	if (bp_active < 0.5) { return vec3(0.0); }
-	return base_power_sample(p, bp_mask, bp_rect, bp_indoor) * bp_active;
+	if (max(bp_active, bp_nursery_active) < 0.5) { return vec3(0.0); }
+	return max(base_power_sample(p, bp_mask, bp_rect, bp_indoor) * bp_active,
+			base_power_sample(p, bp_nursery_mask, bp_nursery_rect, 0.0) * bp_nursery_active);
 }
 
 vec3 base_power_emission(vec3 c, float emission) {

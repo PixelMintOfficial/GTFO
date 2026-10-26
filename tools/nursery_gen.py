@@ -7,6 +7,10 @@ approved the aligned_v12 room: no crossing boards, one central specimen and a
 lower coaxial light on straight supports. No nursery minigames are implemented.
 Owner QA: compact furnishings/room, an inlaid floor ring, a two-sided monitor,
 and static landing pads kept out of the y-sorted door animation.
+Cultivation: eight combinations of console/light/rear-rack repair, per-variant
+walk/depth/light layers, crop overlays and generated interaction anchors.
+NURSERY_CONDITION=restored preserves the earlier approved intact-room export.
+--repair-metadata-only refreshes native repair/scanner anchors without rendering images.
 
 Run through `make nursery`, or python tools/nursery_gen.py. NURSERY_OUT redirects
 all outputs for previews; MAP_VIEWS limits renders (all four are needed in game).
@@ -16,6 +20,7 @@ from pathlib import Path
 import json
 import math
 import os
+import sys
 import numpy as np
 from PIL import Image
 from scipy import ndimage as ndi
@@ -298,7 +303,7 @@ def wall_parts():
     return [P('wall', shape, 'white', 'wall_storage')]
 
 
-def world_grid(parts):
+def world_grid(parts, filename='nursery_walk.png'):
     """Canonical collision from the actual low geometry, like interior_gen's walk grid.
 
     Water is a shallow scenery channel (the existing player has no swimming volume).
@@ -342,7 +347,7 @@ def world_grid(parts):
     h = int(M.HEIGHT_OFFSET * M.HEIGHT_SCALE)
     grid = np.empty((n, n, 3), np.uint8)
     grid[..., 0], grid[..., 1], grid[..., 2] = h >> 8, h & 255, walk * 255
-    M.save_png(Image.fromarray(grid.transpose(1, 0, 2).copy()), str(OUT / 'nursery_walk.png'))
+    M.save_png(Image.fromarray(grid.transpose(1, 0, 2).copy()), str(OUT / filename))
     return walk
 
 
@@ -361,7 +366,7 @@ def render_door(index, normal):
                 height=14.8 * I.DOOR_K)
 
 
-def render_view(k, parts):
+def render_view(k, parts, name_base='nursery', walk_file='nursery_walk.png', extra=None):
     M.VIEW, M.SFX = k, M.view_sfx(k)
     M.EMIT = np.zeros((M.H, M.W), np.uint8)
     img = np.full((M.H, M.W, 3), A.hex2rgb('#0b0915'), np.uint8)
@@ -413,21 +418,21 @@ def render_view(k, parts):
     img[border] = M.OUTLINE
     light[~filled], sun[~filled] = 1., 0.
     light[border] = 0.
-    name = f'nursery{M.SFX}'
+    name = f'{name_base}{M.SFX}'
     M.save_png(Image.fromarray(img), str(OUT / f'{name}.png'))
     for suffix, values in [('light', light), ('sun', sun)]:
         M.save_png(Image.fromarray(np.round(np.clip(values, 0, 1) * 255).astype(np.uint8)),
-                   str(OUT / f'nursery_{suffix}{M.SFX}.png'))
+                   str(OUT / f'{name_base}_{suffix}{M.SFX}.png'))
     dq = np.where(filled, np.clip(depth * M.DEPTH_SCALE, 0, 65534), 65535).astype(np.uint32)
     dimg = np.zeros((M.H, M.W, 3), np.uint8)
     dimg[..., 0], dimg[..., 1] = dq >> 8, dq & 255
     dimg[..., 2] = np.where((kind == 4) | (visible_wall & windows), 255, 0)
-    M.save_png(Image.fromarray(dimg), str(OUT / f'nursery_depth{M.SFX}.png'))
+    M.save_png(Image.fromarray(dimg), str(OUT / f'{name_base}_depth{M.SFX}.png'))
     doors = [render_door(index, normal) for index, normal in ENTRIES]
     meta = dict(name='nursery_interior', image=f'{name}.png', size=[M.W, M.H], origin_px=[M.AX, M.AY],
-                view=k, views=[f'nursery{M.view_sfx(i)}.json' for i in range(4)],
-                game=dict(depth_png=f'nursery_depth{M.SFX}.png', light_png=f'nursery_light{M.SFX}.png',
-                          sun_png=f'nursery_sun{M.SFX}.png', walk_png='nursery_walk.png',
+                view=k, views=[f'{name_base}{M.view_sfx(i)}.json' for i in range(4)],
+                game=dict(depth_png=f'{name_base}_depth{M.SFX}.png', light_png=f'{name_base}_light{M.SFX}.png',
+                          sun_png=f'{name_base}_sun{M.SFX}.png', walk_png=walk_file,
                           depth_scale=M.DEPTH_SCALE, height_offset=M.HEIGHT_OFFSET, height_scale=M.HEIGHT_SCALE,
                           world_units_per_px=M.S, depth_to_px=M.KY, px_per_unit=M.PX,
                           character_scale=.5, grid_size=I.N, spawn_world=SPAWN.tolist(), heading=k,
@@ -436,12 +441,14 @@ def render_view(k, parts):
                 zoom=dict(max_view_px=[M.W, M.H], frames={}), doors=doors,
                 rooms=dict(nursery=dict(label='NURSERY', center=C[:2].tolist(), radius=RADIUS)),
                 fx=dict(shafts=[], leds=[], core=[0, 0], tanks=[], sparks=[], vapor=[]))
+    if extra:
+        meta.update(extra)
     M.save_text(json.dumps(meta, indent=2), str(OUT / f'{name}.json'))
     M.save_png(Image.fromarray(img), str(OUT / 'preview' / f'{name}.png'))
     print(f'nursery view {k}: {len(doors)} animated exits', flush=True)
 
 
-def build():
+def build_restored():
     setup_room()
     (OUT / 'anim').mkdir(parents=True, exist_ok=True)
     (OUT / 'preview').mkdir(exist_ok=True)
@@ -455,4 +462,11 @@ def build():
 
 if __name__ == '__main__':
     np.seterr(all='ignore')
-    build()
+    if '--repair-metadata-only' in sys.argv:
+        from nursery_cultivation import repair_metadata_only
+        repair_metadata_only(sys.modules[__name__])
+    elif os.environ.get('NURSERY_CONDITION', 'damaged') == 'restored':
+        build_restored()
+    else:
+        from nursery_cultivation import build
+        build(sys.modules[__name__])

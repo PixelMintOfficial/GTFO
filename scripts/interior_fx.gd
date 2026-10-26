@@ -4,12 +4,12 @@ extends Node2D
 ## windows, sparks spitting from the torn wiring, gas leaking from the oxygen generator's snapped
 ## pipe, fault lights blinking, the reactor's broken core glowing a dim red, the empty socket on
 ## the power room's circuit board pulsing, and the room's name fading in as you walk into it.
-## The sun's shafts and the dust in them fade with the daylight (DayNight); at night only the
-## base's own lights are left.
+## Sun shafts/dust follow daylight only with mains; electrical faults and floor rings
+## require generator + solar. O2 tank status alone can blink on its own reserve.
 ## Repaired room variants omit their fault emitters and use steady cyan status LEDs.
 ## Each shaft carries its pane ID. A sealed pane loses its shaft and dust immediately;
 ## load_view reads the session repair ledger so neither returns after a turn or airlock.
-## Reserve power (the bot switches it on: GameState.story.reserve_power): the generator's reserve
+## Main power (generator + solar only): the generator's retained reserve-named
 ## overlay (game.reserve_png: the emergency lines and floor rings, bloomed) laid over the map
 ## additively, flickering on the first time, steady after that (and after a turn or the airlock).
 ## Full base power keeps those same physical strips steady, even without the reserve stage.
@@ -40,7 +40,7 @@ var _glow: Node2D
 var _lit: Node2D                # sparks: their own light, bright by night too
 var _toast: Node2D
 var _reserve: Sprite2D
-var _reserve_t := -1.0          # seconds since reserve power came on (-1: off)
+var _reserve_t := -1.0          # seconds since mains came on (-1: off; historical overlay name)
 var _halos := {}
 var _discs := {}
 var _t := 0.0
@@ -59,7 +59,7 @@ func setup(meta_path: String, player: Player) -> void:
 	_reserve.material = add
 	_reserve.visible = false
 	add_child(_reserve)
-	if GameState.story.reserve_power:                    # already on: no flicker coming back in
+	if GameState.base_powered():                         # already on: no flicker coming back in
 		_reserve_t = 99.0
 	_lit = Node2D.new()
 	_lit.set_meta("dn_unlit", true)
@@ -165,7 +165,7 @@ func _process(delta: float) -> void:
 
 ## Reserve power: the emergency lines stutter on, then hold, breathing a little.
 func _update_reserve(delta: float) -> void:
-	if (not GameState.story.reserve_power and not GameState.base_powered()) or _reserve.texture == null:
+	if not GameState.base_powered() or _reserve.texture == null:
 		_reserve.visible = false
 		return
 	if _reserve_t < 0.0:
@@ -183,6 +183,10 @@ func _update_reserve(delta: float) -> void:
 
 ## Torn wiring spits a few sparks now and then: sometimes one, sometimes a crackling run.
 func _update_sparks(delta: float) -> void:
+	if not GameState.base_powered():
+		_sparks.clear()
+		_flashes.clear()
+		return
 	for sp in _spark_points:
 		sp[1] -= delta
 		if sp[1] > 0.0:
@@ -258,7 +262,7 @@ func _draw_lit() -> void:
 
 
 func _draw_glow() -> void:
-	var sun := DayNight.daylight
+	var sun := DayNight.daylight * DayNight.fixture_power
 	for sh in _shafts:                                   # the light breathing a little
 		_glow.draw_colored_polygon(sh[0], Color(1.0, 0.8, 0.5, (0.035 + 0.025 * sin(_t * 0.8)) * sun))
 	for m in _motes:
@@ -267,6 +271,7 @@ func _draw_glow() -> void:
 			var a := (0.45 + 0.45 * sin(_t * 2.3 + m[2] * 3.0)) * sun
 			_glow.draw_rect(Rect2((m[0] as Vector2).round(), Vector2.ONE), Color(DUST, a))
 	for l in _leds:
+		if not GameState.base_powered(): continue
 		var on := true
 		if l[2] == "fault":
 			var c := fmod(_t + l[0].x * 0.003, 1.4)
@@ -281,14 +286,15 @@ func _draw_glow() -> void:
 	for f in _flashes:
 		if (f[0] as Vector2).distance_to(_core) < 40.0:
 			flare = maxf(flare, 1.0 - f[1] / 0.16)
-	if _core != Vector2.ZERO:
+	if _core != Vector2.ZERO and GameState.base_powered():
 		_halo(_core, 14, Color(1.0, 0.25, 0.18, 0.14 + 0.07 * sin(_t * 1.2) + 0.2 * flare))
 	for tk in _tanks:
+		if GameState.facility_air.status() not in ["reserve", "online"]: continue
 		if fmod(_t + tk.x * 0.01, 3.0) < 0.2:
 			_glow.draw_rect(Rect2((tk as Vector2).round(), Vector2.ONE), Color(0.5, 1.0, 0.9, 0.9))
 	for f in _flashes:
 		_halo(f[0], 9, Color(1.0, 0.7, 0.35, 0.6 * (1.0 - f[1] / 0.16)))
-	if _socket != Vector2.ZERO:                          # the empty socket, where a part has to go
+	if _socket != Vector2.ZERO and GameState.base_powered():
 		var pulse := 0.5 + 0.5 * sin(_t * 3.2)
 		_halo(_socket, 5, Color(SOCKET, 0.18 + 0.22 * pulse))
 		var r := Rect2(_socket.round() - Vector2(4, 4), Vector2(9, 9))

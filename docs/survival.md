@@ -6,8 +6,8 @@ The existing Player, GameState, backpack and hotbar remain the owners of movemen
 state and items. There was no health/death/consumable/swimming/disk-save system to extend.
 SurvivalState is a RefCounted model held by GameState, not a second player or autoload.
 SurvivalHUD attaches in both scenes, ticks only active gameplay and draws in the same
-384x216 logical canvas as the inventory. The redesigned top-right panel uses segmented
-circular dials; dragging/persistence/preview controls are documented in `survival-hud.md`.
+384x216 logical canvas as the inventory. The compact top-left panel uses segmented circular dials and cannot be moved;
+preview controls are documented in `survival-hud.md`.
 Icons are procedural UI patterns, like the existing
 multitool icon; no generated assets were edited or new imported art introduced.
 
@@ -19,7 +19,7 @@ Rates below are per active real second, independent of the game-day clock.
 | Meter | Drain/recovery | Consequence at zero |
 |---|---|---|
 | Health | Damage through `Player.take_damage(amount, cause)`; no automatic healing | Death and paused rescue screen |
-| Oxygen | Unsafe air drains 5/s; breathable air restores 20/s | 5 health damage every 2 seconds |
+| Oxygen | Unpressurized air drains 0.1/s; breathable air restores 20/s | 5 health damage every 2 seconds |
 | Hunger | Drains 0.08/s, multiplied by 1.75 while actually sprinting | 2 health damage every 5 seconds |
 | Thirst | Drains 0.12/s, multiplied by 2 while actually sprinting | 3 health damage every 4 seconds |
 
@@ -27,11 +27,23 @@ Warning indicators pulse below 20%. Health and segmented meters update immediate
 No depletion during map/backpack/repair pauses, camera turns, intro or doors.
 Damage timers restart after recovery. Long steps handle depletion boundaries before damage.
 
-The suit supplies air in the overworld. The oxygen room's damaged air system is unsafe within
-90% of its authored room radius until its wiring task is completed. Entering uses the suit's
-oxygen reserve; leaving recovers it. `Player.can_breathe()` combines the scene's `air_source`
-callback, suit-air availability and `head_submerged`. The pools have no swimming detection;
-this feature does not introduce swimming or reinterpret those scenery pixels as water.
+Outdoors and unpressurized facilities drain suit oxygen continuously. Full O2 repair
+starts 24 game hours of reserve. All three storage panes must seal before either main-base
+or nursery air becomes breathable. The nursery tank shares the main generator. Breathable
+air replenishes the suit at 20/s. Generator repair plus all three connected solar routes
+provide lasting supply; either alone is insufficient. Reserve expires on the game clock,
+so paused modals stop it. At 0.1/s the starting suit tank lasts 16m40s of active play.
+Reserve powers only the O2 generator: maintenance access does not restore room lighting.
+The battery beside the clock appears only after O2 repair, while mains are off, and shows
+reserve percent/empty plus leaks. It disappears on restored generator + solar mains. A compact
+native RESERVES gauge on an O2-room side wall provides the physical reserve readout. An expired reserve stops O2 production and drains suit oxygen even indoors. The repaired
+generator plus all three solar routes light the main base at every hour. The nursery's
+repaired console screen controls its local lights and exterior glow independently. Lit
+nursery rooms still need the main-base O2 supply and seals before the player can breathe.
+Without local power the room stays dim and L/B supplies the suit lamp, including at noon.
+Prompts explain reserve, leaks, stable supply and exhausted reserve. FacilityAir lives only
+in GameState; balance and seal IDs live in data/survival.json. Player.can_breathe() retains
+suit availability and head-submerged overrides. Pools have no swimming volume.
 
 Each fresh session receives six rations and six water units in the existing inventory.
 A ration restores 35 hunger; water restores 40 thirst. Items stack to 99. Consumption removes

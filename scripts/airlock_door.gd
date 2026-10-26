@@ -136,7 +136,7 @@ func _process(delta: float) -> void:
 			if _prompt and not _was_prompt:
 				Audio.play("door_prompt")
 			_was_prompt = _prompt
-			if _prompt and not multitool.inventory_suppressed and Input.is_action_just_pressed("interact"):
+			if _prompt and not multitool.inventory_suppressed and not multitool.options_suppressed and Input.is_action_just_pressed("interact"):
 				_start()
 		State.APPROACH:
 			if player.puppet_walk(stand_point(), 1.0, delta):

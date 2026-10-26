@@ -1,6 +1,6 @@
 class_name DayClock
 extends CanvasLayer
-## The time panel, top left: a little window onto the sky (the sun or the moon crossing it,
+## The compact time panel below the fixed top-left stats: a little window onto the sky,
 ## stars coming out at night, the red hills and a tiny dome below), the day number, and the
 ## part of the day (MORNING, NOON, EVENING, NIGHT) with four pips, the current one filling as
 ## it passes. The part of the day lights up as it changes, and when a new day dawns its number
@@ -61,7 +61,8 @@ func _ready() -> void:
 
 
 func _layout() -> void:
-	var scale_value := Vector2.ONE * GameState.settings.gui_factor(_panel)
+	var scale_value := Vector2.ONE * SurvivalHUD.compact_scale(_panel)
+	_panel.position = Vector2(0, 38) * scale_value
 	if _panel.scale == scale_value:
 		return
 	_panel.scale = scale_value

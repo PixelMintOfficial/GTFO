@@ -34,6 +34,8 @@ Pipeline
      walk/height grid, biome grid, plant sheets, glow points and the crash scene
      (the ground as it was before, the falling satellite, smoke and spark points), and the
      light mask: how much of each pixel is its own light, so it stays lit at night.
+     Forest cultivation clearings remove only nearby filler after the original random
+     stream; forage_sites.json exports the canonical seed plants and removed filler.
   8. Four views: the camera turns round the world in quarter turns (G / H in the game). The
      world is built once; each view is rendered with the world turned about the middle of its
      grid, the sun staying put on screen. View 0 writes the usual files; view k writes the same
@@ -47,6 +49,7 @@ Pipeline
     NURSERY_SIZE=original python tools/mars_map_gen.py  # restore the earlier 200-unit radius
     python tools/mars_map_gen.py --tiles-only    # re-cut the tiles from the pictures on disk
     python tools/mars_map_gen.py --doors-only    # regenerate airlock sheets and routes on existing maps
+    python tools/mars_map_gen.py --dome-light-only  # occlude stale interior emission with the native opaque shell
 """
 import contextlib
 import gc
@@ -802,7 +805,9 @@ def build_world():
     nursery = DOMES['nursery']
     radius, design_radius = nursery['R'], nursery['R0']
     if radius >= 80. * DOME_SCALE:
-        return _build_world()
+        world = _build_world()
+        _cultivation_clearings(world)
+        return world
     nursery.update(R=80. * DOME_SCALE, R0=80.)
     _UNITS = None
     try:
@@ -811,7 +816,30 @@ def build_world():
         nursery.update(R=radius, R0=design_radius)
         _UNITS = None
     _compact_nursery_ground(world)
+    _cultivation_clearings(world)
     return world
+
+
+def _cultivation_clearings(G):
+    """Choose reachable clearings only after solar grading and nursery geometry settle."""
+    from cultivation_placement import place_forage
+    walk, _solid = world_walk_grid(G)
+    place_forage(G, dome_units(), walk)
+    del walk, _solid
+    u, v = np.meshgrid(np.arange(N) + .5, np.arange(N) + .5, indexing='ij')
+    G['bglow'].fill(0.)
+    for pl in G['flora']:
+        if pl['species'] not in ('tree', 'bulbs'):
+            continue
+        pu, pv = to_grid(pl['X'], pl['Y'])
+        iu, iv = int(pu), int(pv)
+        lr = 26. if pl['species'] == 'tree' else 12.
+        w_ = int(lr) + 2
+        a0, a1, b0, b1 = max(0, iu - w_), min(N, iu + w_ + 1), max(0, iv - w_), min(N, iv + w_ + 1)
+        fall = np.clip(1 - np.hypot(u[a0:a1, b0:b1] - pu, v[a0:a1, b0:b1] - pv) / lr, 0, 1) ** 1.5
+        G['bglow'][a0:a1, b0:b1] = np.maximum(G['bglow'][a0:a1, b0:b1], fall * (1. if pl['species'] == 'tree' else .7))
+    G['shadow'] = shadow_map(G['H'])
+    stamp_plant_shadows(G, u, v)
 
 
 def _compact_nursery_ground(G):
@@ -3494,11 +3522,9 @@ VOID = hexa('#05060b', '#0a0c15', '#11141f', '#1a1e2c').astype(np.float32)
 CORAL_RGB = hexa(*O_RAMPS['coral']).astype(np.float32)
 BEVEL = np.array(A.hex2rgb('#152030'), np.float32)
 COOL = np.array(A.hex2rgb('#6b6aa6'), np.float32)
-# where each room's glass was smashed in: two holes per room, every one a different shape
+# Storage alone leaks: two front holes and the rear gash, matching its three repairable panes.
 # (shape, azimuth in degrees round the room: 0 = +X, -90 = toward the camera)
-BASE_HOLES = {'command': [('burst', -48.0), ('crescent', -112.0)],
-              'habitat': [('gash', -84.0), ('wedge', -32.0)],
-              'garage':  [('bite', -60.0), ('zigzag', -128.0)]}
+BASE_HOLES = {'command': [('burst', -48.0), ('crescent', -112.0), ('gash', 100.0)]}
 
 
 def _h(a, b, k):
@@ -3916,7 +3942,7 @@ def band_dome(img, D, kind, gid, d, gid_val):
         D[jj[mf], ii[mf]] = Q[:, 1]
         kind[jj[mf], ii[mf]] = 3
         gid[jj[mf], ii[mf]] = gid_val
-        if EMIT is not None and d.get('owner') == 'nursery':
+        if EMIT is not None:
             EMIT[jj[mf], ii[mf]] = 0                    # opaque reflective glass hides the old interior's lamps
     edge = front_all & ~ndi.binary_erosion(front_all)
     ey, ex = np.nonzero(edge)
@@ -4549,29 +4575,12 @@ def export_biome_grid(G, cell=4):
     return dict(png='red_planet_biome.png', grid_size=n, cell=cell, names=['red', 'forest', 'ice'])
 
 
-def export_game_data(G, D, kind, debris=(), body=None, world=True):
-    """Data the game needs on top of the picture: a screen-space depth map (so the
-    player can be hidden by cliffs, props and glass) and a walk/height grid. The walk grid
-    belongs to the world, not the view: only view 0 writes it (world=False skips it)."""
-    depth = np.zeros((H, W, 3), np.uint8)
-    for r0 in range(0, H, 512):
-        r1 = min(H, r0 + 512)
-        dq = np.where(kind[r0:r1] > 0, np.clip(D[r0:r1] * DEPTH_SCALE, 0, 65534), 65535).astype(np.uint32)
-        depth[r0:r1, :, 0], depth[r0:r1, :, 1] = dq >> 8, dq & 255
-        depth[r0:r1, :, 2] = np.where(kind[r0:r1] == 4, 255, np.where(kind[r0:r1] == 5, PLANT_DEPTH_B, 0))
-    # Three channels, not four: the alpha was a constant 255 and no shader ever read it, which
-    # cost 34 MB of texture memory per view for nothing.
-    save_png(Image.fromarray(depth, 'RGB'), os.path.join(OUT, f'red_planet_depth{SFX}.png'))
-    _TILES['depth'] = export_tiles(depth.copy(), 'depth', (255, 255, 0), 'RGB', as_image=True)
-    del depth
-    if not world:
-        return None
-
-    Hf = G['H'].copy()
+def world_walk_grid(G, debris=(), body=None):
+    """The shared canonical walk/solid masks used by export and seed-site placement."""
     c = np.arange(N, dtype=np.float32) + 0.5
     U, V = np.meshgrid(c, c, indexing='ij')
     Xg, Yg = (U - V) / SQ2, (U + V) / SQ2
-    Hu, Hv = np.gradient(ndi.gaussian_filter(Hf, 0.75))
+    Hu, Hv = np.gradient(ndi.gaussian_filter(G['H'], 0.75))
     walk = np.hypot(Hu, Hv) < WALK_SLOPE
     steep = ~walk                                                    # isolated specks are surface noise
     lab, n_steep = ndi.label(steep)
@@ -4624,6 +4633,29 @@ def export_game_data(G, D, kind, debris=(), body=None, world=True):
     solid |= (U <= 6) | (U >= N - 6) | (V <= 6) | (V >= N - 6)
     walk &= ~solid
 
+    return walk, solid
+
+
+def export_game_data(G, D, kind, debris=(), body=None, world=True):
+    """Data the game needs on top of the picture: a screen-space depth map (so the
+    player can be hidden by cliffs, props and glass) and a walk/height grid. The walk grid
+    belongs to the world, not the view: only view 0 writes it (world=False skips it)."""
+    depth = np.zeros((H, W, 3), np.uint8)
+    for r0 in range(0, H, 512):
+        r1 = min(H, r0 + 512)
+        dq = np.where(kind[r0:r1] > 0, np.clip(D[r0:r1] * DEPTH_SCALE, 0, 65534), 65535).astype(np.uint32)
+        depth[r0:r1, :, 0], depth[r0:r1, :, 1] = dq >> 8, dq & 255
+        depth[r0:r1, :, 2] = np.where(kind[r0:r1] == 4, 255, np.where(kind[r0:r1] == 5, PLANT_DEPTH_B, 0))
+    # Three channels, not four: the alpha was a constant 255 and no shader ever read it, which
+    # cost 34 MB of texture memory per view for nothing.
+    save_png(Image.fromarray(depth, 'RGB'), os.path.join(OUT, f'red_planet_depth{SFX}.png'))
+    _TILES['depth'] = export_tiles(depth.copy(), 'depth', (255, 255, 0), 'RGB', as_image=True)
+    del depth
+    if not world:
+        return None
+
+    Hf = G['H']
+    walk, solid = world_walk_grid(G, debris, body)
     base = DOMES['base']
     dirv = np.array(PATHS[1][1], float) - np.array([base['X'], base['Y']])
     dirv /= np.linalg.norm(dirv)
@@ -4765,6 +4797,7 @@ def build():
     os.makedirs(OUT, exist_ok=True)
     t_start = time.time()
     G0 = build_world()
+    save_text(json.dumps(G0['forage'], indent=2), os.path.join(OUT, 'forage_sites.json'))
     _snapshot()
     for k in VIEWS:
         VIEW, SFX = k, view_sfx(k)
@@ -4777,6 +4810,7 @@ def build():
         gc.collect()
     VIEW, SFX = 0, ''
     apply_view_constants(0)
+    forage_stands_only()
     print(f'done in {time.time() - t_start:.1f}s -> {OUT}')
 
 
@@ -4917,6 +4951,7 @@ def render_view(G, G0, k):
     for p, rad, colr, s_ in lights:
         sx, sy = project(*p)
         add_glow(final, sx, sy, rad, colr, s_, EMIT)
+    EMIT[opaque_dome_pixels(D)] = 0                      # no interior lamp can shine through an opaque shell
     EMIT[~filled] = 255                                   # space looks the same by day and night
     EMIT[ring] = 0
     save_png(Image.fromarray(final), os.path.join(OUT, f'red_planet_map{SFX}.png'))
@@ -5041,6 +5076,100 @@ def render_view(G, G0, k):
     print(f'view {k} rendered in {time.time() - t_start:.1f}s')
 
 
+def opaque_dome_pixels(depth):
+    """Visible band-dome shell pixels, from its actual ray hit and scene depth.
+
+    The old translucent interiors are rendered before the opaque shell; their emission
+    must be occluded too. Compare against the final depth so doors/antennae/nearer scenery
+    retain their own lighting. Shared by full generation and the light-only refresh.
+    """
+    mask = np.zeros(depth.shape, bool)
+    for dome in dome_units():
+        if dome['style'] != 'band': continue
+        centre = cam(dome['X'], dome['Y'], dome['Z'])
+        cx, cy = project(*centre)
+        radius = dome['R']
+        rp = radius / S + 2
+        x0, x1 = max(0, int(cx-rp)), min(W, int(cx+rp+1))
+        y0, y1 = max(0, int(cy-rp)), min(H, int(cy+rp+1))
+        jj, ii = np.mgrid[y0:y1, x0:x1]
+        sx, sy = (ii+.5-AX)*S, (AY-jj-.5)*S
+        origin = sx[...,None]*CR + sy[...,None]*CU - F*6000.
+        oc = origin-centre
+        b = oc @ F
+        disc = b*b - ((oc*oc).sum(axis=-1)-radius*radius)
+        hit = origin + (-b-np.sqrt(np.maximum(disc,0)))[...,None]*F
+        visible = (disc>0) & (hit[...,2]>=centre[2]) & (np.abs(hit[...,1]-depth[jj,ii]) < .15)
+        mask[jj,ii] |= visible
+    return mask
+
+
+def dome_light_only():
+    """Re-export only derived dome light masks/tiles from the existing native depth.
+
+    Matches full generation's shell occlusion without re-rendering unchanged terrain,
+    vegetation or colour. Never paints over a generated picture.
+    """
+    global VIEW, SFX, W, H, AX, AY
+    _snapshot()
+    for k in VIEWS:
+        VIEW, SFX = k, view_sfx(k)
+        apply_view_constants(k)
+        path = os.path.join(OUT, f'red_planet_map{SFX}.json')
+        meta = json.load(open(path))
+        W, H = meta['size']
+        AX, AY = meta['origin_px']
+        encoded = np.asarray(Image.open(os.path.join(OUT, meta['game']['depth_png']))).astype(float)
+        depth = (encoded[...,0]*256 + encoded[...,1])/DEPTH_SCALE
+        light_path = os.path.join(OUT, meta['game']['light_png'])
+        light = np.asarray(Image.open(light_path)).copy()
+        shell = opaque_dome_pixels(depth)
+        count = np.count_nonzero(light[shell])
+        light[shell] = 0
+        save_png(Image.fromarray(light, 'L'), light_path)
+        meta['tiles']['layers']['light'] = export_tiles(light, 'light', (255,), 'L', as_image=True)
+        save_text(json.dumps(meta, indent=2), path)
+        print(f'view {k}: removed {count} stale interior-light pixels from opaque domes', flush=True)
+
+
+def forage_stands_only():
+    """Choose stable, reachable stands from the final walk grid without changing art.
+
+    A clearing may lie beside a natural hillside. Standing blindly south of a plant
+    can put the astronaut on steep ground; select a stable side of its actual root.
+    """
+    path = os.path.join(OUT, 'forage_sites.json')
+    data = json.load(open(path))
+    meta = json.load(open(os.path.join(OUT, 'red_planet_map.json')))
+    grid = np.asarray(Image.open(os.path.join(OUT, meta['game']['walk_png'])))
+    labels, _ = ndi.label(grid[..., 2] == 255)
+    spawn = meta['game']['spawn_world']
+    su, sv = (int(a) for a in to_grid(*spawn))
+    component = labels[sv, su]
+    height = (grid[..., 0].astype(float) * 256 + grid[..., 1]) / HEIGHT_SCALE - HEIGHT_OFFSET
+    for site in data['sites']:
+        root = np.asarray(site['world'])
+        ru, rv = (int(a) for a in to_grid(*root))
+        if labels[rv, ru] != component:
+            raise RuntimeError(site['id'] + ': root disconnected from spawn')
+        options = []
+        for radius in (12., 10., 8., 16.):
+            for j in range(16):
+                angle = -math.pi / 2 + j * math.tau / 16
+                stand = root + np.array([math.cos(angle), math.sin(angle)]) * radius
+                u, v = (int(a) for a in to_grid(*stand))
+                if not np.all(labels[v - 2:v + 3, u - 2:u + 3] == component):
+                    continue
+                if abs(height[v, u] - height[rv, ru]) > 4.:
+                    continue
+                options.append((abs(radius - 12.) + abs(j if j < 8 else j - 16) * .1, stand))
+        if not options:
+            raise RuntimeError(site['id'] + ': no stable interaction stand')
+        site['stand_world'] = min(options, key=lambda option: option[0])[1].tolist()
+    save_text(json.dumps(data, indent=2), path)
+    print('cultivation: all 32 seed-plant stands verified on the final walk grid', flush=True)
+
+
 def doors_only():
     """Refresh sheets and routes without re-rendering unchanged terrain, art or walk grids."""
     global VIEW, SFX, W, H, AX, AY
@@ -5095,6 +5224,10 @@ if __name__ == '__main__':
     np.seterr(all='ignore')
     if '--tiles-only' in sys.argv:
         tiles_only()
+    elif '--forage-stands-only' in sys.argv:
+        forage_stands_only()
+    elif '--dome-light-only' in sys.argv:
+        dome_light_only()
     elif '--doors-only' in sys.argv:
         doors_only()
     else:

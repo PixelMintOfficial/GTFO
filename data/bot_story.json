@@ -1,7 +1,13 @@
 {
-  "names": {"bot": "UNIT", "previous_owner": "COMMANDER"},
-  "note": "Placeholders: change a name here and every line and prompt follows. Tokens in lines: {BOT}, {OWNER}, {NAME}.",
-  "name_entry": {"max_length": 12, "title": "WHO ARE YOU?"},
+  "names": {
+    "bot": "UNIT",
+    "previous_owner": "COMMANDER"
+  },
+  "note": "Names and guidance live here. Tokens: {BOT}, {OWNER}, {NAME}, {TURN_LEFT}, {TURN_RIGHT}; turn keys resolve from InputMap.",
+  "name_entry": {
+    "max_length": 12,
+    "title": "WHO ARE YOU?"
+  },
   "wake": [
     "SYSTEMS... ONLINE.",
     "{BOT} REPORTING. WELCOME BACK, {OWNER}.",
@@ -12,17 +18,44 @@
     "{NAME}. LOGGED.",
     "SORRY, {NAME}. THE LAST FACE I SAW HERE WAS {OWNER}'S."
   ],
-  "reserve": [
-    "MAIN POWER IS DOWN. SWITCHING TO RESERVE.",
-    "BULKHEADS OPEN."
-  ],
   "objectives_intro": [
-    "THE REACTOR IS CRACKED AND THE O2 GENERATOR IS DEAD.",
-    "FIX BOTH, {NAME}. YOU WILL FIND SCRAP NEAR THEM."
+    "FIRST, REPAIR THE O2 GENERATOR IN THE WEST ROOM.",
+    "THEN WE WILL SEAL THE GLASS AND RESTORE MAIN POWER."
   ],
   "objectives": [
-    {"id": "power", "label": "RESTORE POWER", "machine": "power"},
-    {"id": "oxygen", "label": "RESTORE OXYGEN", "machine": "oxygen"}
+    {
+      "id": "oxygen",
+      "label": "REPAIR O2",
+      "machine": "oxygen"
+    },
+    {
+      "id": "glass",
+      "label": "SEAL STORAGE GLASS"
+    },
+    {
+      "id": "power",
+      "label": "REPAIR GENERATOR",
+      "machine": "power"
+    },
+    {
+      "id": "feeds",
+      "label": "OPEN SUN FEEDS"
+    },
+    {
+      "id": "solar_a",
+      "label": "ALIGN AMBER SOLAR",
+      "route": 0
+    },
+    {
+      "id": "solar_b",
+      "label": "ALIGN JADE SOLAR",
+      "route": 1
+    },
+    {
+      "id": "solar_c",
+      "label": "ALIGN CORAL SOLAR",
+      "route": 2
+    }
   ],
   "remind": {
     "both": "THE REACTOR AND THE O2 GENERATOR STILL NEED YOU, {NAME}.",
@@ -31,12 +64,109 @@
     "done": "MAIN SYSTEMS NOMINAL. THANK YOU, {NAME}."
   },
   "lore": [
-    {"id": "power_done", "trigger": "power_done", "lines": ["REACTOR STABLE.", "{OWNER} BUILT THAT CORE BY HAND. IT NEVER FAILED BEFORE."]},
-    {"id": "oxygen_done", "trigger": "oxygen_done", "lines": ["AIR IS CLEAN AGAIN.", "THE O2 ROOM WAS SEALED THE NIGHT {OWNER} LEFT. I NEVER LEARNED WHY."]},
-    {"id": "panes_done", "trigger": "panes_done", "lines": ["THE STORAGE GLASS IS WHOLE.", "IT BROKE OUTWARD, {NAME}. SOMETHING HIT IT FROM INSIDE."]},
-    {"id": "both_done", "trigger": "both_done", "lines": ["MAIN SYSTEMS NOMINAL.", "THE SOLAR FIELD OUTSIDE STILL NEEDS ALIGNING BEFORE THE ENGINE CAN RUN."]},
-    {"id": "dust", "trigger": "talk", "lines": ["THE DUST HERE IS FINER THAN FLOUR. IT GETS INTO EVERYTHING."]},
-    {"id": "nursery", "trigger": "talk", "lines": ["THE NURSERY DOME STILL HAS POWER.", "{OWNER} GREW SOMETHING THERE. I WAS NOT ALLOWED INSIDE."]},
-    {"id": "comms", "trigger": "talk", "lines": ["THE COMMS DOME SITS UP ON THE ICE.", "ITS BEACON HAS BEEN CALLING FOR 412 DAYS. NOBODY ANSWERED."]}
-  ]
+    {
+      "id": "dust",
+      "trigger": "talk",
+      "lines": [
+        "THE DUST HERE IS FINER THAN FLOUR. IT GETS INTO EVERYTHING."
+      ]
+    },
+    {
+      "id": "comms",
+      "trigger": "talk",
+      "lines": [
+        "THE COMMS DOME SITS UP ON THE ICE.",
+        "ITS BEACON HAS BEEN CALLING FOR 412 DAYS. NOBODY ANSWERED."
+      ]
+    }
+  ],
+  "nursery_intro": [
+    "YES, IT IS STILL {BOT}. SAME MIND, DIFFERENT BODY.",
+    "THIS BODY MAINTAINS THE NURSERY. THANK YOU FOR THE REPAIR.",
+    "REPAIR THE CONSOLE FIRST TO SWITCH ON NURSERY POWER.",
+    "THEN REPAIR THE GROW LIGHT AND DAMAGED RACK.",
+    "I WILL VACUUM THE SOIL, DEAD LEAVES AND TRAY CHIPS WHILE YOU WORK.",
+    "EMBERPODS GROW ON THE RACKS AND REPLENISH FOOD. FIND THEIR SEEDS IN WILD CINDERCOIL.",
+    "DEWPODS GROW IN THE SILOS AND REPLENISH WATER. THEIR SEEDS COME FROM WILD MOONWELLS.",
+    "MOONWELLS OPEN ONLY AT NIGHT, FROM 20:00 UNTIL 05:00. COLLECT THEIR SEEDS WHILE OPEN.",
+    "BOTH CROPS TAKE A FULL DAY TO GROW. HARVEST THE FRUIT WHEN IT IS RIPE."
+  ],
+  "nursery_remind": [
+    "RACKS FOR EMBERPODS, SILOS FOR DEWPODS. BOTH TAKE A DAY TO GROW.",
+    "COLLECT MOONWELL SEEDS AT NIGHT, BETWEEN 20:00 AND 05:00."
+  ],
+  "guidance": {
+    "oxygen": [
+      "START WITH THE O2 GENERATOR, {NAME}. OXYGEN ROOM, WEST.",
+      "REPAIR ITS CRACKS AND WIRING WITH YOUR MULTITOOL. YOUR SUIT AIR IS LIMITED."
+    ],
+    "glass": [
+      "O2 GENERATOR REPAIRED. IT IS RUNNING ON RESERVE POWER.",
+      "SEAL ALL THREE STORAGE WINDOWS NEXT, OR THE OXYGEN WILL LEAK OUT.",
+      "MOVE THE CARGO BOX UNDER EACH HOLE AND STAND ON IT TO REPAIR THE GLASS.",
+      "TURN THE VIEW WITH {TURN_LEFT} AND {TURN_RIGHT} TO FIND THE CRACK AT THE BACK.",
+      "AFTER THE GLASS, REPAIR THE GENERATOR AND ALIGN THE SOLAR FIELD FOR LASTING O2."
+    ],
+    "power": [
+      "THE STORAGE WINDOWS ARE SEALED. NOW REPAIR THE MAIN GENERATOR IN THE EAST ROOM.",
+      "RESERVE POWER IS TEMPORARY. THE GENERATOR AND ALL THREE SOLAR ROUTES MUST WORK TOGETHER."
+    ],
+    "solar": [
+      "THE GENERATOR IS REPAIRED. FINISH THE SOLAR FIELD OUTSIDE.",
+      "OPEN THE THREE SUN FEEDS, THEN TURN THE MIRRORS TO CONNECT AMBER, JADE AND CORAL TO THE COLLECTOR.",
+      "ALL THREE ROUTES ARE NEEDED TO KEEP O2 PRODUCTION RUNNING."
+    ],
+    "done": [
+      "GLASS SEALED. GENERATOR AND SOLAR ONLINE. O2 SUPPLY STABLE.",
+      "YOU CAN BREATHE AND REFILL YOUR SUIT IN THE BASE AND NURSERY. THE NURSERY TANK SHARES THIS GENERATOR."
+    ]
+  },
+  "access": [
+    "MAIN POWER IS DOWN. RELEASING MAINTENANCE BULKHEADS.",
+    "BULKHEADS OPEN. O2 HAS ITS OWN LIMITED RESERVE ONCE REPAIRED."
+  ],
+  "nursery_objectives": [
+    {
+      "id": "unit",
+      "label": "REPAIR NURSERY UNIT"
+    },
+    {
+      "id": "console",
+      "label": "REPAIR GROW CONSOLE"
+    },
+    {
+      "id": "light",
+      "label": "REPAIR GROW LIGHT"
+    },
+    {
+      "id": "rack",
+      "label": "REPAIR FOOD RACK"
+    },
+    {
+      "id": "food",
+      "label": "PLANT FOOD RACKS"
+    },
+    {
+      "id": "water",
+      "label": "PLANT WATER SILOS"
+    },
+    {
+      "id": "food_harvest",
+      "label": "HARVEST EMBERPODS"
+    },
+    {
+      "id": "water_harvest",
+      "label": "HARVEST DEWPODS"
+    }
+  ],
+  "maintenance": {
+    "stroll_seconds": [
+      16.0,
+      30.0
+    ],
+    "idle_seconds": [
+      1.2,
+      3.5
+    ]
+  }
 }

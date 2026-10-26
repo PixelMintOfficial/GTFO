@@ -1,7 +1,7 @@
 extends Node
 ## Real Escape/mouse/keyboard/pad options tests in all three scenes. Verify frozen simulation,
 ## exclusive modal input, master-bus gain/mute, all four scaled UI surfaces and their hitboxes,
-## normalized HUD placement, airlock continuity, and ConfigFile restart persistence. Test files
+## fixed HUD placement, task-list scaling, airlock continuity and preference persistence. Test files
 ## live in .godot; no player preferences are written. --gallery=shots/options captures native UI.
 
 const PREFS := "res://.godot/options-test.cfg"
@@ -107,7 +107,8 @@ func run() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(prefs_path))
 	GameState.settings = GameSettings.new(prefs_path)
 	GameState.settings.apply_volume()
-	check(GameState.settings.gui_size == "large" and GameState.settings.volume == 1.0, "defaults preserve Large and full master volume")
+	check(GameState.settings.gui_size == "small" and GameState.settings.volume == 1.0, "defaults preserve compact HUD and full master volume")
+	GameState.settings.set_gui_size("large")
 	GameState.intro_done = true
 	GameState.clock = 12.0
 	GameState.reset_inventory()
@@ -120,7 +121,8 @@ func run() -> void:
 	check(menu != null and not menu.opened, "overworld has closed options")
 	var large := bag._canvas.scale.x
 	var clock_large: Vector2 = world.day_night.clock_panel._panel.scale
-	var normalized := hud.layout.normalized
+	var anchored := hud._panel.position
+	var objectives := find(world, ObjectiveHUD) as ObjectiveHUD
 	await tap(KEY_ESCAPE)
 	check(menu.opened and get_tree().paused, "Escape pauses and opens options")
 	var at: Vector2 = world.player.world_pos
@@ -172,7 +174,8 @@ func run() -> void:
 		check(bag._canvas.scale.is_equal_approx(hud._canvas.scale), size_name + " scales backpack/hotbar and stats together")
 		var ratio := bag._canvas.scale.x / large
 		check(world.day_night.clock_panel._panel.scale.is_equal_approx(clock_large * ratio), size_name + " scales the clock")
-		check(hud.layout.normalized == normalized, size_name + " preserves HUD placement")
+		check(hud._panel.position == anchored, size_name + " preserves fixed top-left stats")
+		check(objectives._panel.scale.is_equal_approx(hud._canvas.scale), size_name + " scales the task checklist with the stats")
 		check(hud._bounds.encloses(Rect2(hud._panel.position, SurvivalHUD.PANEL_SIZE)), size_name + " keeps stats on screen")
 		await tap(KEY_ESCAPE)
 		check(not get_tree().paused and world.multitool.options_suppressed, "resume waits for held F to release")
@@ -222,6 +225,8 @@ func run() -> void:
 		menu = find(inside, PauseMenu)
 		bag = find(inside, InventoryUI)
 		check(GameState.settings.gui_size == "small" and bag._canvas.scale.x < large, "GUI preference carries into " + path)
+		var tasks := find(inside, ObjectiveHUD) as ObjectiveHUD
+		check(tasks._panel.scale.is_equal_approx(bag._canvas.scale), "task checklist shares GUI scale in " + path)
 		await tap(KEY_ESCAPE)
 		check(menu.opened and get_tree().paused, "Escape pauses " + path)
 		await tap(KEY_ESCAPE)
@@ -236,6 +241,16 @@ func run() -> void:
 			await tap(KEY_ESCAPE)
 			check(not inside.dialogue.opened and not menu.opened and not get_tree().paused, "dialogue owns Escape before options")
 		if path.ends_with("nursery.tscn"):
+			inside.player.teleport(inside.cultivation.interaction_point("console"))
+			await frames()
+			check(inside.cultivation._can_interact(), "nursery repair area accepts ordinary interaction")
+			await tap(KEY_ESCAPE)
+			await key(KEY_F, true)
+			await tap(KEY_ESCAPE)
+			check(inside.multitool.options_suppressed and not inside.cultivation._can_interact(), "held F after options cannot trigger nursery work")
+			await key(KEY_F, false)
+			await frames()
+			check(inside.cultivation._can_interact(), "F release restores nursery interactions")
 			await tap(KEY_ESCAPE)
 			await click(menu._canvas, PauseMenu.SLIDER.position + Vector2(42, 7))
 		inside.queue_free()
