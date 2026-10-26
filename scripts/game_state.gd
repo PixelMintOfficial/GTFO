@@ -1,5 +1,8 @@
 extends Node
 ## What carries over between the overworld and the inside of the base (autoload: GameState).
+## Settings are user preferences (master volume and GUI size), separate from game progress.
+
+var settings := GameSettings.new()
 
 ## The crash scene has been seen (or skipped): it only plays once.
 var intro_done := false
@@ -58,12 +61,14 @@ func repair_for(machine_id: String) -> MachineRepair:
 	return machine_repairs[machine_id]
 
 
-## Repair restores the equipment; the outdoor collector supplies its electrical input.
+## Full base power needs both restored machines and all three outdoor solar routes.
+## The bot's emergency reserve is independent; neither daylight nor scene changes gate this.
 func base_powered() -> bool:
-	return solar_field.supplies_power() and repair_for(solar_field.field["engine_room"]).progress() >= 1.0
+	return solar_field.supplies_power() and repair_for("power").progress() >= 1.0 and repair_for("oxygen").progress() >= 1.0
 
 
 func _ready() -> void:
+	settings.apply_volume()
 	reset_inventory()
 	stock_supplies()
 

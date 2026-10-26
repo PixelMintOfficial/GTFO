@@ -8,6 +8,7 @@
 #   make sfx            regenerate all sound     (fast; needs make sources first)
 #   make props          regenerate the test props (fast, needs the map's data)
 #   make solar          regenerate solar mirror/feed sheets and four-view anchors
+#   make base-power     regenerate four compact base lighting masks from map geometry
 #   make interior       regenerate the base interior and its bot (about a minute)
 #   make nursery        regenerate the nursery interior and overworld airlock routes
 #   make windows        regenerate only glass inspection assets
@@ -29,7 +30,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props solar interior nursery windows astronaut astronaut-quick map tiles all import check \
+.PHONY: help env sources sfx props solar base-power interior nursery windows astronaut astronaut-quick map tiles all import check \
         check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots
 
 help:
@@ -60,9 +61,14 @@ props: $(PY)
 solar: $(PY)
 	$(PY) tools/solar_field_gen.py
 
+base-power: $(PY)
+	$(PY) tools/base_power_gen.py
+	$(PY) tests/test_base_power_art.py
+
 interior: $(PY)
 	$(PY) tools/interior_gen.py
 	$(PY) tests/test_power_restore.py
+	$(PY) tests/test_night_sunlight.py
 	$(PY) tools/window_repair_gen.py
 	$(PY) tools/bot_gen.py
 
@@ -83,6 +89,8 @@ astronaut-quick: $(PY)
 # The overworld. props depends on the map's data, so it always follows.
 map: $(PY)
 	$(PY) tools/mars_map_gen.py
+	$(PY) tools/base_power_gen.py
+	$(PY) tests/test_base_power_art.py
 	$(PY) tools/props_gen.py
 	$(PY) tools/solar_field_gen.py
 	$(PY) tools/check_solar_field.py
@@ -128,6 +136,12 @@ check-nursery:
 # They report their own pass/fail and exit nonzero.
 check-tests:
 	@echo "== tests"
+	@$(GODOT) --headless --path . res://tests/pause_menu_test.tscn 2>&1 | tee /tmp/gtfo-options.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/pause_menu_test.tscn -- --save-options-probe 2>&1 | tee -a /tmp/gtfo-options.log | grep -v '^$$' || true
+	@$(GODOT) --headless --path . res://tests/pause_menu_test.tscn -- --load-options-probe 2>&1 | tee -a /tmp/gtfo-options.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-options.log
+	@$(GODOT) --headless --path . res://tests/base_power_test.tscn 2>&1 | tee /tmp/gtfo-base-power.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-base-power.log
 	@$(GODOT) --headless --path . res://tests/solar_field_test.tscn 2>&1 | tee /tmp/gtfo-solar.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-solar.log
 	@$(GODOT) --headless --path . res://tests/solar_beam_test.tscn 2>&1 | tee /tmp/gtfo-beams.log | grep -v '^$$' || true

@@ -2,6 +2,7 @@ extends Node
 ## End-to-end glass repair: real pickups, inventory, live reach/physics, quarter-turn placement,
 ## resumable scans, atomic cost, independent panes, view/variant/airlock persistence and the
 ## final box collapse. Drives the production UI/model rather than an alternate puzzle.
+## Paused scans must also compose the paired nighttime pixels, not only the daylight map.
 
 var _checks := 0
 var _failures := 0
@@ -168,6 +169,9 @@ func _scene() -> void:
 	var model := panel.puzzle
 	var untouched: Texture2D = load("res://assets/maps/base_interior/base_interior.png")
 	_check(room.terrain.map_texture.get_image().get_data() != untouched.get_image().get_data(), "paused scan rows are included in the turn's map")
+	var no_sun := (load("res://assets/maps/base_interior/base_interior_no_sun.png") as Texture2D).get_image()
+	no_sun.convert(Image.FORMAT_RGBA8)
+	_check(room.terrain.no_sun_map.get_image().get_data() != no_sun.get_data(), "paused scan rows are included in the turn's nighttime map")
 	room._apply_view(1, player.facing_dir())
 	_check(is_equal_approx(model.scan, kept_scan), "partial scan survives changing camera views")
 	room.queue_free()

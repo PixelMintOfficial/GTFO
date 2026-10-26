@@ -21,7 +21,8 @@
    0.0,
    525.0
   ],
-  "reserve_png": "base_interior_reserve_r3.png"
+  "reserve_png": "base_interior_reserve_r3.png",
+  "no_sun_png": "base_interior_no_sun_r3.png"
  },
  "name": "base_interior",
  "image": "base_interior_r3.png",
@@ -250,6 +251,7 @@
     "height": "windows/burst_r3_height.png",
     "sun": "windows/burst_r3_sun.png",
     "light": "windows/burst_r3_light.png",
+    "no_sun": "windows/burst_r3_no_sun.png",
     "position": [
      97,
      352
@@ -297,6 +299,7 @@
     "height": "windows/gash_r3_height.png",
     "sun": "windows/gash_r3_sun.png",
     "light": "windows/gash_r3_light.png",
+    "no_sun": "windows/gash_r3_no_sun.png",
     "position": [
      515,
      419
@@ -312,6 +315,7 @@
    "file": "windows/restored_1_r3.png",
    "sun": "windows/restored_1_r3_sun.png",
    "light": "windows/restored_1_r3_light.png",
+   "no_sun": "windows/restored_1_r3_no_sun.png",
    "position": [
     87,
     357
@@ -324,6 +328,7 @@
    "file": "windows/restored_2_r3.png",
    "sun": "windows/restored_2_r3_sun.png",
    "light": "windows/restored_2_r3_light.png",
+   "no_sun": "windows/restored_2_r3_no_sun.png",
    "position": [
     109,
     458
@@ -337,6 +342,7 @@
    "file": "windows/restored_3_r3.png",
    "sun": "windows/restored_3_r3_sun.png",
    "light": "windows/restored_3_r3_light.png",
+   "no_sun": "windows/restored_3_r3_no_sun.png",
    "position": [
     87,
     157
@@ -349,6 +355,7 @@
    "file": "windows/restored_4_r3.png",
    "sun": "windows/restored_4_r3_sun.png",
    "light": "windows/restored_4_r3_light.png",
+   "no_sun": "windows/restored_4_r3_no_sun.png",
    "position": [
     515,
     422
@@ -362,6 +369,7 @@
    "file": "windows/restored_5_r3.png",
    "sun": "windows/restored_5_r3_sun.png",
    "light": "windows/restored_5_r3_light.png",
+   "no_sun": "windows/restored_5_r3_no_sun.png",
    "position": [
     87,
     357
@@ -375,6 +383,7 @@
    "file": "windows/restored_6_r3.png",
    "sun": "windows/restored_6_r3_sun.png",
    "light": "windows/restored_6_r3_light.png",
+   "no_sun": "windows/restored_6_r3_no_sun.png",
    "position": [
     109,
     422
@@ -389,6 +398,7 @@
    "file": "windows/restored_7_r3.png",
    "sun": "windows/restored_7_r3_sun.png",
    "light": "windows/restored_7_r3_light.png",
+   "no_sun": "windows/restored_7_r3_no_sun.png",
    "position": [
     87,
     157

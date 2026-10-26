@@ -12,6 +12,7 @@ extends Node2D
 ## Reserve power (the bot switches it on: GameState.story.reserve_power): the generator's reserve
 ## overlay (game.reserve_png: the emergency lines and floor rings, bloomed) laid over the map
 ## additively, flickering on the first time, steady after that (and after a turn or the airlock).
+## Full base power keeps those same physical strips steady, even without the reserve stage.
 
 const DUST := Color("#ffe6b4")
 const SPARK_HOT := Color("#fff0a0")
@@ -164,7 +165,7 @@ func _process(delta: float) -> void:
 
 ## Reserve power: the emergency lines stutter on, then hold, breathing a little.
 func _update_reserve(delta: float) -> void:
-	if not GameState.story.reserve_power or _reserve.texture == null:
+	if (not GameState.story.reserve_power and not GameState.base_powered()) or _reserve.texture == null:
 		_reserve.visible = false
 		return
 	if _reserve_t < 0.0:
@@ -172,7 +173,9 @@ func _update_reserve(delta: float) -> void:
 	_reserve_t += delta
 	var k := _reserve_t
 	var a := 0.92 + 0.08 * sin(_t * 1.7)
-	if k < 1.2:
+	if GameState.base_powered():
+		a = 1.0
+	elif k < 1.2:
 		a = (0.45 + 0.5 * k / 1.2) if (fmod(k, 0.27) < 0.15 or k > 0.95) else 0.08
 	_reserve.visible = true
 	_reserve.modulate.a = a

@@ -2,6 +2,7 @@ class_name MachineRepair
 extends RefCounted
 ## Session state for one machine: untimed cracks first, then the 30s circuit attempt.
 ## Both puzzles survive closing and changing scenes; inventory is spent only on crack success.
+## debug_complete bypasses both jobs without materials, or resets this machine for replay.
 
 signal changed
 signal circuit_switched
@@ -79,6 +80,19 @@ func finish_cracks() -> bool:
 	if not GameState.consume_item("scrap", CrackPuzzle.SCRAP_COST):
 		return false
 	return complete_task("cracks")
+
+
+## F1 task toggle: keep this instance and its listeners, and publish one complete state.
+func debug_complete(completed: bool) -> void:
+	if not OS.is_debug_build():
+		return
+	completed_tasks = {"cracks": true, "wiring": true} if completed else {}
+	if not completed:
+		cracks = null
+		layout_index = 0
+		_attempt = 0
+		_new_puzzle()
+	changed.emit()
 
 
 func _new_puzzle() -> void:

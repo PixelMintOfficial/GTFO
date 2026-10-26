@@ -11,6 +11,9 @@ extends CanvasLayer
 ##
 ## It sits above the world and below the UI, so the time panel and the backpack stay put.
 ## Solar beam billboards supply their world radius so thickness remains consistent in a swing.
+## Full base lighting carries each relief's own four-view mask through the swing.
+## Interior reliefs also carry the sunlight-free pixels, so night turns cannot flash beams.
+## Suit-light origins use the same raised sprite anchor as the live world, including platforms.
 
 signal finished
 
@@ -104,11 +107,13 @@ static func view_info(terrain: MapTerrain, camera: Camera2D, player: Player) -> 
 	var centre := camera.get_screen_center_position()       # with the camera's offset (it looks above the feet)
 	var rect := Rect2(centre - view * (0.5 + MARGIN), view * (1.0 + 2.0 * MARGIN))
 	return {"map": terrain.map_texture, "depth": terrain.depth_map, "light": terrain.light_mask,
-			"sun": terrain.sun_mask, "win": MapStream.win_vec(terrain), "origin": terrain.origin,
+			"sun": terrain.sun_mask, "no_sun": terrain.no_sun_map, "win": MapStream.win_vec(terrain), "origin": terrain.origin,
 			"upp": terrain.units_per_px, "dtp": terrain.depth_to_px, "ppu": terrain.px_per_unit,
 			"depth_scale": terrain.depth_scale, "heading": terrain.heading, "center": terrain.view_center,
 			"rect": rect, "view": view, "player_px": player.global_position,
+			"lamp_px": SuitLight.beam_origin(player),
 			"lamp_dir": SuitLight.beam_dir(terrain, player),
+			"power": BasePower.view_data(terrain),
 			"offset": player.global_position - centre}
 
 
@@ -196,7 +201,9 @@ func _apply(k: float) -> void:
 		m.set_shader_parameter("toward", basis.z)
 	for b in _boards.get_children():
 		if b is Sprite3D:
-			b.modulate = DayNight.light_mul
+			var at := Vector3(b.get_meta("at"))
+			var px := _player.terrain.to_screen(Vector2(at.x, -at.z), at.y)
+			b.modulate = DayNight.light_mul.lerp(Color.WHITE, BasePower.light_at(BasePower.current, px))
 			b.position = b.get_meta("at") + basis.z * 16.0               # in front of both views
 		if b.has_meta("first"):
 			b.visible = b.get_meta("first") == (mix < 0.5)               # each view's own drawing of it
@@ -228,7 +235,8 @@ func _face_player(psi: float) -> void:
 		return
 	_player_board.texture = frames.get_frame_texture(anim, mini(_player.sprite.frame, frames.get_frame_count(anim) - 1))
 	# The astronaut carries the suit lamp through the swing, so it keeps lighting them.
-	_player_board.modulate = DayNight.light_mul.lerp(Color(1.06, 1.0, 0.9), SuitLight.published_suit)
+	var ambient := BasePower.light_at(BasePower.current, _player.global_position)
+	_player_board.modulate = DayNight.light_mul.lerp(Color.WHITE, ambient).lerp(Color(1.06, 1.0, 0.9), SuitLight.published_suit)
 
 
 ## The relief's grid of vertices. Building one is tens of milliseconds at the sizes used here
@@ -267,6 +275,8 @@ func _set_view_params(m: ShaderMaterial, v: Dictionary) -> void:
 	m.set_shader_parameter("depth_tex", v["depth"])
 	m.set_shader_parameter("light_tex", v["light"])
 	m.set_shader_parameter("sun_tex", v["sun"])
+	m.set_shader_parameter("no_sun_tex", v["no_sun"])
+	m.set_shader_parameter("has_no_sun", v["no_sun"] != null)
 	m.set_shader_parameter("win", v["win"])
 	m.set_shader_parameter("origin", v["origin"])
 	m.set_shader_parameter("upp", v["upp"])
@@ -277,8 +287,12 @@ func _set_view_params(m: ShaderMaterial, v: Dictionary) -> void:
 	m.set_shader_parameter("view_center", v["center"])
 	m.set_shader_parameter("rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
 	m.set_shader_parameter("block", _block)
-	m.set_shader_parameter("lamp_px", v["player_px"])
+	m.set_shader_parameter("lamp_px", v["lamp_px"])
 	m.set_shader_parameter("lamp_dir", v["lamp_dir"])
+	var power: Dictionary = v["power"]
+	m.set_shader_parameter("power_tex", power["mask"])
+	m.set_shader_parameter("power_rect", power["rect"])
+	m.set_shader_parameter("power_indoor", power["indoor"])
 
 
 ## Something standing in the world, as a billboard: texture region, the anchor where it stands

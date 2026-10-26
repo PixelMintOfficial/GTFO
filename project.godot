@@ -40,6 +40,22 @@ environment/defaults/default_clear_color=Color(0.043, 0.035, 0.082, 1)
 
 [shader_globals]
 
+bp_active={
+"type": "float",
+"value": 0.0
+}
+bp_indoor={
+"type": "float",
+"value": 0.0
+}
+bp_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 1)
+}
+bp_mask={
+"type": "sampler2D",
+"value": ""
+}
 dn_mul={
 "type": "vec3",
 "value": Vector3(1, 1, 1)

@@ -1,5 +1,6 @@
 extends Node
 ## Focused real-input HUD tests. Uses its own ConfigFile so player preferences stay intact.
+## Default-size assertions use isolated options regardless of the player's saved GUI size.
 ## Run: godot --headless --path . res://tests/survival_hud_test.tscn.
 var checks := 0
 var failures := 0
@@ -39,6 +40,7 @@ func drag(destination: Vector2) -> void:
 
 
 func _ready() -> void:
+	GameState.settings = GameSettings.new("res://.godot/hud-default-options.cfg")
 	# Separate engine processes prove persistence across a full restart, not just objects.
 	if OS.get_cmdline_user_args().has("--save-layout-probe"):
 		var probe := SurvivalHUDLayout.new("user://hud-restart-test.cfg")

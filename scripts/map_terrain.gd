@@ -14,6 +14,7 @@ enum Surface { SOLID, STEEP, WALK }
 ## replace_variant() changes an interior's repaired artwork and walk grid while keeping
 ## this terrain instance, world positions, and the current heading shared by all systems.
 ## to_screen_in_view/to_screen_direction share the projection for view-independent ray extents.
+## Optional no_sun_map is the same interior without baked outside light, blended in at night.
 
 var map_size := Vector2.ZERO
 var origin := Vector2.ZERO
@@ -34,6 +35,7 @@ var frames: Array[Rect2] = []
 ## coming in (indoors: taken away at night). From the map generator; null if a map has none.
 var light_mask: Texture2D
 var sun_mask: Texture2D
+var no_sun_map: Texture2D
 ## Things that block like buildings but can move or go away (rocks, crates): id -> (x, y, radius).
 var blockers := {}
 ## Things you can stand on that can move or go away (the cargo box): id -> [centre: Vector2,
@@ -128,6 +130,7 @@ func load_view(k: int) -> void:
 			frames.append(Rect2(f[0], f[1], f[2], f[3]))
 	streaming = not tiles_in(heading).is_empty() and not MapStream.disabled()
 	sun_mask = load(dir.path_join(game["sun_png"])) if game.has("sun_png") else null
+	no_sun_map = load(dir.path_join(game["no_sun_png"])) if game.has("no_sun_png") else null
 	if streaming:
 		return                               # MapStream stitches the picture, depth and light
 	window = Rect2i(Vector2i.ZERO, Vector2i(map_size))

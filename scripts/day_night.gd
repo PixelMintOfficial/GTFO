@@ -8,8 +8,10 @@ extends Node
 ## What glows on its own stays lit at night: the map's light mask keeps its lamps, lit windows,
 ## glowing pools and crystals bright, the plants keep their glowing parts, and the effects
 ## scripts' lights are left alone (additive layers, and nodes tagged with the meta "dn_unlit").
-## Nothing else is lit after dark: the lamp the astronaut carries is SuitLight's, and it is off
-## until they switch it on.
+## Unpowered places stay dark: the lamp the astronaut carries is SuitLight's, off until they
+## switch it on.
+## BasePower adds the main base's normal lighting once both machines and solar are restored.
+## Interiors with no_sun_map remove baked daylight exactly at night, rather than dimming rays.
 ##
 ## Every other world node with no material of its own (smoke, dust, gas, snow, the doors, the
 ## domes' moving parts...) gets the graded material, now and whenever one is added. UI on its own
@@ -68,14 +70,20 @@ var speed := 1.0
 var _graded: ShaderMaterial
 var _map_mat: ShaderMaterial
 var _pending: Array[Node] = []
+var base_power: BasePower
 
 
 ## map: the scene's pre-rendered map sprite. light_mask / sun_mask: its light and sun masks.
-func setup(map: CanvasItem, light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
+## terrain: the main base/interior's projection for BasePower (other scenes omit it).
+func setup(map: CanvasItem, light_mask: Texture2D, sun_mask: Texture2D = null, terrain: MapTerrain = null) -> void:
 	_map_mat = ShaderMaterial.new()
 	_map_mat.shader = MAP_SHADER
 	map.material = _map_mat
-	set_masks(light_mask, sun_mask)
+	set_masks(light_mask, sun_mask, terrain.no_sun_map if terrain != null else null)
+	if terrain != null:
+		base_power = BasePower.new()
+		add_child(base_power)
+		base_power.setup(terrain)
 	_graded = ShaderMaterial.new()
 	_graded.shader = GRADED_SHADER
 	_run_test_hooks()
@@ -89,9 +97,13 @@ func setup(map: CanvasItem, light_mask: Texture2D, sun_mask: Texture2D = null) -
 
 
 ## The camera turned: the new view's light (and sun) masks.
-func set_masks(light_mask: Texture2D, sun_mask: Texture2D = null) -> void:
+func set_masks(light_mask: Texture2D, sun_mask: Texture2D = null, no_sun_map: Texture2D = null) -> void:
 	_map_mat.set_shader_parameter("light_mask", light_mask)
 	_map_mat.set_shader_parameter("sun_mask", sun_mask)
+	_map_mat.set_shader_parameter("no_sun_map", no_sun_map)
+	_map_mat.set_shader_parameter("has_no_sun", no_sun_map != null)
+	if base_power != null:
+		base_power.load_view()
 
 
 ## Where the current part of the day is: 0 as it begins, 1 as it ends.

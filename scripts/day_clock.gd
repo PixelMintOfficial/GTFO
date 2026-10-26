@@ -5,6 +5,7 @@ extends CanvasLayer
 ## part of the day (MORNING, NOON, EVENING, NIGHT) with four pips, the current one filling as
 ## it passes. The part of the day lights up as it changes, and when a new day dawns its number
 ## comes up big at the top of the screen. Drawn in pixels with PixelFont, in the game's palette.
+## Small/medium GUI preferences resize this panel; Large keeps its original drawing scale.
 
 const ORIGIN := Vector2(6, 6)
 const HEIGHT := 28
@@ -55,6 +56,16 @@ func _ready() -> void:
 	_panel = Node2D.new()
 	_panel.draw.connect(_draw_panel)
 	add_child(_panel)
+	GameState.settings.changed.connect(_layout)
+	_layout()
+
+
+func _layout() -> void:
+	var scale_value := Vector2.ONE * GameState.settings.gui_factor(_panel)
+	if _panel.scale == scale_value:
+		return
+	_panel.scale = scale_value
+	_panel.queue_redraw()
 
 
 ## Bring up a title at the top of the screen ("DAY 2").
@@ -80,6 +91,7 @@ var _dial_state := Vector3(-1, -1, -1)
 
 
 func _process(delta: float) -> void:
+	_layout()
 	_t += delta
 	_flash = maxf(0.0, _flash - delta * 1.6)
 	_toast_t += delta
@@ -244,7 +256,7 @@ func _draw_toast() -> void:
 	if _toast == "" or _toast_t > 3.0:
 		return
 	var a := clampf(_toast_t / 0.5, 0.0, 1.0) * clampf((3.0 - _toast_t) / 0.7, 0.0, 1.0)
-	var view := get_viewport().get_visible_rect().size
+	var view := get_viewport().get_visible_rect().size / _panel.scale
 	var w := PixelFont.width(_toast, 2)
 	var pos := Vector2(round((view.x - w) / 2.0), 30.0)
 	pos = SurvivalHUD.toast_position(_panel, pos, w)

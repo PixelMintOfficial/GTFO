@@ -8,6 +8,7 @@ extends CanvasLayer
 ## Explicit development mode: --survival-debug enables F6 damage, F7 air, F8 empty needs,
 ## F9 refill, F10 60x time. --vitals=H,O,F,W and --survival-speed=N require that flag.
 ## --hud-preview=H,O,F,W is UI-only; F11 cycles 0/25/50/75/100, F12 restores live display.
+## GUI preferences resize the entire group while retaining normalized placement and hitboxes.
 
 const COLORS := [Color("#ec7a5a"), Color("#7fe6cf"), Color("#efb950"), Color("#4fc6b4")]
 const ICONS := {
@@ -96,6 +97,8 @@ func setup(player: Player, tool: Multitool) -> void:
 						meters[i].preview = clampi(int(numbers[i]), 0, 100)
 		GameState.survival_debug_initialized = true
 	_position_panel()
+	GameState.settings.changed.connect(_layout)
+	_layout()
 
 
 func _refresh() -> void:
@@ -153,14 +156,18 @@ var _shell_drawn := Vector2i(-1, -1)
 var _hud_drawn := []
 
 
-func _process(delta: float) -> void:
+func _layout() -> void:
 	var view := _canvas.get_viewport_rect().size
-	var factor := minf(view.x / 384.0, view.y / 216.0)
+	var factor := minf(view.x / 384.0, view.y / 216.0) * GameState.settings.gui_factor(_canvas)
 	_canvas.scale = Vector2.ONE * factor
 	_canvas.position = ((view - Vector2(384, 216) * factor) * 0.5).floor()
 	# Cover the whole viewport even when inventory centers its 16:9 logical canvas.
 	_bounds = Rect2(-_canvas.position / factor, view / factor)
 	_position_panel()
+
+
+func _process(delta: float) -> void:
+	_layout()
 	_panel.visible = _player.controls_enabled and not _player.puppet and not get_tree().paused and not GameState.survival.dead
 	if _dragging and (not _panel.visible or _player.turning):
 		_dragging = false
@@ -297,7 +304,7 @@ func _draw_hud() -> void:
 	if not _player.can_breathe():
 		PixelFont.draw(_canvas, Vector2(145, 137), "O2 RESERVE IN USE", InventoryUI.GOLD)
 	if state.dead:
-		_canvas.draw_rect(Rect2(0, 0, 384, 216), Color(InventoryUI.VOID, 0.9))
+		_canvas.draw_rect(_bounds, Color(InventoryUI.VOID, 0.9))
 		PixelFont.draw(_canvas, Vector2(132, 80), "SUIT OFFLINE", InventoryUI.CORAL, 2)
 		PixelFont.draw(_canvas, Vector2(192 - PixelFont.width(state.cause) / 2, 102), state.cause, InventoryUI.WHITE)
 		PixelFont.draw(_canvas, Vector2(110, 122), "ENTER / A - RETURN TO BASE", InventoryUI.TEAL)

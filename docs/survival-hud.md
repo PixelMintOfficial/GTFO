@@ -25,6 +25,8 @@ and proceeds clockwise. There is no delayed ring animation that could contradict
 
 Room/day announcements move below the panel only when intersecting it. Backpack/map/repair
 modals hide the panel and disable drag/reset input; existing modal controls remain untouched.
+Escape options also pause and hide the panel. Their Small/Medium/Large GUI preference scales
+the full panel while retaining its normalized position, screen clamping and pointer hitboxes.
 The death overlay remains above all UI and retains its existing rescue behavior.
 
 ## Dragging, reset and persistence

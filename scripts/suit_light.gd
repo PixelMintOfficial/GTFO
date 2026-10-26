@@ -16,6 +16,8 @@ extends Node
 ## out in the current view's map pixels (MapTerrain.to_screen_direction): turn the camera
 ## (G / H) and the beam turns with the world. It is only worth anything in the dark, so its
 ## strength follows DayNight.night and it does nothing at noon.
+## Its origin follows the sprite's pixel-snapped feet offset, so jumps, falls and platforms
+## carry the lamp with the suit rather than leaving its source at the ground sort position.
 ##
 ## Test hooks (after "--"): --suit-light (start with the lamp on)
 
@@ -78,11 +80,16 @@ static func beam_dir(terrain: MapTerrain, p: Player) -> Vector2:
 	return d.normalized() if d.length() > 0.001 else Vector2.RIGHT
 
 
+## The same drawn suit position for live world shaders and camera-turn reliefs.
+static func beam_origin(p: Player) -> Vector2:
+	return p.sprite.global_position + Vector2(0.0, -CHEST)
+
+
 ## Where the lamp is and what it throws, as the shader global holds it.
 func lamp_vector() -> Vector4:
 	if player == null:
 		return Vector4(0.0, 0.0, reach, 0.0)
-	var at := player.global_position + Vector2(0.0, -CHEST)
+	var at := beam_origin(player)
 	var lit := strength * DayNight.night if GameState.suit_light else 0.0
 	return Vector4(at.x, at.y, reach, lit)
 
