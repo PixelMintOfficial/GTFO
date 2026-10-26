@@ -5,11 +5,18 @@
 // their own are kept out of it by the shaders that know about them (the map's light mask, the
 // plants' glow row). The lamp on the astronaut's suit (SuitLight) is the other two: it is not
 // a light node, it is a shape these shaders lay on the ground.
+// Interior map/scan/turn shaders share map_daylight to remove baked sunlight exactly at night.
 
 global uniform vec3 dn_mul;      // the daylight's colour: multiplies everything the sun lights
 global uniform vec3 dn_add;      // sky light lifting the shadows a little
 global uniform float dn_sat;     // colour saturation (the night greys things out a little)
 global uniform float dn_night;   // 0 by day .. 1 in the deep of night
+// Full base lighting uses a cropped map-space mask (R illumination, G/B glass emission).
+// G preserves damage; B is intact glass, used only on the existing restoration patches.
+global uniform float bp_active;
+global uniform float bp_indoor;
+global uniform vec4 bp_rect;
+global uniform sampler2D bp_mask : filter_nearest, hint_default_black;
 global uniform vec4 dn_lamp;     // the suit lamp: map px x, y, how far it throws (px), strength
 global uniform vec4 dn_beam;     // the way it points (x, y, in the flattened ground below), the
                                  // cosine of its half width, how much of the throw the spill
@@ -33,6 +40,26 @@ float dn_bayer(vec2 p) {
 vec3 dn_sky(vec3 c) {
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
 	return mix(vec3(l), c, dn_sat) * dn_mul + dn_add;
+}
+
+vec3 map_daylight(vec3 c, vec3 no_sun, float sun, bool has_no_sun) {
+	return has_no_sun ? mix(c, no_sun, dn_night) : c * (1.0 - 0.4 * sun * dn_night);
+}
+
+vec3 base_power_sample(vec2 p, sampler2D mask, vec4 rect, float indoor) {
+	vec2 uv = (floor(p) + 0.5 - rect.xy) / rect.zw;
+	if (indoor > 0.5) { return vec3(1.0, 0.0, 0.0); }
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThanEqual(uv, vec2(1.0)))) { return vec3(0.0); }
+	return texture(mask, uv).rgb;
+}
+
+vec3 base_power_at(vec2 p) {
+	if (bp_active < 0.5) { return vec3(0.0); }
+	return base_power_sample(p, bp_mask, bp_rect, bp_indoor) * bp_active;
+}
+
+vec3 base_power_emission(vec3 c, float emission) {
+	return c + vec3(0.38, 0.72, 0.60) * emission;
 }
 
 // How much of the suit lamp reaches a map pixel: a beam thrown along the ground the way the
@@ -61,7 +88,8 @@ float dn_lamp_at(vec2 map_px) {
 // A sunlit colour at a map pixel, at this time of day, with at least `lamp` of the suit lamp on
 // it: whoever carries the lamp is lit by it all over, not only where the beam crosses the ground.
 vec3 day_night_lit(vec3 c, vec2 map_px, float lamp) {
-	return mix(dn_sky(c), c * DN_LAMP_TINT, max(dn_lamp_at(map_px), lamp));
+	vec3 lit = mix(dn_sky(c), c, base_power_at(map_px).r);
+	return mix(lit, c * DN_LAMP_TINT, max(dn_lamp_at(map_px), lamp));
 }
 
 // A sunlit colour at a map pixel, at this time of day (with the suit lamp on it).

@@ -8,10 +8,11 @@ extends Node2D
 ## Sit this node between the map and the player: its lights draw under the player, its
 ## sprites (on top of the domes) draw over anyone walking behind a dome.
 ##
-## Mended glass: once a base room's windows are mended from inside
-## (GameState.window_repair.dome_mended), each of its holes gets the glass back - the patch the
+## Mended glass: once storage's three windows are mended from inside, all three base rooms
+## (GameState.window_repair.dome_mended = "base") get their glass back - the patch the
 ## map generator exported with it (red_planet_fx.json -> cracks), laid over the map like the map
 ## itself, so the hole, its bright rim and its cracks are gone in every view.
+## WindowRepair changes also refresh these patches immediately when toggled through F1.
 
 const GLASS := preload("res://shaders/dome_glass.gdshader")
 
@@ -34,15 +35,19 @@ var _beacon := Vector2.ZERO
 var _beacon_lit := false
 var _door_lit := []
 var _t := 0.0
+var _meta_path := ""
+var _glass_room := ""
 
 
 func setup(meta_path: String) -> void:
 	set_meta("dn_unlit", true)                           # these are lights: the sprites below take the time of day
 	load_view(meta_path)
+	GameState.window_repair.changed.connect(_repair_changed)
 
 
 ## The camera turned: this view's sprites on the domes, and where its lights are.
 func load_view(meta_path: String) -> void:
+	_meta_path = meta_path
 	for s in _sprites:
 		(s[0] as Node).queue_free()
 	_sprites.clear()
@@ -82,13 +87,14 @@ func _load_glass(meta_path: String, meta: Dictionary, dir: String) -> void:
 		spr.queue_free()
 	_glass.clear()
 	var room := GameState.window_repair.dome_mended
+	_glass_room = room
 	if room == "" or not meta.has("fx"):
 		return
 	var fx := ViewData.fx_of(meta_path, meta)
 	var mat := ShaderMaterial.new()
 	mat.shader = GLASS
 	for c in fx.get("cracks", []):
-		if c["room"] != room:
+		if room != "base" and c["room"] != room:
 			continue
 		var spr := Sprite2D.new()
 		spr.texture = load(dir.path_join(c["patch"]))
@@ -99,6 +105,11 @@ func _load_glass(meta_path: String, meta: Dictionary, dir: String) -> void:
 		spr.set_meta("anchor", Vector2(c["center"][0], c["center"][1]) - spr.position)
 		add_child(spr)
 		_glass.append(spr)
+
+
+func _repair_changed() -> void:
+	if _glass_room != GameState.window_repair.dome_mended:
+		_load_glass(_meta_path, ViewData.get_json(_meta_path), _meta_path.get_base_dir())
 
 
 ## The moving parts on the domes, for the camera's turn: billboards (see TurnOverlay._board).

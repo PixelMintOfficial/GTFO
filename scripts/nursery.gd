@@ -3,6 +3,7 @@ extends Node2D
 ## Artwork, collision, door frames and anchors come from nursery_gen.py in four views.
 ## Uses the base's player, depth window, day/night, room toast, inventory and door cutscene.
 ## No nursery puzzles are implemented here. F / gamepad X enters/exits through either door.
+## Escape opens the shared paused volume/GUI options.
 ##
 ## Test hooks: --spawn=X,Y --walk=DX,DY[,run] --capture=PATH --seconds=S --burst=N --gap=S
 ## --turn=N --turn-left/--turn-right --time=H --suit-light --equip --quit=S
@@ -63,6 +64,7 @@ func _ready() -> void:
 	var objectives := ObjectiveHUD.new()
 	add_child(objectives)
 	objectives.setup(player)
+	PauseMenu.attach(self, player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	if GameState.arrive == "interior" or args.has("arrive"):

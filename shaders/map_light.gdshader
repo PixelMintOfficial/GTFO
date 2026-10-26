@@ -5,11 +5,15 @@ shader_type canvas_item;
 // light pooling round them, the stars. That part keeps its colour at night (and stands out a
 // touch more against the dark). Indoors, the sun mask marks daylight coming in through the
 // windows (shafts, sunlit patches); it fades away at night.
+// BasePower adds geometry-matched glass emission and shared full-power illumination.
+// An optional no_sun_map removes the actual baked daylight, avoiding dark shafts at night.
 
 #include "res://shaders/day_night.gdshaderinc"
 
 uniform sampler2D light_mask : hint_default_black;
 uniform sampler2D sun_mask : hint_default_black;
+uniform sampler2D no_sun_map : filter_nearest, hint_default_black;
+uniform bool has_no_sun = false;
 
 varying vec2 map_pos;
 
@@ -19,9 +23,10 @@ void vertex() {
 
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
+	c.rgb = base_power_emission(c.rgb, base_power_at(map_pos).g);
 	float own = texture(light_mask, UV).r;
 	float sun = texture(sun_mask, UV).r;
-	vec3 day = c.rgb * (1.0 - 0.4 * sun * dn_night);
-	vec3 glow = c.rgb * (1.0 + 0.12 * dn_night);
+	vec3 day = map_daylight(c.rgb, texture(no_sun_map, UV).rgb, sun, has_no_sun);
+	vec3 glow = (has_no_sun ? day : c.rgb) * (1.0 + 0.12 * dn_night);
 	COLOR = vec4(mix(day_night(day, map_pos), glow, own), c.a);
 }

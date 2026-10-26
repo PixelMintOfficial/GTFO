@@ -10,8 +10,23 @@ objective/navigation box is deliberately absent.
 
 A single 54-unit conical receiver has triangular blue cells and a large local
 three-channel bar. Its ground cable enters the main base's power conduit. All
-three complete routes supply the interior reactor; the reactor must also have its
-existing cracks and wiring repaired before `GameState.base_powered()` is true.
+three complete routes supply the interior reactor. BOTH the reactor and oxygen machine
+must also have their cracks and wiring repaired before `GameState.base_powered()` is true.
+Full power immediately lights the main base indoors and outdoors, at every hour. The
+bot's emergency reserve remains a separate, dimmer stage. Day/night does not interrupt
+electrical output; closing a solar feed returns the base to its available reserve lighting.
+`BasePower` supplies shared world-shader lighting from compact four-view masks exported
+by `tools/base_power_gen.py` (`make base-power`, also part of `make map`). Their R channel
+lights the existing shell, corridors and local ground spill; G adds teal glass emission
+while preserving damage; B is the intact emission used by existing glass restoration
+patches. Both emission channels add the same reflected window colour to nearby ground.
+The pool fades evenly over 100 world units outside each footing and follows terrain height;
+saved depth prevents it painting over foreground geometry. Completing all three storage glass
+repairs restores all six exterior breaks across the three main-base domes.
+The masks follow the actual band geometry and saved depth, use map pixels rather
+than streamed-window UVs, and travel with both views during camera swings. Inside, normal
+room lighting and the existing emergency strips remain steady. Other lands and the nursery
+keep their own lighting.
 The engine room has small Amber/Jade/Coral wall lenses and plays the existing powered-machine
 ambience only while running. Closing a feed removes that beam/output immediately.
 Routing progress does not decay with the day/night cycle; sunlight visuals fade

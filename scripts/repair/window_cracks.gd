@@ -16,8 +16,11 @@ extends Node2D
 ## a ring of light where a pane is mended.
 ## window_restorations supplies the exact combined room colours and lighting masks for sealed
 ## panes. Completing a scan also removes that hole's live shaft/dust from InteriorFX.
-## With every pane mended, the dome outside (rooms.storage.dome) is mended too:
-## GameState.window_repair.dome_mended, drawn on the overworld by DomeFX.
+## Paired no_sun pixels follow sealed panes and partial scans, keeping nighttime light separate
+## from the daylight image through camera turns, machine swaps and scene changes.
+## With every pane mended, all three main-base domes outside are mended too:
+## GameState.window_repair.dome_mended = "base", drawn on the overworld by DomeFX.
+## State changes from the F1 toggles restore/reopen panes and their lighting immediately.
 
 ## How near the spot under a pane you must be, standing on the box (world units).
 const NEAR := 20.0
@@ -55,9 +58,11 @@ var _map: Sprite2D
 var _map_source := ""
 var _sun_source := ""
 var _light_source := ""
+var _no_sun_source := ""
 var _restorations: Array = []
 var _prompt: Node2D
 var _dome := ""                                        # the base room outside, on the overworld
+var _composed_fixed := {}
 
 
 func setup(meta: Dictionary, player: Player, tool: Multitool, terrain: MapTerrain) -> void:
@@ -85,6 +90,7 @@ func setup(meta: Dictionary, player: Player, tool: Multitool, terrain: MapTerrai
 	_dome = meta["rooms"]["storage"].get("dome", "")
 	set_view(meta)
 	_mend_dome()
+	repair.changed.connect(_repair_changed)
 	box = tool.find_prop("cargo_box")
 	if box == null:
 		return
@@ -110,6 +116,7 @@ func set_view(meta: Dictionary) -> void:
 	_map_source = _terrain.view_json.get_base_dir().path_join(meta["image"])
 	_sun_source = _terrain.view_json.get_base_dir().path_join(meta["game"]["sun_png"])
 	_light_source = _terrain.view_json.get_base_dir().path_join(meta["game"]["light_png"])
+	_no_sun_source = _terrain.view_json.get_base_dir().path_join(meta["game"]["no_sun_png"])
 	_restorations = meta.get("window_restorations", [])
 	for pane in panes:
 		var info: Dictionary = pane["patch"]
@@ -125,6 +132,8 @@ func set_view(meta: Dictionary) -> void:
 		material.set_shader_parameter("height_map", load(dir.path_join(info["height"])))
 		material.set_shader_parameter("sun_mask", load(dir.path_join(info["sun"])))
 		material.set_shader_parameter("light_mask", load(dir.path_join(info["light"])))
+		material.set_shader_parameter("no_sun_map", load(dir.path_join(info["no_sun"])))
+		material.set_shader_parameter("has_no_sun", true)
 		material.set_shader_parameter("map_size", _terrain.map_size)
 		material.set_shader_parameter("map_position", sprite.position)
 		material.set_shader_parameter("patch_size", sprite.texture.get_size())
@@ -132,6 +141,7 @@ func set_view(meta: Dictionary) -> void:
 		_map.add_child(sprite)                        # on the wall, behind FX and actors
 		_patches[pane["id"]] = sprite
 	_compose_fixed()
+	_composed_fixed = repair.fixed.duplicate()
 	_parts.clear()
 	_rings.clear()
 
@@ -164,18 +174,36 @@ func fix(id: String) -> void:
 			Audio.play("pane_mend", pane["px"])
 			if pane["seen"]:
 				_rings.append([pane["px"], 0.0, 0.6])
-	_compose_fixed()
-	(get_parent().get_node("InteriorFX") as InteriorFX).seal_window(id)
-	if _patches.has(id):
-		_patches[id].queue_free()
-		_patches.erase(id)
+
+
+## Fixing normally or through F1 shares the same room pixels and lighting. Reopening panes
+## rebuilds scan sprites and shafts; cargo-box changes alone do not redraw the room.
+func _repair_changed() -> void:
+	if repair.fixed == _composed_fixed:
+		return
+	var reopened := false
+	for id in _composed_fixed:
+		if not repair.fixed.has(id):
+			reopened = true
+	var fx := get_parent().get_node("InteriorFX") as InteriorFX
+	if reopened:
+		set_view(ViewData.get_json(_terrain.view_json))
+		fx.load_view(_terrain.view_json)
+	else:
+		_compose_fixed()
+		for id in repair.fixed:
+			fx.seal_window(id)
+			if _patches.has(id):
+				_patches[id].queue_free()
+				_patches.erase(id)
+		_composed_fixed = repair.fixed.duplicate()
 	_mend_dome()
 
 
-## Every pane mended: the storage room's dome outside has whole glass again (DomeFX draws it).
+## Every pane mended: all three main-base domes outside have whole glass (DomeFX draws it).
 func _mend_dome() -> void:
 	if _dome != "" and repair.all_fixed(_pane_ids()):
-		repair.dome_mended = _dome
+		repair.dome_mended = "base"
 
 
 ## Compose the complete sealed room state, including its colour, sun and light replacements,
@@ -186,6 +214,8 @@ func _compose_fixed() -> void:
 	image.convert(Image.FORMAT_RGBA8)
 	var sun := (load(_sun_source) as Texture2D).get_image().duplicate() as Image
 	var light := (load(_light_source) as Texture2D).get_image().duplicate() as Image
+	var no_sun := (load(_no_sun_source) as Texture2D).get_image().duplicate() as Image
+	no_sun.convert(Image.FORMAT_RGBA8)
 	var dir := _terrain.view_json.get_base_dir()
 	for state: Dictionary in _restorations:
 		var fixed: Array = state["panes"]
@@ -197,6 +227,9 @@ func _compose_fixed() -> void:
 			var at := Vector2i(state["position"][0], state["position"][1])
 			var rect := Rect2i(Vector2i.ZERO, replacement.get_size())
 			image.blend_rect(replacement, rect, at)
+			var night_patch := (load(dir.path_join(state["no_sun"])) as Texture2D).get_image()
+			night_patch.convert(Image.FORMAT_RGBA8)
+			no_sun.blend_rect(night_patch, rect, at)
 			sun.blit_rect((load(dir.path_join(state["sun"])) as Texture2D).get_image(), rect, at)
 			light.blit_rect((load(dir.path_join(state["light"])) as Texture2D).get_image(), rect, at)
 		break
@@ -211,18 +244,23 @@ func _compose_fixed() -> void:
 			continue
 		var patch := (load(_terrain.view_json.get_base_dir().path_join(info["file"])) as Texture2D).get_image().duplicate() as Image
 		patch.convert(Image.FORMAT_RGBA8)
+		var night_patch := (load(dir.path_join(info["no_sun"])) as Texture2D).get_image().duplicate() as Image
+		night_patch.convert(Image.FORMAT_RGBA8)
 		if progress < 1.0:
 			var height := (load(_terrain.view_json.get_base_dir().path_join(info["height"])) as Texture2D).get_image()
 			for y in patch.get_height():
 				for x in patch.get_width():
 					if height.get_pixel(x, y).r > progress:
 						patch.set_pixel(x, y, Color.TRANSPARENT)
+						night_patch.set_pixel(x, y, Color.TRANSPARENT)
 		image.blend_rect(patch, Rect2i(Vector2i.ZERO, patch.get_size()), Vector2i(info["position"][0], info["position"][1]))
+		no_sun.blend_rect(night_patch, Rect2i(Vector2i.ZERO, patch.get_size()), Vector2i(info["position"][0], info["position"][1]))
 	_terrain.map_texture = ImageTexture.create_from_image(image)
 	_map.texture = _terrain.map_texture
 	_terrain.sun_mask = ImageTexture.create_from_image(sun)
 	_terrain.light_mask = ImageTexture.create_from_image(light)
-	(get_parent().get_node("DayNight") as DayNight).set_masks(_terrain.light_mask, _terrain.sun_mask)
+	_terrain.no_sun_map = ImageTexture.create_from_image(no_sun)
+	(get_parent().get_node("DayNight") as DayNight).set_masks(_terrain.light_mask, _terrain.sun_mask, _terrain.no_sun_map)
 
 
 func in_reach(id: String) -> bool:
@@ -352,7 +390,7 @@ func _process(delta: float) -> void:
 	if not repair.box_broken:
 		if box.lift <= 0.0 and not box.gone:
 			repair.box_world = box.world                # wherever it was last set down
-		if _groan < 0.0 and not panel.opened and repair.all_fixed(_pane_ids()) and on_box():
+		if _groan < 0.0 and not panel.opened and _player.controls_enabled and repair.all_fixed(_pane_ids()) and on_box():
 			_start_groan()
 	if _groan >= 0.0:
 		_groan += delta

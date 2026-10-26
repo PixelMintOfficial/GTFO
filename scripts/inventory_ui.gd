@@ -6,6 +6,8 @@ extends CanvasLayer
 ## Draws with PixelFont and generated resource sprites (including window glass), at 384x216.
 ## Test hooks (both scenes): --open-inventory opens after setup, --inventory-demo
 ## seeds ore/scrap explicitly for screenshots; normal games start with only the tool.
+## GUI preferences scale the backpack about the centre and keep the hotbar at the bottom;
+## input uses the same canvas transform, including after live changes in the pause menu.
 
 const DARK := Color("#22182c")
 const VOID := Color("#0b0915")
@@ -32,6 +34,8 @@ var _notice := ""
 var _notice_time := 0.0
 var _selection_changed := false
 var _pending_selection := false
+var _hotbar_offset := Vector2.ZERO
+var _screen_rect := Rect2(0, 0, 384, 216)
 
 
 func setup(player: Player, tool: Multitool) -> void:
@@ -44,6 +48,8 @@ func setup(player: Player, tool: Multitool) -> void:
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.draw.connect(_draw_inventory)
 	add_child(_canvas)
+	GameState.settings.changed.connect(_layout)
+	_layout()
 	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/maps/red_planet/red_planet_props.json"))
 	for kind in ["ore_chunk", "scrap"]:
 		var sheet: Dictionary = data["sprites"][kind]
@@ -203,11 +209,18 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-func _process(delta: float) -> void:
+func _layout() -> void:
 	var view := _canvas.get_viewport_rect().size
-	var factor := minf(view.x / 384.0, view.y / 216.0)
+	var factor := minf(view.x / 384.0, view.y / 216.0) * GameState.settings.gui_factor(_canvas)
 	_canvas.scale = Vector2.ONE * factor
 	_canvas.position = ((view - Vector2(384, 216) * factor) * 0.5).floor()
+	_hotbar_offset = Vector2(0, maxf(0, (view.y / factor - 216) * .5)).round()
+	_screen_rect = Rect2(-_canvas.position / factor, view / factor)
+	_canvas.queue_redraw()
+
+
+func _process(delta: float) -> void:
+	_layout()
 	_amount = move_toward(_amount, 1.0 if opened else 0.0, delta / 0.14)
 	if _release_guard and not Input.is_action_pressed("tool_use") and not Input.is_action_pressed("interact"):
 		_release_guard = false
@@ -221,7 +234,7 @@ func _process(delta: float) -> void:
 
 func _slot_rect(index: int) -> Rect2:
 	if index < 6:
-		return Rect2(Vector2(85 + index * 36, 177), CELL)
+		return Rect2(Vector2(85 + index * 36, 177) + _hotbar_offset, CELL)
 	var row := floori((index - 6) / 6.0)
 	return Rect2(Vector2(122 + (index % 6) * 36, 49 + row * 36), CELL)
 
@@ -237,7 +250,7 @@ func _draw_inventory() -> void:
 	if not opened and (not _player.controls_enabled or (get_tree().paused and _amount == 0.0)):
 		return
 	if _amount > 0.0:
-		_canvas.draw_rect(Rect2(0, 0, 384, 216), Color(VOID, _amount * 0.72))
+		_canvas.draw_rect(_screen_rect, Color(VOID, _amount * 0.72))
 		# Short, pixel-snapped reveal; controls become modal immediately.
 		_canvas.draw_set_transform(Vector2(0, roundf((1.0 - _amount) * 6)))
 		_canvas.draw_rect(PANEL.grow(2), DARK)
@@ -259,7 +272,7 @@ func _draw_inventory() -> void:
 			_draw_slot(i)
 		_canvas.draw_set_transform(Vector2.ZERO)
 	# Quiet plate behind the quick access strip keeps slots readable on snow and dust.
-	_canvas.draw_rect(Rect2(81, 173, 222, 40), Color(VOID, 0.94))
+	_canvas.draw_rect(Rect2(Vector2(81, 173) + _hotbar_offset, Vector2(222, 40)), Color(VOID, 0.94))
 	for i in GameState.HOTBAR_SIZE:
 		_draw_slot(i)
 	var selected: Dictionary = GameState.inventory[GameState.selected_slot]
@@ -271,8 +284,8 @@ func _draw_inventory() -> void:
 	else:
 		name += "   C - USE" if selected.get("kind", "") in ["ration", "water"] else "   E - BACKPACK"
 	var w := PixelFont.width(name)
-	_canvas.draw_rect(Rect2(192 - floori(w / 2.0) - 4, 163, w + 8, 10), VOID)
-	PixelFont.draw(_canvas, Vector2(192 - floori(w / 2.0), 165), name, WHITE)
+	_canvas.draw_rect(Rect2(Vector2(192 - floori(w / 2.0) - 4, 163) + _hotbar_offset, Vector2(w + 8, 10)), VOID)
+	PixelFont.draw(_canvas, Vector2(192 - floori(w / 2.0), 165) + _hotbar_offset, name, WHITE)
 
 
 func _draw_slot(index: int) -> void:

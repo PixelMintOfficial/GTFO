@@ -1,6 +1,8 @@
 extends Node2D
 ## Inside the main base: storage (the airlock comes in here), the power room to the right and
-## the oxygen room to the left. The power is out. F at the airlock door goes back outside.
+## the oxygen room to the left. Full lighting needs both restored machines and solar.
+## F at the airlock door goes back outside.
+## Escape opens the paused volume/GUI options (PauseMenu).
 ## Storage's three smashed panes and the cargo box you stand on to reach them: WindowCracks. The
 ## bot asleep in its cradle in storage (then following you round the base), the bulkheads sealing
 ## the power and oxygen rooms until it switches on reserve power, and the objective line:
@@ -77,7 +79,7 @@ func _ready() -> void:
 	stream.published.connect(_window_moved)
 	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	fx.setup(terrain.view_json, player)
-	day_night.setup($Map, terrain.light_mask, terrain.sun_mask)
+	day_night.setup($Map, terrain.light_mask, terrain.sun_mask, terrain)
 	player.step_source = func() -> String: return "step_metal"
 	var meta := ViewData.get_json(terrain.view_json)
 	# Damaged O2 room has unsafe air; the suit spends its reserve until wiring is restored.
@@ -115,6 +117,7 @@ func _ready() -> void:
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
+	PauseMenu.attach(self, player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()
@@ -167,7 +170,7 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	player.camera.set_view_limits(terrain.max_view_px)
 	stream.refresh(true)                                 # the window, once the camera has moved
 	$Map.texture = terrain.map_texture
-	day_night.set_masks(terrain.light_mask, terrain.sun_mask)
+	day_night.set_masks(terrain.light_mask, terrain.sun_mask, terrain.no_sun_map)
 	fx.load_view(terrain.view_json)
 	multitool.set_view()
 	repairs.set_view(meta)

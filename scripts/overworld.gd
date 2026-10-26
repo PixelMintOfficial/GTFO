@@ -2,6 +2,8 @@ extends Node2D
 ## The red planet overworld: the pre-rendered map with the astronaut walking on it, the life
 ## of its three lands (red dust plains, the alien forest, the ice), and the satellite crash
 ## that opens the game.
+## The main base lights up once both indoor machines and all solar routes are restored.
+## Escape opens the paused volume/GUI options (PauseMenu).
 ##
 ## Test hooks (pass after "--" on the command line), used for automated screenshots:
 ##   --spawn=X,Y            start at this world position
@@ -28,7 +30,7 @@ extends Node2D
 ##   --quit=SECONDS         run for this long, then shut the sound down and quit cleanly
 ##   --turn=N               start with the camera turned N quarter turns round (G / H turn it)
 ##   --turn-left / --turn-right   turn the camera once after a second (see ViewTurn)
-##   --dome-mended=ROOM     that base room's dome glass is whole again (command: storage's windows mended)
+##   --dome-mended=base|ROOM  all base domes, or just that room, have whole glass again
 ##   --story=awake          the bot already awake inside, its objectives handed out (the objective line)
 ##   --solar-at=ID          stand beside A SUN/B SUN/C SUN or reflector A1..C4
 ##   --solar-active / --solar-solved   optical routing capture hooks (ordinary feeds start off)
@@ -82,7 +84,7 @@ func _ready() -> void:
 	ambience.setup(view, player.camera, player, _biome_here)
 	player.step_source = _step_sound
 	multitool.setup(PROPS_JSON, player, terrain, $Actors)
-	day_night.setup($Map, terrain.light_mask)
+	day_night.setup($Map, terrain.light_mask, null, terrain)
 	_setup_doors()
 	solar = SolarField.new()
 	add_child(solar)
@@ -105,6 +107,7 @@ func _ready() -> void:
 	var objectives := ObjectiveHUD.new()                # what the bot asked of you (scripts/story/)
 	add_child(objectives)
 	objectives.setup(player)
+	PauseMenu.attach(self, player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	var args := _args()

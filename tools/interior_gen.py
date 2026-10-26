@@ -28,7 +28,9 @@ Look
 Day and night: the light mask (_light.png) says how much of each pixel is its own light (LEDs,
   the emergency lines, the oxygen cell), the sun mask (_sun.png) how much is daylight coming in
   (shafts, sunlit patches, the windows' glow). The game keeps the first lit at night and takes the
-  second away.
+  second away. _no_sun.png is the same room shaded without incoming sunlight, not a darkened
+  daylight image: no beam-shaped shadows remain under full electrical lighting at night.
+  Window scan/restoration patches carry matching no_sun pixels in all views and variants.
 
 Writes assets/maps/base_interior/: base_interior.png, _depth.png, _walk.png, _light.png, _sun.png, .json, anim/,
 and machines/: the power room's reactor and the oxygen generator on their own, as transparent sprites.
@@ -1091,7 +1093,7 @@ def window_material(x, y, bay, xs, ys):
     return col, frame
 
 
-def shade_walls(img, D, gid, wall_gids, bay_img, closed=frozenset()):
+def shade_walls(img, D, gid, wall_gids, bay_img, closed=frozenset(), sunlight=True):
     t0 = time.time()
     ys, xs = np.nonzero(np.isin(gid, wall_gids))
     O = view_rays(ys, xs)
@@ -1157,7 +1159,7 @@ def shade_walls(img, D, gid, wall_gids, bay_img, closed=frozenset()):
         y = z[win] - WIN[0]
         cw, frame = window_material(x, y, bay[win], xs[win], ys[win])
         col[win] = cw
-        glow_mask[np.nonzero(win)[0][~frame]] = 0.55
+        glow_mask[np.nonzero(win)[0][~frame]] = 0.55 if sunlight else 0.0
         # storage: the three smashed panes, bright with daylight
         si = names.index('storage')
         for kind_, ang in HOLES:
@@ -1176,10 +1178,10 @@ def shade_walls(img, D, gid, wall_gids, bay_img, closed=frozenset()):
             pdist = M._poly_dist(lx[ix], ly[ix], poly)
             cdist = M._crack_dist(lx[ix], ly[ix], cracks, w0=0.3, w1=0.14)
             wi = np.nonzero(win)[0]
-            col[wi[ix[inside]]] = SUNLIGHT * 0.5 + 255 * 0.5
+            col[wi[ix[inside]]] = SUNLIGHT * 0.5 + 255 * 0.5 if sunlight else M.VOID[1]
             col[wi[ix[~inside & (pdist < 0.6)]]] = 255
             col[wi[ix[~inside & (cdist < 0)]]] = col[wi[ix[~inside & (cdist < 0)]]] * 0.3 + 255 * 0.7
-            glow_mask[wi[ix[inside]]] = 1.0
+            glow_mask[wi[ix[inside]]] = 1.0 if sunlight else 0.0
             hole_mask[wi[ix[inside]]] = True
     strip = inner & cor & (np.abs(z - 22.0) < 0.6) & False
     col[strip] = CYAN * 0.6 + WHITE[3] * 0.4
@@ -1444,19 +1446,20 @@ def label_visible(ang):
     return math.sin(view_th(math.radians(ang))) > 0.3
 
 
-def shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, closed=frozenset()):
+def shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, closed=frozenset(), sunlight=True):
     """Shade the same geometry with selected panes sealed: no hole, shaft or hole bloom remains.
-    Reuse this pass for every restoration state so overlapping beams and masks are exact."""
+    Reuse this pass for every restoration state so overlapping beams and masks are exact.
+    sunlight=False retains material shading/sand/equipment but omits outside light and bloom."""
     img = base.copy()
     H, W = D.shape
     jj, ii = np.mgrid[0:H, 0:W]
-    sh = shaft_geometry(closed)
+    sh = shaft_geometry(closed) if sunlight else []
     ys, xs = np.nonzero(fl & (gid == 0))
     pu, pv = M.to_grid(Xf[ys, xs], Yf[ys, xs])
     prop_ao = np.clip(M.sample(fur['ao_grid'], pu, pv) * 1.3, 0, 1)
     fglow, sun = shade_floor(img, D, kind, region[ys, xs], Xf[ys, xs], Yf[ys, xs], ys, xs, bay_img[ys, xs], prop_ao,
                              [s['floor'] for s in sh])
-    wglow, _, _ = shade_walls(img, D, gid, wall_gids, bay_img, closed)
+    wglow, _, _ = shade_walls(img, D, gid, wall_gids, bay_img, closed, sunlight)
     # --- outlines
     dark = (img.astype(np.float32) * 0.62).astype(np.uint8)
     M.depth_lines(img, dark, D, kind, gid)
@@ -1486,7 +1489,7 @@ def shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, 
     wlit = np.where(np.abs(wglow - 0.6) < 1e-3, wglow, 0.0)            # the emergency line
     wsun = np.where(np.abs(wglow - 0.6) < 1e-3, 0.0, wglow)            # the windows and the holes
     own = np.maximum(fglow, wlit)
-    if not closed:                                        # the lines reserve power lights up (render_view)
+    if not closed and sunlight:                          # the lines reserve power lights up (render_view)
         fur['reserve_src'] = own.copy()
     light = np.maximum.reduce([M.EMIT.astype(np.float32) / 255, own,
                                np.clip(ndi.gaussian_filter(own, 2.0) * 2.2, 0, 0.8),
@@ -1557,11 +1560,14 @@ def render_view(k, fur):
     # Re-shade only colours and light, retaining the one shared geometry/depth/walk render.
     base = img.copy()
     states = {}
+    no_sun = {}
     for mask in range(8):
         closed = {id_ for i, (id_, _) in enumerate(HOLES) if mask & (1 << i)}
         states[mask] = shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, closed)
+        no_sun[mask] = shade_room(base, D, kind, gid, wall_gids, fl, region, Xf, Yf, bay_img, fur, closed, sunlight=False)[0]
     final, sun, light, sh = states[0]
     Image.fromarray(final).save(os.path.join(OUT, f'base_interior{sfx}.png'))
+    Image.fromarray(no_sun[0]).save(os.path.join(OUT, f'base_interior_no_sun{sfx}.png'))
     for field, values in [('light', light), ('sun', sun)]:
         Image.fromarray(np.round(np.clip(values, 0, 1) * 255).astype(np.uint8)).save(
             os.path.join(OUT, f'base_interior_{field}{sfx}.png'))
@@ -1572,7 +1578,8 @@ def render_view(k, fur):
     reactor_c, gen_c, pfx, ofx, tanks = fur['reactor_c'], fur['gen_c'], fur['pfx'], fur['ofx'], fur['tanks']
     meta = export_game_data(D, kind, fur['foot'], fur['Xg'], fur['Yg'], world=(M.VIEW == 0))
     meta['game'].update(light_png=f'base_interior_light{sfx}.png', sun_png=f'base_interior_sun{sfx}.png', heading=M.VIEW,
-                        view_center=[float(M.VIEW_C[0]), float(M.VIEW_C[1])], reserve_png=f'base_interior_reserve{sfx}.png')
+                        view_center=[float(M.VIEW_C[0]), float(M.VIEW_C[1])], reserve_png=f'base_interior_reserve{sfx}.png',
+                        no_sun_png=f'base_interior_no_sun{sfx}.png')
     meta.update(name='base_interior', image=f'base_interior{sfx}.png', size=[W, H], origin_px=[M.AX, M.AY], view=M.VIEW,
                 views=[f'base_interior{M.view_sfx(i)}.json' for i in range(4)])
     meta['rooms'] = {name: dict(label=rm['label'], center=[rm['X'], rm['Y']], radius=rm['R'],
@@ -1587,8 +1594,8 @@ def render_view(k, fur):
                                [(1, 'repaired_power'), (2, 'repaired_oxygen'), (3, 'repaired_both')]}
     meta['fixed_machines'] = sorted(fur['fixed'])
     meta['window_cracks'] = window_crack_info()
-    patches = export_window_patches(D, gid, wall_gids, states)
-    meta['window_restorations'] = export_window_restorations(states)
+    patches = export_window_patches(D, gid, wall_gids, states, no_sun)
+    meta['window_restorations'] = export_window_restorations(states, no_sun)
     for pane in meta['window_cracks']:
         pane['patch'] = patches.get(pane['id'], {})
     meta['fx'] = dict(
@@ -2201,10 +2208,11 @@ def glass_fragment(k, frame=0):
     return [P_('glass', sdf, 'tglass', 'glass', facet)]
 
 
-def export_window_patches(D, gid, wall_gids, states):
+def export_window_patches(D, gid, wall_gids, states, no_sun):
     """Pristine window pixels and their real world-height for the live scanning pass.
     Read the re-shaded sealed state, including its own local light/sun masks: no crack halo
-    or light from the old aperture is copied onto the clean pane."""
+    or light from the old aperture is copied onto the clean pane. The no_sun image shares
+    exactly the same height/alpha coverage for daytime and nighttime scanning."""
     os.makedirs(os.path.join(OUT, 'windows'), exist_ok=True)
     ys, xs = np.nonzero(np.isin(gid, wall_gids))
     O = view_rays(ys, xs)
@@ -2230,24 +2238,28 @@ def export_window_patches(D, gid, wall_gids, states):
         height[yy - y0, xx - x0] = np.clip((WIN[1] - P[sel, 2]) / (WIN[1] - WIN[0]) * 255, 0, 255).astype(np.uint8)
         stem = f'windows/{id_}{M.SFX}'
         Image.fromarray(rgba).save(os.path.join(OUT, stem + '.png'))
+        night = rgba.copy()
+        night[yy - y0, xx - x0, :3] = no_sun[1 << index][yy, xx]
+        Image.fromarray(night).save(os.path.join(OUT, stem + '_no_sun.png'))
         Image.fromarray(height).save(os.path.join(OUT, stem + '_height.png'))
         for field, values in [('sun', sun), ('light', light)]:
             Image.fromarray(np.round(np.clip(values[y0:y1, x0:x1], 0, 1) * 255).astype(np.uint8)).save(
                 os.path.join(OUT, stem + '_' + field + '.png'))
         data[id_] = dict(file=stem + '.png', height=stem + '_height.png', sun=stem + '_sun.png',
-                        light=stem + '_light.png', position=[int(x0), int(y0)])
+                        light=stem + '_light.png', no_sun=stem + '_no_sun.png', position=[int(x0), int(y0)])
     return data
 
 
-def export_window_restorations(states):
+def export_window_restorations(states, no_sun):
     """Small exact replacements for each repaired-pane combination, including overlapping shafts.
     The combined colour pass removes cracks, rims, halos and floor/wall light together; geometry
-    stays unchanged. Full local mask rectangles replace the corresponding sun/light values."""
+    stays unchanged. Full local mask rectangles replace the corresponding sun/light values;
+    paired no_sun colours follow the same restoration coverage."""
     original, sun0, light0, _ = states[0]
     data = []
     for mask in range(1, 8):
         final, sun, light, _ = states[mask]
-        changed = np.any(final != original, axis=-1) | (sun != sun0) | (light != light0)
+        changed = np.any(final != original, axis=-1) | (sun != sun0) | (light != light0) | np.any(no_sun[mask] != no_sun[0], axis=-1)
         info = dict(panes=[id_ for index, (id_, _) in enumerate(HOLES) if mask & (1 << index)])
         if changed.any():
             yy, xx = np.nonzero(changed)
@@ -2255,11 +2267,13 @@ def export_window_restorations(states):
             stem = f'windows/restored_{mask}{M.SFX}'
             rgba = np.dstack([final[y0:y1, x0:x1], changed[y0:y1, x0:x1].astype(np.uint8) * 255])
             Image.fromarray(rgba).save(os.path.join(OUT, stem + '.png'))
+            night = np.dstack([no_sun[mask][y0:y1, x0:x1], rgba[..., 3]])
+            Image.fromarray(night).save(os.path.join(OUT, stem + '_no_sun.png'))
             for field, values in [('sun', sun), ('light', light)]:
                 Image.fromarray(np.round(np.clip(values[y0:y1, x0:x1], 0, 1) * 255).astype(np.uint8)).save(
                     os.path.join(OUT, stem + '_' + field + '.png'))
             info.update(file=stem + '.png', sun=stem + '_sun.png', light=stem + '_light.png',
-                        position=[int(x0), int(y0)])
+                        no_sun=stem + '_no_sun.png', position=[int(x0), int(y0)])
         data.append(info)
     return data
 

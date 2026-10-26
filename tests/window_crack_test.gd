@@ -4,7 +4,7 @@ extends Node
 ## walking off the edge drops you, the tool lifts it but never from under your own feet; standing
 ## on it under a pane only cracks it once; only finishing all three repairs makes it give way,
 ## you go down with it, and its rations spill to be gathered; all of it survives a scene reload.
-## Outside, the storage room's dome gets its glass back once all three windows are mended.
+## Outside, all three main-base domes get their glass back once all three windows are mended.
 ## Run: godot --headless --path . res://tests/window_crack_test.tscn  (failures exit nonzero)
 
 var _checks := 0
@@ -180,7 +180,7 @@ func _scene() -> void:
 	_check(not GameState.window_repair.box_broken and box.top > 0 and player.controls_enabled, "the box stays usable at third wear until the final repair")
 	_check(GameState.window_repair.dome_mended == "", "two panes mended: the dome outside is still broken")
 	cracks.fix("gash")
-	_check(GameState.window_repair.dome_mended == "command", "all three mended: so is the storage room's dome outside")
+	_check(GameState.window_repair.dome_mended == "base", "all three mended: all main-base domes are restored")
 	await _wait(.05)
 	_check(not player.controls_enabled, "it groans under you")
 	await _wait(WindowCracks.GROAN + 0.2)
@@ -226,7 +226,7 @@ func _scene() -> void:
 	await get_tree().process_frame
 
 
-## Outside, the mended room's holes get their glass back, in every view that shows them, and
+## Outside, all three domes' holes get their glass back, in every view that shows them, and
 ## stand in the camera's swing; nothing is mended outside until the windows are.
 func _outside() -> void:
 	GameState.intro_done = true
@@ -241,8 +241,8 @@ func _outside() -> void:
 		domes.load_view(terrain.view_json)
 		var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json))
 		var fx: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(terrain.view_json.get_base_dir().path_join(meta["fx"])))
-		var holes := (fx["cracks"] as Array).filter(func(c: Dictionary) -> bool: return c["room"] == "command")
-		_check(domes._glass.size() == holes.size(), "view %d: glass over every hole of the mended room" % k)
+		var holes: Array = fx["cracks"]
+		_check(domes._glass.size() == holes.size(), "view %d: glass over every visible hole of all three rooms" % k)
 		for i in mini(holes.size(), domes._glass.size()):
 			_check(domes._glass[i].position == Vector2(holes[i]["patch_pos"][0], holes[i]["patch_pos"][1]),
 					"view %d: the glass sits where its hole was" % k)

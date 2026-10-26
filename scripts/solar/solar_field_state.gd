@@ -5,6 +5,7 @@ extends RefCounted
 ## All three complete authored paths are required for electrical output. Feeds start closed.
 ## SOLAR_FIELD_LAYOUT=v1 retains the previous 4/5/4 layout for comparisons.
 ## bind_world supplies canonical terrain collisions/off-screen ray extents when entering the field.
+## debug_complete aligns all authored mirrors/opens feeds, or restores the starting puzzle.
 
 signal changed
 
@@ -17,6 +18,7 @@ var orientations: Dictionary = {}
 var feeds: Array[bool] = [false, false, false]
 var routes: Array[Dictionary] = []
 var _world: SolarWorldGeometry
+var _initial_orientations: Dictionary = {}
 
 
 func _init() -> void:
@@ -34,6 +36,7 @@ func _init() -> void:
 					"elevation": SolarOptics.mirror_elevation(route, index)}
 			mirror["mount"] = SolarOptics.mount(field, mirror)
 			mirrors.append(mirror)
+	_initial_orientations = orientations.duplicate()
 	_evaluate()
 
 
@@ -70,6 +73,23 @@ func connected_count() -> int:
 
 func supplies_power() -> bool:
 	return connected_count() == 3
+
+
+## Use the actual optical solution; normal mirror/feed controls remain live afterwards.
+func debug_complete(completed: bool) -> void:
+	if not OS.is_debug_build():
+		return
+	orientations = _initial_orientations.duplicate()
+	if completed:
+		for mirror in mirrors:
+			var route: Dictionary = field["routes"][mirror["group"]]
+			var index: int = mirror["index"]
+			var before := SolarOptics.point(route["source"] if index == 0 else route["mirrors"][index - 1])
+			var after := SolarOptics.point(field["collector"]["world"] if index + 1 == route["mirrors"].size() else route["mirrors"][index + 1])
+			orientations[mirror["id"]] = SolarOptics.alignment(mirror["world"] - before, after - mirror["world"])
+	feeds.fill(completed)
+	_evaluate()
+	changed.emit()
 
 
 ## Count this channel's unique reflectors, rather than repeated or cross-channel bounces.

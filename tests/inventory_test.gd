@@ -2,6 +2,7 @@ extends Node
 ## Integration checks against real scenes, input events, and the existing multitool jobs.
 ## Run: godot --headless --path . res://tests/inventory_test.tscn
 ## Failures exit nonzero; no external test framework or generated assets required.
+## Default-size assertions use isolated options rather than the player's GUI preference.
 
 var _checks := 0
 var _failures := 0
@@ -64,6 +65,7 @@ func _ui(scene: Node) -> InventoryUI:
 
 
 func _ready() -> void:
+	GameState.settings = GameSettings.new("res://.godot/inventory-default-options.cfg")
 	GameState.intro_done = true
 	GameState.reset_inventory()
 	_check(GameState.inventory.size() == 24 and GameState.inventory[0]["kind"] == "multitool", "initial bag")

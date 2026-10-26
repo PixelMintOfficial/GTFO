@@ -106,7 +106,9 @@ scripts/
   interior_fx.gd       sun shafts and dust, sparks, leaking gas, fault LEDs, room-name toast
   map_screen.gd        M: full map overview (pauses the game)
   pixel_font.gd        PixelFont: the 3x5 pixel font for every bit of in-game text
-  dev_panel.gd         DevPanel: F1 master control panel (debug builds): set the time, freeze needs
+  dev_panel.gd         DevPanel: F1 master control panel (debug builds): time, frozen needs, task toggles
+  pause_menu.gd        Escape: paused options, master volume slider and Small/Medium/Large GUI
+  game_settings.gd     user preferences, saved separately from session progress in settings.cfg
 shaders/
   day_night.gdshaderinc  the time-of-day light every world shader includes (day_night(), dn_sky(),
                          dn_lamp_shape(): the suit lamp's beam on the ground)
@@ -212,8 +214,8 @@ footprint), `yaw` (its turn) and `contents` (what spills when it breaks). Glass 
 brief reflection sweeps, staggered in the world and retained through camera turns.
 
 `base_interior.json → rooms.storage.dome` names the overworld base room storage sits in
-(`command`: the airlocks are cut into it). When all three panes are mended, that room's dome
-holes outside get their glass back: `DomeFX` lays each hole's `red_planet_fx.json → cracks →
+(`command`: the airlocks are cut into it). When all three panes are mended, all three base
+domes' holes outside get their glass back: `DomeFX` lays each hole's `red_planet_fx.json → cracks →
 patch` (the band's glass as it was, glare and trim shade included) over the map at `patch_pos`.
 
 `base_interior.json → bulkheads` lists the two doors sealing storage from the power and oxygen
@@ -230,6 +232,14 @@ overlay: the emergency lines and floor rings, bloomed, laid over the map additiv
 (interaction position in world units), and `progress_px` (bar anchor in map pixels).
 `interior_gen.py` derives these from the actual machine model centres; its
 `--repair-metadata-only` option updates just this data using the existing projection origin.
+
+`game.no_sun_png` is the same base room with incoming sunlight omitted: no baked beams,
+floor sunlight or aperture bloom, with physical holes, sand, furniture and internal lamps
+retained. Window `patch` and `window_restorations` entries add matching `no_sun` images.
+`MapTerrain.no_sun_map` and `WindowCracks` compose those pixels alongside the day image;
+`DayNight.set_masks` takes them as its optional third argument. Map, live scan and camera
+relief shaders blend to this reference with `dn_night`, so nighttime electrical lighting
+cannot turn sunlight into dark rays. Daytime art and glass-repair requirements stay the same.
 
 `nursery_interior/nursery.json` uses the same map layers and projection. Its `doors` array
 contains both animated airlocks (stable overworld IDs 1 and 5), with canonical `world`/`dir`
@@ -321,6 +331,7 @@ Actions are registered **in code**, in each script's static `_ensure_actions()`,
 | dialogue_next / dialogue_close | F, Enter, Space / Esc | A, X / B | story/bot_dialogue.gd |
 | name entry | type A-Z 0-9 space -, Backspace, Enter | d-pad, A picks, B deletes, Start | story/name_entry.gd |
 | dev_panel (debug builds only) | F1 | Guide | dev_panel.gd |
+| pause_options | Escape | Share / Misc 1 | pause_menu.gd |
 
 F / gamepad X is shared: while a door's prompt is showing, the door sets
 `multitool.suppressed = true`, so it opens the door instead of using the tool.
@@ -348,9 +359,16 @@ Solar equipment uses independent `solar_suppressed` proximity/release ownership.
 opens/closes a nearby sun feed or turns a mirror clockwise 22.5 degrees. Q has no solar
 action; left shoulder retains hotbar cycling. No modal/pause;
 camera turns reproject equipment and rays without changing the optical puzzle.
+Escape closes an existing inventory, map, repair, F1 panel or dialogue before it opens options.
+Options own pause and consume all input; independent `options_suppressed` keeps multitool F/X
+blocked until released after resume. Gamepad B resumes without switching the suit lamp.
 
 ### 4.6 Scenes and state
 - Cross-scene state lives **only** in the `GameState` autoload:
+  - `settings`: `GameSettings`, master volume and GUI size. `user://settings.cfg` keeps these
+    preferences between launches; it is separate from gameplay saving. `changed` updates UI
+    immediately, including while paused. Large preserves the original size; Small/Medium use
+    smaller pixel-snapped display scales. Invalid/missing preferences use Large and full volume.
   - `intro_done`: the crash plays once;
   - `arrive` and `door_id`: where to appear next;
   - `tool_out`: the multitool stays out across the airlock;
@@ -370,8 +388,8 @@ camera turns reproject equipment and rays without changing the optical puzzle.
     taken (one per pane), where it was last set down, and whether it broke. Its `puzzles` keep
     independent `GlassPuzzle` placements/rotations and unfinished scan progress through closes,
     views and airlocks. Six glass are consumed atomically only when that pane's scan completes.
-    `dome_mended` names the overworld room whose dome glass is whole again (set when every
-    pane is mended; read by `DomeFX`). Reset with the
+    `dome_mended` is `"base"` when every pane is mended, restoring all three main-base domes
+    (read by `DomeFX`); `""` retains damage. Single-room IDs remain developer previews. Reset with the
     world ledger (`reset_inventory`), which holds its spilled rations.
   - `machine_repairs`: `MachineRepair` instances obtained through `repair_for(id)`.
     Each stores its crack placements/seams, circuit puzzle/countdown/index and completed tasks.
@@ -392,7 +410,9 @@ camera turns reproject equipment and rays without changing the optical puzzle.
     a preference, like the survival HUD's position, not a save file). `skip_intro()` for tests.
   - `solar_field`: `SolarFieldState`: ten world mirror orientations, three closed/open
     feeds and cached optical routes. All three complete 3/3/4 Amber/Jade/Coral routes supply the base reactor;
-    `base_powered()` also requires its existing machine repair. State survives turns, airlocks
+    `base_powered()` also requires BOTH power and oxygen machines fully repaired (cracks and
+    wiring). Full power lights the main base indoors and outdoors through day and night.
+    The bot's reserve power is independent. State survives turns, airlocks
     and rescue. See docs/solar-field.md for optics, generated art, ownership and test hooks.
 - Inside, the corridors to the power and oxygen rooms are sealed by bulkheads until the bot
   switches on reserve power: they stand in `MapTerrain.blockers` while sealed.
@@ -625,9 +645,9 @@ consts in the named files.
     white reflections, matching the owner's floor-glass reference. The three storage barrels
     and their collision are removed to leave room for carrying the cargo box.
   - State survives the airlock (`GameState.window_repair`). No `[F] EXIT` prompt while up on a box.
-  - With all three mended, the dome outside is mended too: the `command` room's two holes (the
-    same burst and crescent) show whole glass in every view, by day and night and through the
-    camera's swing. The far pane has no hole outside. The other rooms keep theirs.
+  - With all three mended, all three main-base domes outside are mended too: command, habitat
+    and garage show whole glass over their six breaks in every view, by day and night and
+    through the camera's swing. Partial completion retains the exterior damage.
 - **Solar field** (`scripts/solar/`, `data/solar_field.json`):
   - Three elevated, closed sun feeds and 3/3/4 Amber/Jade/Coral reflectors surround one conical receiver
     (three yellow, three blue/teal, four red). Relays descend from hilltops into the clearing.
@@ -636,7 +656,8 @@ consts in the named files.
     Local solar prompts and bars avoid the movable survival HUD using its canvas-aware
     `plate_position`; prompts sit beside the equipment's feet to stay readable at close zoom.
   - The receiver's local bar has three channel segments. Its cable goes into the base's
-    power conduit; all three complete paths plus the repaired reactor run the engine.
+    power conduit; all three complete paths plus the fully repaired reactor AND oxygen
+    generator restore full base power. Closing a feed removes full power; night does not.
     Routes persist through views and airlocks. Time of day fades beams without losing progress.
   - The receiver sits farther right/down in the original array clearing. Amber uses capped western
     peaks, Jade the right-hand hill and Coral the upper cliff. Flat equipment pads and graded
@@ -678,6 +699,22 @@ consts in the named files.
   of the day (dawn, morning, noon, evening, night; same day), and freeze food, water and
   oxygen where they are (`GameState.survival.frozen`). The clock runs on while it is open; the
   astronaut stands still. Arrows / d-pad, Enter / A, Esc / B / F1 closes; mouse works too.
+  Four task toggles complete oxygen repair, power repair (both cracks and wiring), all three
+  storage glass cracks, or all solar reflection routes remotely, without materials or puzzles.
+  DONE reflects real session progress, including manual play; toggle again to reset that task
+  for replay. Reset solar restores initial mirror angles and closed feeds. Glass reset clears
+  pane puzzles and restores damaged interior/exterior glass and lighting, preserving cargo-box
+  history. Machine reset clears that machine's puzzles. These use the existing session objects
+  and notifications, so room art, safe air and full-power lighting update immediately and state
+  carries through turns and airlocks; no story skip or extra supplies are granted.
+- **Pause/options** (`pause_menu.gd`): Escape pauses gameplay, the clock and survival in all
+  three scenes. An 85%-opaque dark-grey overlay leaves 15% of the current game visible.
+  VOLUME sits above a horizontal master slider (0–100%, zero mutes); GUI SCALE sits above
+  SMALL / MEDIUM / LARGE. Sizes apply to the hotbar, E backpack, day/night clock and stat panel.
+  The backpack stays centred, the hotbar stays at the bottom and the stats retain their saved
+  normalized location and scaled hitboxes. The options themselves keep a steady size. Mouse,
+  arrows/d-pad and Enter/A operate the controls; Escape/B resumes and saves preferences.
+  Existing modal/cutscene ownership is retained. See docs/options.md.
 - **Doors** (`airlock_door.gd`):
   - Within 30 units, a `[F] ENTER` / `[F] EXIT` prompt shows.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
@@ -707,6 +744,9 @@ consts in the named files.
     38 degrees either side), with a small pool spilling round their feet (`spill`), in the same
     three dithered steps as the rest of the light. It lights the astronaut themselves all over,
     since they carry it.
+  - The beam's origin follows the raised, pixel-snapped sprite during jumps, falls and while
+    standing on a cargo box; it never stays at the ground sorting position. Camera reliefs
+    use the same suit anchor. Standing on the ground retains the original beam placement.
   - Its strength follows `DayNight.night`, so it is worth nothing at noon and everything at
     2 a.m., and it can never wash the daylight out.
   - It is two shader globals, not a light node (§4.4): it costs nothing per lit thing, and it
@@ -968,6 +1008,20 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
   - two smashed holes per room, each a different irregular shape.
 - **The base is dead at the start** (`BASE_POWERED = False`): no lights, nothing turning.
   The nursery and the comms dome are powered.
+  Once both machines and all solar routes are repaired, `BasePower` keeps the base lit
+  at every hour. Interior surfaces and the existing strips stay steadily lit; outside,
+  the existing glass emits teal and the white shell/corridors catch reflected light.
+  `tools/base_power_gen.py` owns compact four-view RGB masks under `red_planet/power/`:
+  R illumination, G glass emission with original damage, B emission on restored glass.
+  Both emission channels include the same reflected window light on the ground. The pool
+  falls off evenly around each dome over 100 world units, following the visible terrain
+  height/depth with ordered dithering rather than a narrow ground-height slice.
+  It uses the actual dome/band geometry and saved depth, preserving occlusion and holes.
+  `make base-power` refreshes them; `make map` also regenerates them after the map.
+  `DayNight.setup` takes the scene's `MapTerrain` as its optional fourth argument for
+  base lighting. `bp_active`, `bp_indoor`, `bp_rect`, `bp_mask` are shader globals;
+  all world shaders share the illumination, and camera reliefs take each view's mask.
+  Neither the planet beyond the base nor the nursery takes this lighting override.
 - **Inside:**
   - glossy white walls with a coral strip, a dark kick plate and a window band;
   - glossy diamond-tile floors;
@@ -1077,7 +1131,7 @@ Useful hooks:
 - `--dev-panel` (open the master control panel), `--dev-freeze=hunger,thirst,oxygen` (both, debug builds)
 - `--suit-light` (start with the suit's lamp lit; both scenes. It is off in an ordinary game)
 - overworld only: `--door`, `--intro` / `--no-intro`, `--zoom=L`, `--open-map`, `--debug`,
-  `--dome-mended=ROOM` (that room's dome glass whole again; `command` = storage's)
+  `--dome-mended=base|ROOM` (all main-base domes, or just that room, have whole glass)
 - interior only: `--cargo=burst|crescent|gash` (box under that pane, you on it),
   `--cargo-mended=N` (the first N panes mended first), `--cargo-land` (land on the box),
   `--window=burst|crescent|gash` (six demo glass and native inspection), `--window-fit=N`,
@@ -1158,6 +1212,7 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **Sound is data, not code**: every sound is declared in `sfx_gen.py` and read from
   `audio.json`. The alien tech is synthesised; the natural world is recorded, under an open
   licence, through one mastering chain (§4.8, §7.6).
+  The player's master-volume preference is applied to the Master bus above that authored mix.
 
 ---
 
@@ -1250,8 +1305,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - **Storage's three smashed panes**: native glass jigsaws, collected glass and resumable
     multitool scans are built (§5). The box breaks only after all three repairs complete.
   - The overworld's `command` room (storage, inside) has two holes; the interior has three.
-    Mending all three inside mends both outside. Habitat's and garage's holes stay open until
-    their own rooms get interiors and repairs.
+    Mending all three inside restores all six exterior breaks across command, habitat and
+    garage. F1 glass completion and reset use the same exterior state.
 - **The bot is built** (§5): its cradle in storage, the bulkheads, reserve power, the name, the
   objectives, the lore, and following you round the base. Open:
   - every name is a placeholder (`data/bot_story.json → names`): the bot and the previous owner.
@@ -1273,7 +1328,7 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   pools / spires / wreck / powered domes / repaired lamps, footsteps per surface, the jump,
   the four multitool jobs, the airlock cutscene, the crash, the backpack, the circuit panel,
   the cargo box (`cargo_*`, `ration_land`, `pane_mend`) and the UI. What is missing:
-  - no volume controls and nothing saved (there are no settings and no save file yet);
+  - Escape options now save master-volume and GUI-size preferences; gameplay saving is not built;
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
 - **Not built yet:** nursery minigames, the comms interior, saving and loading (the clock
@@ -1619,3 +1674,28 @@ Write one line per decision: date — decision (who approved it).
 - 2026-10-23 — Integrate the automatic power cabinet/cable restoration onto current main,
   preserving the bot, bulkheads, reserve lighting and nursery. Regenerate the interior and
   repair variants from merged sources before publishing to GitHub (owner, requested).
+- 2026-10-23 — Full main-base power requires the O2 machine, power machine and all three
+  solar paths complete (owner). Both machine tasks must be done. Light the base indoors
+  and outdoors at every hour, preserving independent bot reserve power, the suit lamp,
+  window damage/restoration and the dark planet outside. Generated compact masks follow
+  all four views and streaming; camera swings carry their own view's lighting.
+- 2026-10-23 — With full base power and storage glass still broken, remove all incoming
+  sunlight at night, including the dark beam shapes left by scalar dimming (owner).
+  Generate matching sunlight-free room/window pixels for every view and machine variant;
+  retain daytime rays and physical glass damage. Carry the paired pixels through live and
+  paused sealing scans, completed panes, camera swings and airlocks.
+- 2026-10-26 — Owner requested F1 admin toggles for oxygen, power, glass cracks and solar
+  reflection tasks. Complete their actual session state instantly without travel, materials
+  or playing puzzles; toggle DONE back to reset that task. Preserve independent story and
+  cargo-box state, refresh repaired/damaged art and lighting live, and retain debug-only access.
+- 2026-10-26 — Owner requested completed storage glass repairs restore all three main-base
+  domes, including habitat and garage. Use the existing generated glass patches in all four
+  views and camera swings; retain damage until all three panes are complete. Broaden full-power
+  window spill evenly around every dome, following actual visible ground with dithered falloff.
+- 2026-10-26 — Owner reported the suit beam coming out of the ground while jumping. Anchor
+  it to the sprite's existing pixel-snapped vertical offset during jumps, falls and platform
+  standing, and share that origin with camera reliefs. Preserve the grounded beam and controls.
+- 2026-10-26 — Owner requested Escape pause/options with a dark-grey backdrop leaving 15%
+  of gameplay visible, a master-volume slider and Small/Medium/Large GUI controls. Large keeps
+  the original UI; smaller choices resize hotbar, clock, stat panel and E backpack together,
+  retaining placement and pointer geometry. Save these preferences separately from game state.

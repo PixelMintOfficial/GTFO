@@ -2,6 +2,7 @@ extends Node
 ## Regression for sealing a storage pane: its sunlight beam and illuminated dust must stop
 ## immediately, including its baked floor light, camera turns, machine variants and airlocks.
 ## Also checks the cleared cargo route and real reflective pickups after the art rebuild.
+## Sunlight-free room pixels follow completed/paused scans, all views and repaired machines.
 
 var checks := 0
 var failures := 0
@@ -24,6 +25,7 @@ func _ready() -> void:
 	var before: int = room.fx._shafts.size()
 	check(before == 2, "both unsealed sun-facing panes cast beams")
 	var original_sun: Image = room.terrain.sun_mask.get_image()
+	check(room.terrain.no_sun_map != null, "room supplies exact sunlight-free artwork")
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(room.terrain.view_json))
 	var shaft: Dictionary = meta["fx"]["shafts"].filter(func(s: Dictionary) -> bool: return s["pane"] == "crescent")[0]
 	var hull := PackedVector2Array()
@@ -35,6 +37,7 @@ func _ready() -> void:
 			var texture := load(room.terrain.view_json.get_base_dir().path_join(pane["patch"]["file"])) as Texture2D
 			pane_bottom = int(pane["patch"]["position"][1]) + texture.get_height()
 	room.cracks.fix("crescent")
+	check(room.day_night._map_mat.get_shader_parameter("no_sun_map") == room.terrain.no_sun_map, "sealed pane publishes matching night pixels")
 	check(room.fx._shafts.size() == before - 1, "sealed crescent stops its beam and dust immediately")
 	var sealed_sun: Image = room.terrain.sun_mask.get_image()
 	var floor_light_removed := false
@@ -55,6 +58,7 @@ func _ready() -> void:
 	check(glass.sprite.frame != shine and glass._variant_frame == variant, "glass reflections animate without changing the pickup variant")
 	for heading in 4:
 		room._apply_view(heading, Vector2.DOWN)
+		check(room.terrain.no_sun_map.get_size() == room.terrain.map_texture.get_size(), "night artwork aligns with view %d" % heading)
 		check(room.fx._shafts.size() == 1, "sealed crescent beam stays absent in view %d" % heading)
 		check(glass._variant_frame == variant, "reflective glass retains variant through view %d" % heading)
 	room.cracks.fix("burst")
@@ -64,6 +68,7 @@ func _ready() -> void:
 		room.terrain.replace_variant(room._repair_map(mask))
 		for heading in 4:
 			room._apply_view(heading, Vector2.DOWN)
+			check(room.day_night._map_mat.get_shader_parameter("no_sun_map") == room.terrain.no_sun_map, "night pixels survive variant %d/view %d" % [mask, heading])
 			check(room.fx._shafts.is_empty() and room.fx._motes.is_empty(), "sealed beams stay absent in machine variant %d/view %d" % [mask, heading])
 	room.queue_free()
 	await get_tree().process_frame

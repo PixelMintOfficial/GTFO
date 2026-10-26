@@ -5,6 +5,7 @@ extends CanvasLayer
 ## in the time panel's plate. It appears once the bot hands the objectives out (StoryState) and
 ## lights up when one is done. Hidden in cutscenes, while the world is paused and once everything
 ## is done and the moment has passed. Owner-approved exception to the compact HUD (§9, §12).
+## Resetting a task through F1 brings its objective back after the completion linger.
 
 const ORIGIN := Vector2(6, 37)
 const ROW := 9
@@ -43,6 +44,8 @@ func _process(delta: float) -> void:
 		_was[o["id"]] = o["done"]
 	if not objectives.is_empty() and GameState.story.all_done():
 		_all_done_t = maxf(_all_done_t, 0.0) + delta
+	else:
+		_all_done_t = -1.0
 	_panel.visible = not objectives.is_empty() and _all_done_t < LINGER and _player.controls_enabled \
 			and not _player.puppet and not get_tree().paused
 	# Redraw only when something it shows has changed (as DayClock does): the ticks, the flash

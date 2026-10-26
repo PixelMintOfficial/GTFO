@@ -7,6 +7,7 @@ extends RefCounted
 ## crack again until that pane is mended. Once every pane is mended with you standing on it, it
 ## gives way (broken).
 ## Each window also retains its own glass placements, quarter turns and unfinished scan.
+## debug_complete toggles all authored panes without glass or changing the cargo-box ledger.
 
 signal changed
 
@@ -18,8 +19,8 @@ var box_cracks := {}
 var box_world: Variant = null
 var box_broken := false
 var puzzles: Dictionary = {}
-## The base room on the overworld whose dome glass is whole again (storage's, once every pane is
-## mended: base_interior.json rooms.storage.dome), or "". DomeFX lays its holes' glass back.
+## "base" once every storage pane is mended: all three main-base domes have whole glass.
+## Empty while broken; a room ID remains supported for single-room developer previews.
 var dome_mended := ""
 
 
@@ -65,6 +66,19 @@ func all_fixed(ids: Array) -> bool:
 		if not fixed.has(id):
 			return false
 	return not ids.is_empty()
+
+
+## F1 task toggle; metadata owns the pane IDs. Completion restores the whole main base.
+func debug_complete(completed: bool, meta: Dictionary) -> void:
+	if not OS.is_debug_build():
+		return
+	fixed.clear()
+	puzzles.clear()
+	if completed:
+		for pane in meta["window_cracks"]:
+			fixed[pane["id"]] = true
+	dome_mended = "base" if completed else ""
+	changed.emit()
 
 
 func break_box() -> void:

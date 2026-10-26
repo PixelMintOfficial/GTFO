@@ -2,23 +2,28 @@ class_name DevPanel
 extends CanvasLayer
 ## The master control panel, for working on the game: F1 (gamepad Guide) opens it in editor and
 ## debug builds only - never in a shipped game. Set the time to any hour (half-hour steps, or a
-## part of the day at once) and freeze food, water or oxygen where they are.
+## part of the day at once), freeze food/water/oxygen, and toggle task completion remotely.
 ##
 ## The clock keeps running while it is open, so the light can be watched changing; the
 ## astronaut stands still. Up / down picks a row; left / right steps the time or picks a preset;
 ## Enter / Space / A sets or toggles; Esc / B / F1 closes. Everything is clickable too.
 ## The time is GameState.clock (DayNight lights it); frozen needs are GameState.survival.frozen,
-## so both carry on through the airlock and rescue.
+## so both carry on through the airlock and rescue. Task toggles use the actual machine,
+## window and solar session states: DONE bypasses costs, RESET clears that task for replay.
 ##
 ## Test hooks (after "--", debug builds): --dev-panel opens it after a second (for captures);
 ## --dev-freeze=hunger,thirst,oxygen freezes those from the start.
 
 const PLATE := DayClock.PLATE
 const EDGE := DayClock.EDGE
-const SIZE := Vector2(170, 92)
+const SIZE := Vector2(190, 154)
 const STEP := 0.5                                      # hours per time step
 const PRESETS := [["DAWN", 5.5], ["MORNING", 8.0], ["NOON", 12.0], ["EVENING", 17.0], ["NIGHT", 22.0]]
 const NEEDS := [["FOOD", "hunger", 2], ["WATER", "thirst", 3], ["OXYGEN", "oxygen", 1]]   # label, kind, colour
+const TASKS := [["OXYGEN REPAIR", "oxygen"], ["POWER REPAIR", "power"],
+		["GLASS CRACKS", "glass"], ["SOLAR REFLECTIONS", "solar"]]
+const TASK_ROW := 5                                    # time, presets and three needs
+const BASE_META := "res://assets/maps/base_interior/base_interior.json"
 
 var opened := false
 var _player: Player
@@ -93,19 +98,21 @@ func _input(event: InputEvent) -> void:
 			if opened:
 				get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("dev_panel") or event.is_action_pressed("ui_cancel"):
+	if event.is_action_pressed("dev_panel") or event.is_action_pressed("ui_cancel") \
+			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_B):
 		close()
 	elif event.is_action_pressed("ui_up"):
-		_row = posmod(_row - 1, 2 + NEEDS.size())
+		_row = posmod(_row - 1, TASK_ROW + TASKS.size())
 		Audio.play("ui_slot")
 	elif event.is_action_pressed("ui_down"):
-		_row = posmod(_row + 1, 2 + NEEDS.size())
+		_row = posmod(_row + 1, TASK_ROW + TASKS.size())
 		Audio.play("ui_slot")
 	elif event.is_action_pressed("ui_left"):
 		_step(-1)
 	elif event.is_action_pressed("ui_right"):
 		_step(1)
-	elif event.is_action_pressed("ui_accept"):
+	elif event.is_action_pressed("ui_accept") \
+			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_A):
 		_act(_row, -1)
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var p: Vector2 = _canvas.get_global_transform_with_canvas().affine_inverse() * event.position
@@ -140,13 +147,37 @@ func _act(row: int, action: int) -> void:
 			_preset = action
 		set_hour(PRESETS[_preset][1])
 		Audio.play("ui_place")
-	else:
+	elif row < TASK_ROW:
 		var kind: String = NEEDS[row - 2][1]
 		if GameState.survival.frozen.has(kind):
 			GameState.survival.frozen.erase(kind)
 		else:
 			GameState.survival.frozen[kind] = true
 		Audio.play("ui_place")
+	else:
+		var task: String = TASKS[row - TASK_ROW][1]
+		var completed := not task_complete(task)
+		match task:
+			"oxygen", "power":
+				GameState.repair_for(task).debug_complete(completed)
+			"glass":
+				GameState.window_repair.debug_complete(completed, ViewData.get_json(BASE_META))
+			"solar":
+				GameState.solar_field.debug_complete(completed)
+		Audio.play("ui_place")
+
+
+## Read the real progress, including work completed manually or undone at a solar feed.
+static func task_complete(task: String) -> bool:
+	match task:
+		"oxygen", "power":
+			return GameState.repair_for(task).progress() >= 1.0
+		"glass":
+			var ids: Array = ViewData.get_json(BASE_META)["window_cracks"].map(func(p: Dictionary) -> String: return p["id"])
+			return GameState.window_repair.all_fixed(ids)
+		"solar":
+			return GameState.solar_field.supplies_power()
+	return false
 
 
 # ---------------------------------------------------------------- drawing
@@ -204,6 +235,25 @@ func _draw_panel() -> void:
 		var state := "FROZEN" if frozen else "RUNNING"
 		PixelFont.draw(_canvas, r.position + Vector2(roundf((r.size.x - PixelFont.width(state)) * 0.5), 2), state,
 				InventoryUI.WHITE if frozen else InventoryUI.MUTED)
+		_hits.append([Rect2(o.x + 6, y - 1, SIZE.x - 12, 11), row, -1])
+		y += 11
+	# Remote task completion, with the same toggle chips as frozen needs.
+	y += 3
+	_canvas.draw_rect(Rect2(o.x + 6, y, SIZE.x - 12, 1), Color(accent, 0.6))
+	y += 4
+	PixelFont.draw(_canvas, Vector2(o.x + 10, y), "TASKS - COMPLETE / RESET", InventoryUI.MUTED)
+	y += 8
+	for i in TASKS.size():
+		var row := TASK_ROW + i
+		_cursor(row, y)
+		PixelFont.draw(_canvas, Vector2(o.x + 10, y + 2), TASKS[i][0], InventoryUI.WHITE)
+		var done := task_complete(TASKS[i][1])
+		var r := Rect2(o.x + SIZE.x - 56, y, 46, 9)
+		_canvas.draw_rect(r, Color(InventoryUI.TEAL, 0.35) if done else Color(InventoryUI.DARK, 0.9))
+		_canvas.draw_rect(r, InventoryUI.TEAL if done else InventoryUI.MUTED, false, 1.0)
+		var state := "DONE" if done else "PENDING"
+		PixelFont.draw(_canvas, r.position + Vector2(roundf((r.size.x - PixelFont.width(state)) * 0.5), 2), state,
+				InventoryUI.WHITE if done else InventoryUI.MUTED)
 		_hits.append([Rect2(o.x + 6, y - 1, SIZE.x - 12, 11), row, -1])
 		y += 11
 	PixelFont.draw(_canvas, Vector2(o.x + 6, o.y + SIZE.y - 9), "ARROWS - ENTER   F1 / ESC CLOSE", InventoryUI.MUTED)

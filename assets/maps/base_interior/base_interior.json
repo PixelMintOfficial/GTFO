@@ -21,7 +21,8 @@
    0.0,
    525.0
   ],
-  "reserve_png": "base_interior_reserve.png"
+  "reserve_png": "base_interior_reserve.png",
+  "no_sun_png": "base_interior_no_sun.png"
  },
  "name": "base_interior",
  "image": "base_interior.png",
@@ -250,6 +251,7 @@
     "height": "windows/burst_height.png",
     "sun": "windows/burst_sun.png",
     "light": "windows/burst_light.png",
+    "no_sun": "windows/burst_no_sun.png",
     "position": [
      828,
      58
@@ -278,6 +280,7 @@
     "height": "windows/crescent_height.png",
     "sun": "windows/crescent_sun.png",
     "light": "windows/crescent_light.png",
+    "no_sun": "windows/crescent_no_sun.png",
     "position": [
      660,
      58
@@ -312,6 +315,7 @@
    "file": "windows/restored_1.png",
    "sun": "windows/restored_1_sun.png",
    "light": "windows/restored_1_light.png",
+   "no_sun": "windows/restored_1_no_sun.png",
    "position": [
     840,
     50
@@ -324,6 +328,7 @@
    "file": "windows/restored_2.png",
    "sun": "windows/restored_2_sun.png",
    "light": "windows/restored_2_light.png",
+   "no_sun": "windows/restored_2_no_sun.png",
    "position": [
     666,
     51
@@ -337,6 +342,7 @@
    "file": "windows/restored_3.png",
    "sun": "windows/restored_3_sun.png",
    "light": "windows/restored_3_light.png",
+   "no_sun": "windows/restored_3_no_sun.png",
    "position": [
     95,
     50
@@ -355,6 +361,7 @@
    "file": "windows/restored_5.png",
    "sun": "windows/restored_5_sun.png",
    "light": "windows/restored_5_light.png",
+   "no_sun": "windows/restored_5_no_sun.png",
    "position": [
     840,
     50
@@ -368,6 +375,7 @@
    "file": "windows/restored_6.png",
    "sun": "windows/restored_6_sun.png",
    "light": "windows/restored_6_light.png",
+   "no_sun": "windows/restored_6_no_sun.png",
    "position": [
     666,
     51
@@ -382,6 +390,7 @@
    "file": "windows/restored_7.png",
    "sun": "windows/restored_7_sun.png",
    "light": "windows/restored_7_light.png",
+   "no_sun": "windows/restored_7_no_sun.png",
    "position": [
     95,
     50

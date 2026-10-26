@@ -2,6 +2,7 @@ extends Node
 ## Solar regression suite: finite optics, all-angle physical shortcut search, real F/gamepad
 ## input, independent suppression, all four camera turns,
 ## physical footprints/reach and solar/engine state through scene replacement.
+## Full base power needs both restored machines as well as the completed solar field.
 ## Layout regressions also check equipment clearance, graded access and elevated ray geometry.
 ## Run: godot --headless --path . res://tests/solar_field_test.tscn
 ## Optional rendered evidence: omit --headless and append -- --gallery=shots/solar --audio-debug.
@@ -313,7 +314,12 @@ func _integration() -> void:
 	GameState.repair_for("power").complete_task("cracks")
 	GameState.repair_for("power").complete_task("wiring")
 	await _frames(6)
-	_check(GameState.base_powered(), "repaired engine runs on all three solar inputs")
+	_check(not GameState.base_powered(), "reactor and solar still need the oxygen machine")
+	GameState.repair_for("oxygen").complete_task("cracks")
+	_check(not GameState.base_powered(), "partial oxygen repair cannot restore full power")
+	GameState.repair_for("oxygen").complete_task("wiring")
+	await _frames(6)
+	_check(GameState.base_powered(), "both restored machines and three solar inputs power the base")
 	_check(Audio.is_looping("solar:engine"), "powered engine starts its existing machine sound")
 	await _capture("engine-online")
 	for heading in 4:
