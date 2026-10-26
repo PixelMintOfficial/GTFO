@@ -10,11 +10,11 @@ objective/navigation box is deliberately absent.
 
 A single 54-unit conical receiver has triangular blue cells and a large local
 three-channel bar. Its ground cable enters the main base's power conduit. All
-three complete routes supply the interior reactor. BOTH the reactor and oxygen machine
-must also have their cracks and wiring repaired before `GameState.base_powered()` is true.
+three complete routes supply the interior reactor. The reactor must also have its cracks
+and wiring repaired before `GameState.base_powered()` is true. O2 repair is independent.
 Full power immediately lights the main base indoors and outdoors, at every hour. The
-bot's emergency reserve remains a separate, dimmer stage. Day/night does not interrupt
-electrical output; closing a solar feed returns the base to its available reserve lighting.
+O2-only reserve never lights the base. Day/night does not interrupt electrical output;
+closing a solar feed removes facility lighting while O2 uses any remaining reserve.
 `BasePower` supplies shared world-shader lighting from compact four-view masks exported
 by `tools/base_power_gen.py` (`make base-power`, also part of `make map`). Their R channel
 lights the existing shell, corridors and local ground spill; G adds teal glass emission
@@ -22,11 +22,16 @@ while preserving damage; B is the intact emission used by existing glass restora
 patches. Both emission channels add the same reflected window colour to nearby ground.
 The pool fades evenly over 100 world units outside each footing and follows terrain height;
 saved depth prevents it painting over foreground geometry. Completing all three storage glass
-repairs restores all six exterior breaks across the three main-base domes.
+repairs restores the three storage/command exterior breaks; habitat and garage glass stay intact.
 The masks follow the actual band geometry and saved depth, use map pixels rather
 than streamed-window UVs, and travel with both views during camera swings. Inside, normal
-room lighting and the existing emergency strips remain steady. Other lands and the nursery
-keep their own lighting.
+room lighting and the existing emergency strips remain steady. The nursery uses the same
+glass emission and ground spill in an independent compact crop: `power/catalog.json` keeps
+base masks in `views` and nursery masks in `nursery_views`, each with `file` and map-pixel
+`rect`. Both follow live rendering, streaming and camera swings; the surrounding forest
+retains its normal night lighting outside the pool. The nursery's repaired console controls
+its own indoor lighting and exterior glow independently; main-base mains loss affects base
+lighting and O2 supply, while the nursery screen's local lighting circuit stays on.
 The engine room has small Amber/Jade/Coral wall lenses and plays the existing powered-machine
 ambience only while running. Closing a feed removes that beam/output immediately.
 Routing progress does not decay with the day/night cycle; sunlight visuals fade
@@ -47,7 +52,7 @@ with the existing DayNight daylight value. No new time-based power balance is ad
   meshes and the local bar. Its independent `Multitool.solar_suppressed` flag and
   release guard prevent overlapping jobs. Inventory retains modal priority and normal hotbar input.
   Prompts sit by the equipment's feet; local plates reuse SurvivalHUD's canvas-aware
-  avoidance helper so dragging that HUD cannot hide solar controls or channel status.
+  avoidance helper so the fixed HUD cannot hide solar controls or channel status.
 - `SolarFieldFX`: generated mirror glints, crystal deployment, incoming sunlight funnels,
   receiver charge waves, crown light and completion pulse. View changes preserve animation
   phase. Re-entering an already powered field retains its charge without replaying completion.

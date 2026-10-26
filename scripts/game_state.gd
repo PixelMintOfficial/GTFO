@@ -24,6 +24,7 @@ var clock := 8.0
 ## Backpack: first six slots are the hotbar. Only the multitool can be equipped;
 ## ore is stored; three scraps per machine and six glass per window are spent on completion;
 ## ration/water restore vitals through consume_slot().
+## Cultivation adds food/water fruit and two seed kinds; store_items preflights whole harvests.
 signal inventory_changed
 const HOTBAR_SIZE := 6
 const INVENTORY_SIZE := 24
@@ -35,6 +36,10 @@ const ITEMS := {
 	"glass": {"name": "GLASS", "detail": "6 FRAGMENTS TO SEAL A WINDOW", "stack": STACK_LIMIT},
 	"ration": {"name": "RATION", "detail": "C TO EAT", "stack": STACK_LIMIT},
 	"water": {"name": "WATER", "detail": "C TO DRINK", "stack": STACK_LIMIT},
+	"emberpod_seed": {"name": "EMBERPOD SEEDS", "detail": "PLANT IN REPAIRED NURSERY RACKS", "stack": STACK_LIMIT},
+	"dewpod_seed": {"name": "DEWPOD SEEDS", "detail": "PLANT IN REPAIRED NURSERY SILOS", "stack": STACK_LIMIT},
+	"emberpod": {"name": "EMBERPOD", "detail": "C TO EAT", "stack": STACK_LIMIT},
+	"dewpod": {"name": "DEWPOD", "detail": "C TO DRINK", "stack": STACK_LIMIT},
 }
 var inventory: Array[Dictionary] = []
 var selected_slot := 0
@@ -49,8 +54,12 @@ var window_repair := WindowRepair.new()
 var survival := SurvivalState.new()
 ## Solar routing/closed feeds persist through camera turns, airlocks and rescue.
 var solar_field := SolarFieldState.new()
-## The bot, your name, reserve power and the objectives (StoryState); kept through rescue.
+## UNIT, your name, maintenance access and objectives (StoryState); kept through rescue.
 var story := StoryState.new()
+## Nursery repairs/crops and gathered wild seed plants survive views, airlocks and rescue.
+var cultivation := CultivationState.new()
+## O2 repair reserve time and shared facility supply survive airlocks and rescue.
+var facility_air := FacilityAir.new()
 ## Initial developer vital overrides apply once, never on airlock transitions or rescue.
 var survival_debug_initialized := false
 
@@ -58,13 +67,20 @@ var survival_debug_initialized := false
 func repair_for(machine_id: String) -> MachineRepair:
 	if not machine_repairs.has(machine_id):
 		machine_repairs[machine_id] = MachineRepair.new(machine_id, randi())
+		if machine_id == "oxygen":
+			machine_repairs[machine_id].changed.connect(facility_air.sync)
 	return machine_repairs[machine_id]
 
 
-## Full base power needs both restored machines and all three outdoor solar routes.
-## The bot's emergency reserve is independent; neither daylight nor scene changes gate this.
+## Mains lights need the restored generator and all three outdoor solar routes.
+## O2 repair/reserve is independent; neither daylight nor scene changes gate mains.
 func base_powered() -> bool:
-	return solar_field.supplies_power() and repair_for("power").progress() >= 1.0 and repair_for("oxygen").progress() >= 1.0
+	return solar_field.supplies_power() and repair_for("power").progress() >= 1.0
+
+
+## The nursery's local screen restores its lighting circuit; O2 still uses FacilityAir.
+func nursery_powered() -> bool:
+	return cultivation.repaired("console")
 
 
 func _ready() -> void:
@@ -110,6 +126,7 @@ func rescue() -> void:
 
 
 func reset_inventory() -> void:
+	facility_air.reset()
 	inventory.clear()
 	for i in INVENTORY_SIZE:
 		inventory.append({})
@@ -118,6 +135,7 @@ func reset_inventory() -> void:
 	removed_props.clear()
 	spawned_props.clear()
 	window_repair = WindowRepair.new()
+	cultivation = CultivationState.new()
 	inventory_changed.emit()
 
 
@@ -132,19 +150,38 @@ func can_store(kind: String) -> bool:
 
 ## Adds exactly one gathered prop, atomically. Full bags leave the prop in the world.
 func store_item(kind: String) -> bool:
-	if not can_store(kind):
+	return store_items(kind, 1)
+
+
+## Whole handfuls/harvests either fit completely or leave the source untouched.
+func can_store_items(kind: String, count: int) -> bool:
+	if count <= 0 or not ITEMS.has(kind) or kind == "multitool":
 		return false
+	var capacity := 0
 	for slot in inventory:
-		if slot.get("kind", "") == kind and slot["count"] < ITEMS[kind]["stack"]:
-			slot["count"] += 1
-			inventory_changed.emit()
-			return true
+		if slot.is_empty():
+			capacity += int(ITEMS[kind]["stack"])
+		elif slot["kind"] == kind:
+			capacity += int(ITEMS[kind]["stack"]) - int(slot["count"])
+	return capacity >= count
+
+
+func store_items(kind: String, count: int) -> bool:
+	if not can_store_items(kind, count):
+		return false
+	var left := count
+	for slot in inventory:
+		if slot.get("kind", "") == kind:
+			var amount := mini(left, int(ITEMS[kind]["stack"]) - int(slot["count"]))
+			slot["count"] += amount
+			left -= amount
 	for i in inventory.size():
-		if inventory[i].is_empty():
-			inventory[i] = {"kind": kind, "count": 1}
-			inventory_changed.emit()
-			return true
-	return false
+		if left > 0 and inventory[i].is_empty():
+			var amount := mini(left, int(ITEMS[kind]["stack"]))
+			inventory[i] = {"kind": kind, "count": amount}
+			left -= amount
+	inventory_changed.emit()
+	return true
 
 
 func select_slot(index: int) -> void:

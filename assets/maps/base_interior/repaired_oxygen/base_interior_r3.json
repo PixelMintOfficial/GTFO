@@ -600,5 +600,27 @@
     780.2
    ]
   ]
+ },
+ "reserve_meter": {
+  "world": [
+   -185.30044378892455,
+   479.30044378892455,
+   25.0
+  ],
+  "angle": 315.0,
+  "label": "RESERVES",
+  "clear_fraction": 1.0,
+  "housing": "reserve_meter/housing_r3.png",
+  "levels": "reserve_meter/levels_r3.png",
+  "position": [
+   369,
+   646
+  ],
+  "size": [
+   59,
+   62
+  ],
+  "frames": 11,
+  "model_scale": 0.5
  }
 }

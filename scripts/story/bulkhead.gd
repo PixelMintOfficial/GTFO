@@ -1,10 +1,10 @@
 class_name Bulkhead
 extends Node2D
 ## A bulkhead sealing a corridor out of storage (to the power room, to the oxygen room) until the
-## bot switches on reserve power. Its frame is baked into the room; its two leaves are a sprite
+## bot releases maintenance access. Its frame is baked into the room; its two leaves are a sprite
 ## sheet from the generator (base_interior.json -> bulkheads: closed -> open), drawn over the map
 ## behind nearer scenery (prop_depth) and y-sorted with the astronaut on its foot. Sealed, it
-## stands across the corridor in MapTerrain.blockers; its lamp blinks red. Open, the leaves are
+## stands across the corridor in MapTerrain.blockers; its lamp blinks red if mains are on. Open, the leaves are
 ## telescoped into the posts (the sprite goes), the way is clear, and its lamp holds steady cyan.
 ## Positions come from the data (world, lamp_px), so it follows the camera through every view.
 ## Seen edge-on (the corridors run across the screen in some views), a sealed bulkhead could be
@@ -66,7 +66,7 @@ func setup(info: Dictionary, base_dir: String, terrain: MapTerrain, player: Play
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
 	set_view(info, base_dir)
-	_set_open(GameState.story.reserve_power)
+	_set_open(GameState.story.access_opened)
 
 
 ## The camera turned: this view's sheet, foot and lamp.
@@ -144,7 +144,7 @@ func _notice() -> bool:
 
 
 func _lamp_on() -> bool:
-	return opened or fmod(_t, 1.2) < 0.6                 # sealed: a slow red blink
+	return GameState.base_powered() and (opened or fmod(_t, 1.2) < 0.6)
 
 
 func _draw_lamp() -> void:

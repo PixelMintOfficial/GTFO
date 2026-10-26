@@ -24,7 +24,7 @@ void vertex() {
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
 	c.rgb = base_power_emission(c.rgb, base_power_at(map_pos).g);
-	float own = texture(light_mask, UV).r;
+	float own = texture(light_mask, UV).r * dn_power;
 	float sun = texture(sun_mask, UV).r;
 	vec3 day = map_daylight(c.rgb, texture(no_sun_map, UV).rgb, sun, has_no_sun);
 	vec3 glow = (has_no_sun ? day : c.rgb) * (1.0 + 0.12 * dn_night);

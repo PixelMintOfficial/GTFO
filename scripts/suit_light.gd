@@ -15,7 +15,7 @@ extends Node
 ## The beam is thrown along the ground the way the astronaut faces, so its direction is worked
 ## out in the current view's map pixels (MapTerrain.to_screen_direction): turn the camera
 ## (G / H) and the beam turns with the world. It is only worth anything in the dark, so its
-## strength follows DayNight.night and it does nothing at noon.
+## strength follows DayNight.darkness: night outdoors, power loss indoors at any hour.
 ## Its origin follows the sprite's pixel-snapped feet offset, so jumps, falls and platforms
 ## carry the lamp with the suit rather than leaving its source at the ground sort position.
 ##
@@ -90,7 +90,7 @@ func lamp_vector() -> Vector4:
 	if player == null:
 		return Vector4(0.0, 0.0, reach, 0.0)
 	var at := beam_origin(player)
-	var lit := strength * DayNight.night if GameState.suit_light else 0.0
+	var lit := strength * DayNight.darkness if GameState.suit_light else 0.0
 	return Vector4(at.x, at.y, reach, lit)
 
 

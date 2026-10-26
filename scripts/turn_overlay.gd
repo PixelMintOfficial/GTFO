@@ -11,9 +11,10 @@ extends CanvasLayer
 ##
 ## It sits above the world and below the UI, so the time panel and the backpack stay put.
 ## Solar beam billboards supply their world radius so thickness remains consistent in a swing.
-## Full base lighting carries each relief's own four-view mask through the swing.
+## Base/nursery lighting carries each relief's own four-view masks through the swing.
 ## Interior reliefs also carry the sunlight-free pixels, so night turns cannot flash beams.
 ## Suit-light origins use the same raised sprite anchor as the live world, including platforms.
+## Optional unlit crop-glow billboards keep Moonwell's luminous petals/seeds lit at night.
 
 signal finished
 
@@ -203,8 +204,10 @@ func _apply(k: float) -> void:
 		if b is Sprite3D:
 			var at := Vector3(b.get_meta("at"))
 			var px := _player.terrain.to_screen(Vector2(at.x, -at.z), at.y)
-			b.modulate = DayNight.light_mul.lerp(Color.WHITE, BasePower.light_at(BasePower.current, px))
+			b.modulate = Color.WHITE if b.get_meta("dn_unlit", false) else DayNight.light_mul.lerp(Color.WHITE, BasePower.light_at(BasePower.current, px))
 			b.position = b.get_meta("at") + basis.z * 16.0               # in front of both views
+			if b.get_meta("dn_unlit", false):
+				b.position += basis.z * .02
 		if b.has_meta("first"):
 			b.visible = b.get_meta("first") == (mix < 0.5)               # each view's own drawing of it
 	_face_player(psi)
@@ -293,6 +296,8 @@ func _set_view_params(m: ShaderMaterial, v: Dictionary) -> void:
 	m.set_shader_parameter("power_tex", power["mask"])
 	m.set_shader_parameter("power_rect", power["rect"])
 	m.set_shader_parameter("power_indoor", power["indoor"])
+	m.set_shader_parameter("power_nursery_tex", power["nursery_mask"])
+	m.set_shader_parameter("power_nursery_rect", power["nursery_rect"])
 
 
 ## Something standing in the world, as a billboard: texture region, the anchor where it stands
@@ -313,6 +318,7 @@ func _board(b: Dictionary) -> Sprite3D:
 	var h: float = (b["region"] as Rect2).size.y if (b["region"] as Rect2).size != Vector2.ZERO else 64.0
 	s.offset = Vector2(-b["anchor"].x, -(h - b["anchor"].y))
 	s.set_meta("at", _godot(b["world"]))
+	s.set_meta("dn_unlit", b.get("unlit", false))
 	s.position = _godot(b["world"])
 	return s
 

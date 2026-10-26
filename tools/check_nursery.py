@@ -4,12 +4,14 @@ The arrival overlay must leave the walk surface transparent; a y-sorted floor in
 that sprite covers the astronaut's legs. The propagation ring must stay at floor
 height, both monitor faces must be screens, and the room must use the approved
 smaller scale. Reads assets and models only; run after make nursery / make map.
+Also guards intact floor feeds, grey dry channels, wire-free damage and the repairable rear shelf.
 """
 import json
 from pathlib import Path
 import numpy as np
 from PIL import Image
 import nursery_gen as N
+import nursery_cultivation as NC
 
 failures = []
 checks = 0
@@ -61,5 +63,16 @@ check(extent * N.M.DOME_SCALE < building['R'], 'baked exterior contents fit insi
 for k in range(4):
     exterior = json.loads((N.ROOT / 'assets/maps/red_planet' / f'red_planet_map{N.M.view_sfx(k)}.json').read_text())
     check(exterior['domes']['nursery']['radius_world'] <= 160., f'exterior view {k} exports the smaller nursery')
+broken = NC.furniture(N, 0)
+fixed = NC.furniture(N, 7)
+check(not any(p.group in ('console_wire', 'tower_wire') for p in broken), 'no dangling wire bundles')
+check(all(p.ramp == 'steel' for p in broken if p.group == 'circulating_water'), 'dry propagation channel is grey')
+feed_point = N.M.scale_pt(N.at(-69., 60., 1.), N.C, N.LAYOUT_SCALE)[None, :]
+check(any(np.any(p.sdf(feed_point) <= 0) for p in broken if p.group == 'feed0_0'), 'floor feed remains continuous before repairs')
+shelf_point = N.M.scale_pt(N.at(18., 144., 30.), N.C, N.LAYOUT_SCALE)[None, :]
+check(all(np.all(p.sdf(shelf_point) > 0) for p in broken if p.group == 'living_wall1_shelf1'), 'broken centre shelf sags away from its original position')
+check(any(np.any(p.sdf(shelf_point) <= 0) for p in fixed if p.group == 'living_wall1_shelf1'), 'repaired centre shelf returns to its original position')
+check(any(p.group == 'console_screen_crack' for p in broken) and
+      not any(p.group == 'console_screen_crack' for p in fixed), 'screen fractures disappear after repair')
 print(f'NURSERY ART QA: {checks} checks, {len(failures)} failures')
 raise SystemExit(1 if failures else 0)

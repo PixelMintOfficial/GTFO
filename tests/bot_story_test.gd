@@ -2,9 +2,9 @@ extends Node
 ## Checks for the opening chapter (scripts/story/): the bulkheads sealing the power and oxygen
 ## rooms, the bot asleep in its cradle in storage, waking it with the multitool's fix job, its
 ## conversation driven by real keys, telling it your name on the keyboard and on a gamepad,
-## reserve power opening the bulkheads, the objectives and the lore they unlock, the bot
-## following you round the base (never in your way, blinking back in when left behind, meeting
-## you at the airlock), and all of it surviving a camera turn and a scene reload. The player's
+## maintenance access opening the bulkheads, the objectives and the lore they unlock, the bot
+## patrolling its own cleaning sites without following or blocking the player, and all of it
+## surviving a camera turn and a scene reload. The player's
 ## real profile is never touched.
 ## Run: godot --headless --path . res://tests/bot_story_test.tscn  (failures exit nonzero)
 
@@ -107,15 +107,12 @@ func _model() -> void:
 	_check(s.text("{BOT} {OWNER} {NAME}") == "%s %s ZED" % [names["bot"], names["previous_owner"]], "tokens filled from the names")
 	_check(s.objectives().is_empty(), "no objectives before the bot hands them out")
 	s.give_objectives()
-	_check(s.objectives().size() == 2 and not s.all_done(), "two objectives, neither done")
-	var first := s.next_talk()
-	_check(first[0] == s.text(s.data["remind"]["both"]) and first.size() > 1, "talking: a reminder and a piece of trivia")
+	_check(s.objectives().size() == 7 and not s.all_done(), "machine, glass, feed and solar objectives")
+	_check(s.active_stage() == "oxygen", "oxygen is the first instruction")
+	_check(s.next_talk()[0] == s.guidance()[0], "current instruction remains available")
 	GameState.repair_for("power").complete_task("cracks")
 	GameState.repair_for("power").complete_task("wiring")
-	_check(s.objective_done("power") and not s.objective_done("oxygen"), "a repaired reactor restores power")
-	var lore := s.next_talk()
-	_check(lore[0] == s.text(s.data["lore"][0]["lines"][0]), "its moment come, the power lore is told first")
-	_check(s.next_talk()[0] == s.text(s.data["remind"]["oxygen"]), "then only the oxygen is left to remind you of")
+	_check(s.objective_done("power") and s.active_stage() == "oxygen", "out of order generator repair does not skip oxygen")
 	GameState.machine_repairs.clear()
 
 
@@ -195,51 +192,35 @@ func _scene() -> void:
 			break
 	_check(dialogue._lines.any(func(l: String) -> bool: return l.contains("ZED")), "it calls you by your name")
 
-	# reserve power: the bulkheads open and the corridors with them
+	# Maintenance access: bulkheads open without powering the room.
 	await _read_through(dialogue)
-	_check(GameState.story.reserve_power and not get_tree().paused, "reserve power comes on, the world runs")
-	await _wait(Bot.RESERVE_BEAT + 0.3)
+	_check(GameState.story.access_opened and not get_tree().paused, "maintenance access opens, the world runs")
+	await _wait(Bot.ACCESS_BEAT + 0.3)
 	_check(room.bulkheads.all(func(b: Bulkhead) -> bool: return b.opened and not b.sprite.visible), "both bulkheads open")
 	_check(terrain.surface(power.world) != MapTerrain.Surface.SOLID, "the corridor is clear")
-	_check(room.fx._reserve.visible, "the emergency lines are lit")
+	_check(not room.fx._reserve.visible, "access release leaves main lights off")
 	for i in 60:
 		await get_tree().process_frame
 		if dialogue.opened:
 			break
 	await _read_through(dialogue)
-	_check(GameState.story.objectives_given and GameState.story.objectives().size() == 2, "it hands out the objectives")
+	_check(GameState.story.objectives_given and GameState.story.objectives().size() == 7, "it hands out the objectives")
 	await get_tree().process_frame
-	_check(bot.state == Bot.State.FOLLOW, "then it comes with you")
+	_check(bot.state == Bot.State.PATROL, "then it comes with you")
 	_check(tool.bot_suppressed and bot._prompt, "beside the awake bot, F is its [F] TALK, not the tool's")
 
-	# following: it keeps up, turns with its flight, and is never in your way
+	# Maintenance NPC: it follows a floor route independently of the player.
 	var from := player.world_pos
-	var saw_move := [false]
-	player.forced_input = Vector2.RIGHT                  # away from the cradle, into the room
-	var until := Time.get_ticks_msec() + 1200
-	while Time.get_ticks_msec() < until:
-		await get_tree().process_frame
-		if bot._anim == "move":
-			saw_move[0] = true
-	player.forced_input = Vector2.ZERO
-	_check(player.world_pos.distance_to(from) > 25.0, "walking with it about, nothing stops you")
-	_check(saw_move[0], "it flies after you")
-	await _wait(1.5)
-	_check(bot.world.distance_to(player.world_pos) < 30.0, "it keeps close behind")
-	_check(not bot._prompt and not tool.bot_suppressed, "behind you, it leaves F to the tool")
-	_check(terrain.surface(bot.world) != MapTerrain.Surface.SOLID, "it stays on open floor")
-	var look := terrain.view_dir(player.world_pos - bot.world)
-	_check(bot._row == posmod(int(round(Vector2(look.x, -look.y).angle() / (PI / 4.0))), 8), "settled, it faces you")
-	_check(not terrain.blockers.values().any(func(b: Vector3) -> bool: return Vector2(b.x, b.y).distance_to(bot.world) < 1.0),
-			"it is never solid")
-
-	# left far behind (the power room, through the open bulkhead), it blinks back in beside you
-	var power_room := Vector2(236.0, 520.0)
-	player.teleport(power_room)
-	await _wait(0.3)
-	_check(bot.world.distance_to(player.world_pos) < 40.0, "left far behind, it catches up")
-	_check(GameState.story.bot_world != null and (GameState.story.bot_world as Vector2).distance_to(bot.world) < 1.0,
-			"the story knows where it is")
+	player.teleport(Vector2(236., 520.))
+	var before := bot.world
+	await _wait(.3)
+	_check(bot.world.distance_to(player.world_pos) > 100., "UNIT does not teleport after player")
+	_check(not bot._floor_path(bot._spots[0]).is_empty(), "cleaning site has a walkable floor route")
+	_check(terrain.surface(bot.world) != MapTerrain.Surface.SOLID, "maintenance body stays on open floor")
+	_check(not terrain.blockers.values().any(func(b: Vector3) -> bool: return Vector2(b.x,b.y).distance_to(bot.world) < 1.), "NPC is never solid")
+	await _wait(1.)
+	_check(bot.world.distance_to(before) > 1. or bot.cleaning, "UNIT moves or cleans without following")
+	_check(GameState.story.bot_world != null and (GameState.story.bot_world as Vector2).distance_to(bot.world) < 1., "patrol position stored in session")
 
 	# the name on a gamepad: right, A, B deletes, A, Start
 	var got := [""]
@@ -272,7 +253,7 @@ func _scene() -> void:
 	get_tree().root.add_child.call_deferred(room)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_check(room.bot.state == Bot.State.FOLLOW and room.bulkheads.all(func(b: Bulkhead) -> bool: return b.opened),
+	_check(room.bot.state == Bot.State.PATROL and room.bulkheads.all(func(b: Bulkhead) -> bool: return b.opened),
 			"after a reload: the bot with you, the bulkheads open")
 	_check((room.get_node("Multitool") as Multitool)._fixables.is_empty(), "an awake bot is no fix job")
 
@@ -284,7 +265,7 @@ func _scene() -> void:
 	get_tree().root.add_child.call_deferred(room)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_check(room.bot.world.distance_to(room.door.stand_point()) < 40.0, "coming back in, it meets you at the door")
+	_check(room.bot.world.distance_to(room.door.stand_point()) > 40.0, "returning through airlock leaves UNIT at maintenance work")
 	await _wait(3.0)
 	GameState.repair_for("oxygen").complete_task("cracks")
 	GameState.repair_for("oxygen").complete_task("wiring")

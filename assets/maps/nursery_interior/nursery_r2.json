@@ -123,5 +123,92 @@
     "tanks": [],
     "sparks": [],
     "vapor": []
+  },
+  "repair_variants": {
+    "1": "nursery_repairs_1.json",
+    "2": "nursery_repairs_2.json",
+    "3": "nursery_repairs_3.json",
+    "4": "nursery_repairs_4.json",
+    "5": "nursery_repairs_5.json",
+    "6": "nursery_repairs_6.json",
+    "7": "nursery_repairs_7.json"
+  },
+  "cultivation": {
+    "repair_mask": 0,
+    "repairs": [
+      {
+        "id": "console",
+        "label": "CONTROL PANEL",
+        "bit": 1,
+        "world": [
+          0.0,
+          418.4
+        ],
+        "stand_world": [
+          0.0,
+          396.8
+        ],
+        "scan_height": 32.0
+      },
+      {
+        "id": "light",
+        "label": "GROW LIGHTS",
+        "bit": 2,
+        "world": [
+          -81.60000000000001,
+          508.0
+        ],
+        "stand_world": [
+          -82.4,
+          502.4
+        ],
+        "scan_height": 9.600000000000001
+      },
+      {
+        "id": "rack",
+        "label": "GROWING RACK",
+        "bit": 4,
+        "world": [
+          0.0,
+          635.2
+        ],
+        "stand_world": [
+          0.0,
+          615.2
+        ],
+        "scan_height": 36.0
+      }
+    ],
+    "crops": "crops.json"
+  },
+  "bot": {
+    "body": "nursery",
+    "world": [
+      -38.400000000000006,
+      443.2
+    ],
+    "facing": [
+      0.0,
+      -1.0
+    ],
+    "radius": 7.0,
+    "cleaning_spots": [
+      [
+        -38.400000000000006,
+        457.6
+      ],
+      [
+        35.2,
+        483.2
+      ],
+      [
+        9.600000000000001,
+        569.6
+      ],
+      [
+        -48.0,
+        558.4
+      ]
+    ]
   }
 }

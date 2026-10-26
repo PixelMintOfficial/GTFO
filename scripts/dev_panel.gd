@@ -9,19 +9,22 @@ extends CanvasLayer
 ## Enter / Space / A sets or toggles; Esc / B / F1 closes. Everything is clickable too.
 ## The time is GameState.clock (DayNight lights it); frozen needs are GameState.survival.frozen,
 ## so both carry on through the airlock and rescue. Task toggles use the actual machine,
-## window and solar session states: DONE bypasses costs, RESET clears that task for replay.
+## window, solar and nursery session states: DONE bypasses costs, RESET clears that task for replay.
+## Nursery UNIT, screen, grow light and food rack refresh live; the screen also controls power.
 ##
 ## Test hooks (after "--", debug builds): --dev-panel opens it after a second (for captures);
 ## --dev-freeze=hunger,thirst,oxygen freezes those from the start.
 
 const PLATE := DayClock.PLATE
 const EDGE := DayClock.EDGE
-const SIZE := Vector2(190, 154)
+const SIZE := Vector2(190, 198)
 const STEP := 0.5                                      # hours per time step
 const PRESETS := [["DAWN", 5.5], ["MORNING", 8.0], ["NOON", 12.0], ["EVENING", 17.0], ["NIGHT", 22.0]]
 const NEEDS := [["FOOD", "hunger", 2], ["WATER", "thirst", 3], ["OXYGEN", "oxygen", 1]]   # label, kind, colour
 const TASKS := [["OXYGEN REPAIR", "oxygen"], ["POWER REPAIR", "power"],
-		["GLASS CRACKS", "glass"], ["SOLAR REFLECTIONS", "solar"]]
+		["GLASS CRACKS", "glass"], ["SOLAR REFLECTIONS", "solar"],
+		["NURSERY UNIT", "nursery_unit"], ["NURSERY SCREEN", "nursery_console"],
+		["NURSERY GROW LIGHT", "nursery_light"], ["NURSERY FOOD RACK", "nursery_rack"]]
 const TASK_ROW := 5                                    # time, presets and three needs
 const BASE_META := "res://assets/maps/base_interior/base_interior.json"
 
@@ -164,6 +167,11 @@ func _act(row: int, action: int) -> void:
 				GameState.window_repair.debug_complete(completed, ViewData.get_json(BASE_META))
 			"solar":
 				GameState.solar_field.debug_complete(completed)
+			"nursery_unit":
+				GameState.story.debug_complete_nursery(completed)
+			_:
+				if task.begins_with("nursery_"):
+					GameState.cultivation.debug_complete(task.trim_prefix("nursery_"), completed)
 		Audio.play("ui_place")
 
 
@@ -177,6 +185,11 @@ static func task_complete(task: String) -> bool:
 			return GameState.window_repair.all_fixed(ids)
 		"solar":
 			return GameState.solar_field.supplies_power()
+		"nursery_unit":
+			return GameState.story.nursery_awake
+		_:
+			if task.begins_with("nursery_"):
+				return GameState.cultivation.repaired(task.trim_prefix("nursery_"))
 	return false
 
 

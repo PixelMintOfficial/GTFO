@@ -8,6 +8,7 @@ render_mode unshaded, cull_disabled, depth_draw_opaque;
 // turns as the world would. Where the grid would stretch across a gap (a cliff edge in front of
 // far ground) the stretched part is cut out.
 // Optional sunlight-free pixels remove baked shafts during nighttime interior swings too.
+// Independent base/nursery masks retain facility window glow through the turn.
 // Each view is drawn twice. The front copy, nudged towards the camera, keeps only its share of a
 // dither that hands the screen from the view left to the view arrived at, a map pixel at a time.
 // The back copy is whole and sits far behind both fronts: where the view whose turn it is has
@@ -24,6 +25,8 @@ uniform bool has_no_sun = false;
 uniform sampler2D power_tex : filter_nearest, hint_default_black;
 uniform vec4 power_rect = vec4(0.0, 0.0, 1.0, 1.0);
 uniform float power_indoor = 0.0;
+uniform sampler2D power_nursery_tex : filter_nearest, hint_default_black;
+uniform vec4 power_nursery_rect = vec4(0.0, 0.0, 1.0, 1.0);
 // This view's textures hold only the window MapStream has in memory, not the whole picture:
 // x, y where it starts in map pixels, z, w how big it is. Outside it there is nothing to draw.
 uniform vec4 win = vec4(0.0, 0.0, 1.0, 1.0);
@@ -103,9 +106,10 @@ void fragment() {
 		discard;                               // never clamp: that smears the window's edge pixels
 	}
 	vec3 c = texelFetch(map_tex, ip, 0).rgb;
-	vec3 power = base_power_sample(px, power_tex, power_rect, power_indoor) * bp_active;
+	vec3 power = max(base_power_sample(px, power_tex, power_rect, power_indoor) * bp_active,
+			base_power_sample(px, power_nursery_tex, power_nursery_rect, 0.0) * bp_nursery_active);
 	c = base_power_emission(c, power.g);
-	float own = texelFetch(light_tex, ip, 0).r;
+	float own = texelFetch(light_tex, ip, 0).r * dn_power;
 	float sun = texelFetch(sun_tex, ip, 0).r;
 	vec3 day = map_daylight(c, texelFetch(no_sun_tex, ip, 0).rgb, sun, has_no_sun);
 	float lamp = dn_lamp_shape(px, lamp_px, lamp_dir);

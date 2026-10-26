@@ -4,7 +4,7 @@ extends RefCounted
 ## Master volume controls the existing Master bus, leaving the authored mix intact. GUI sizes
 ## scale only the clock, stats, hotbar and backpack. Large is the original size; smaller sizes
 ## use whole display pixels when the window has at least three pixels per logical UI pixel.
-## Tests can supply a separate ConfigFile or --settings-path=PATH; normal games use user://.
+## Small is the compact default. Tests can supply --settings-path=PATH; normal games use user://.
 
 signal changed
 
@@ -12,7 +12,7 @@ const PATH := "user://settings.cfg"
 const SIZES := ["small", "medium", "large"]
 const FACTORS := [0.6, 0.8, 1.0]
 var volume := 1.0
-var gui_size := "large"
+var gui_size := "small"
 var path: String
 
 
@@ -27,7 +27,7 @@ func _init(file_path := PATH) -> void:
 	var value: Variant = config.get_value("audio", "master_volume", 1.0)
 	if (value is float or value is int) and is_finite(float(value)):
 		volume = clampf(float(value), 0.0, 1.0)
-	var size_value: Variant = config.get_value("interface", "gui_size", "large")
+	var size_value: Variant = config.get_value("interface", "gui_size", "small")
 	if size_value in SIZES:
 		gui_size = size_value
 

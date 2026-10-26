@@ -1,13 +1,20 @@
 extends Node2D
-## The approved powered nursery: one intact room and two working airlocks.
+## The damaged nursery: three simple F/X repairs, dead growing beds and two working airlocks.
 ## Artwork, collision, door frames and anchors come from nursery_gen.py in four views.
 ## Uses the base's player, depth window, day/night, room toast, inventory and door cutscene.
-## No nursery puzzles are implemented here. F / gamepad X enters/exits through either door.
-## Escape opens the shared paused volume/GUI options.
+## Escape opens the shared paused volume/GUI options. F/X enters or exits through either door.
+## Wild seeds replant the food racks/water silos, then game-clock growth yields consumable fruit.
+## Session progress is GameState.cultivation. Repairs use the equipped multitool's held scanner;
+## minigames remain future work. --use holds the tool for scanner captures after --equip.
 ##
 ## Test hooks: --spawn=X,Y --walk=DX,DY[,run] --capture=PATH --seconds=S --burst=N --gap=S
-## --turn=N --turn-left/--turn-right --time=H --suit-light --equip --quit=S
+## --turn=N --turn-left/--turn-right --time=H --suit-light --equip --use --quit=S
 ## --arrive --exit --exit-id=ID (1 or 5); --door-id=ID chooses an arrival doorway.
+## NurseryCleanup draws generated floor litter; the nursery UNIT physically vacuums it.
+## Repairing the console powers nursery lighting. O2 remains piped from the main base.
+## A scene-specific checklist tracks player repairs, planting and first harvests.
+## --bot-wake / --bot-talk / --story-auto=S preview the nursery body's real repair/dialogue.
+## --nursery-repaired --nursery-seeds --nursery-crops=ripe|sprout --nursery-at=ID
 
 const MAP_JSON := "res://assets/maps/nursery_interior/nursery.json"
 const PROPS_JSON := "res://assets/maps/nursery_interior/nursery_props.json"
@@ -16,6 +23,11 @@ var terrain: MapTerrain
 var stream: MapStream
 var view_turn: ViewTurn
 var suit_light: SuitLight
+var cultivation: CultivationWorld
+var cleanup: NurseryCleanup
+var bot: Bot
+var dialogue: BotDialogue
+var _repair_mask := 0
 var doors: Array[AirlockDoor] = []
 
 @onready var player: Player = $Actors/Player
@@ -31,9 +43,26 @@ func _ready() -> void:
 	Audio.bed("amb_dome", 1.0)
 	if args.has("turn"):
 		GameState.heading = posmod(int(args["turn"]), 4)
-	terrain = MapTerrain.new(MAP_JSON, GameState.heading)
+	if args.has("nursery-repaired"):
+		GameState.cultivation.repairs = 7
+		GameState.story.nursery_awake = true
+		GameState.story.nursery_introduced = true
+	if args.has("nursery-crops"):
+		GameState.cultivation.repairs = 7
+		GameState.story.nursery_awake = true
+		GameState.story.nursery_introduced = true
+		var preview_clock := float(args.get("time", GameState.clock))
+		for id in GameState.cultivation.config["beds"]:
+			GameState.cultivation.beds[id] = {"kind": GameState.cultivation.config["beds"][id],
+					"ready_at": preview_clock - 1. if args["nursery-crops"] == "ripe" else preview_clock + 1.}
+	if args.has("nursery-seeds"):
+		GameState.store_items("emberpod_seed", 3)
+		GameState.store_items("dewpod_seed", 3)
+	_repair_mask = GameState.cultivation.repairs
+	terrain = MapTerrain.new(_repair_map(_repair_mask), GameState.heading)
 	$Map.texture = terrain.map_texture
 	player.setup(terrain)
+	player.air_source = GameState.facility_air.breathable # piped from the main base O2 generator
 	player.camera.zoom_locked = true
 	player.camera.setup(player, $Map, terrain.max_view_px, terrain.streaming)
 	stream = MapStream.new()
@@ -43,12 +72,21 @@ func _ready() -> void:
 	player.refresh_window()
 	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	fx.setup(terrain.view_json, player)
+	day_night.facility = true
+	day_night.facility_power_source = GameState.nursery_powered
 	day_night.setup($Map, terrain.light_mask, terrain.sun_mask)
 	player.step_source = func() -> String: return "step_metal"
 	_setup_doors()
+	cultivation = CultivationWorld.new()
+	add_child(cultivation)
+	cultivation.setup(player, multitool, terrain, $Actors, true)
+	cleanup = NurseryCleanup.new()
+	add_child(cleanup)
+	cleanup.setup(terrain, $Actors)
+	GameState.cultivation.changed.connect(_repair_changed)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
-	view_turn.setup(terrain, player, _apply_view, Callable(), stream)
+	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
 	var inventory_ui := InventoryUI.new()
 	add_child(inventory_ui)
 	inventory_ui.setup(player, multitool)
@@ -63,7 +101,13 @@ func _ready() -> void:
 	suit_light.setup(player, multitool)
 	var objectives := ObjectiveHUD.new()
 	add_child(objectives)
-	objectives.setup(player)
+	objectives.setup(player, "nursery")
+	dialogue = BotDialogue.new()
+	add_child(dialogue)
+	bot = Bot.new()
+	$Actors.add_child(bot)
+	bot.setup(ViewData.get_json(terrain.view_json)["bot"], player, multitool, terrain, dialogue, null)
+	bot.set_cleanup(cleanup)
 	PauseMenu.attach(self, player, multitool)
 	if GameState.tool_out:
 		player.set_tool_out(true)
@@ -110,6 +154,9 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	day_night.set_masks(terrain.light_mask, terrain.sun_mask)
 	fx.load_view(terrain.view_json)
 	multitool.set_view()
+	cultivation.load_view()
+	cleanup.load_view()
+	bot.set_view()
 	for door in doors:
 		door.queue_free()
 	doors.clear()
@@ -119,6 +166,34 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 func _window_moved(_heading: int) -> void:
 	player.refresh_window()
 	multitool.refresh_window()
+	if cultivation != null:
+		cultivation.refresh_window()
+	if bot != null:
+		bot.refresh_window()
+	if cleanup != null:
+		cleanup.refresh_window()
+
+
+func _turn_boards() -> Array:
+	return cultivation.boards() + cleanup.boards() + (bot.boards() if bot != null else [])
+
+
+func _repair_map(mask: int) -> String:
+	if mask == 0:
+		return MAP_JSON
+	return MAP_JSON.get_base_dir().path_join(ViewData.get_json(MAP_JSON)["repair_variants"][str(mask)])
+
+
+func _repair_changed() -> void:
+	if _repair_mask == GameState.cultivation.repairs:
+		return
+	_repair_mask = GameState.cultivation.repairs
+	_refresh_repaired_art.call_deferred()
+
+
+func _refresh_repaired_art() -> void:
+	terrain.replace_variant(_repair_map(_repair_mask))
+	_apply_view(terrain.heading, player.facing_dir())
 
 
 static func _args() -> Dictionary:
@@ -130,6 +205,16 @@ static func _args() -> Dictionary:
 
 
 func _run_test_hooks(args: Dictionary) -> void:
+	if args.has("story-auto"):
+		dialogue.auto_advance = float(args["story-auto"])
+	if args.has("bot-wake") or args.has("bot-talk"):
+		player.teleport(bot.world + Vector2(bot.radius + 14., 0))
+	if args.has("bot-wake"):
+		player.set_tool_out(true)
+		player.tool_state = Player.Tool.READY
+		multitool.forced_use = true
+	if args.has("bot-talk"):
+		get_tree().create_timer(.5).timeout.connect(bot.talk)
 	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
@@ -140,6 +225,10 @@ func _run_test_hooks(args: Dictionary) -> void:
 		player.teleport(Vector2(float(xy[0]), float(xy[1])))
 	if args.has("equip"):
 		player.set_tool_out(true)
+	if args.has("use"):
+		multitool.forced_use = true
+	if args.has("nursery-at"):
+		player.teleport(cultivation.interaction_point(args["nursery-at"]))
 	if args.has("walk"):
 		var w: PackedStringArray = args["walk"].split(",")
 		player.forced_input = Vector2(float(w[0]), float(w[1]))

@@ -4,8 +4,8 @@
 
 The little bot that sleeps in its charging cradle in storage (tools/interior_gen.py bakes the
 cradle and says where it stands: base_interior.json -> bot). Woken with the multitool's fix job,
-it greets the astronaut, turns on reserve power, hands out the first objectives and then follows
-the astronaut round the base (scripts/story/). Modelled with the same SDF primitives, ramps and
+it greets the astronaut, releases maintenance access, gives ordered repair guidance and patrols
+the floor to clean (scripts/story/). The nursery uses the same native body and sheet. Modelled with the same SDF primitives, ramps and
 inside light as the rest of the base, so it looks drawn by the same hand.
 
 Eight facings, like the astronaut (Player.DIRS: E SE S SW W NW N NE, screen compass): the camera
@@ -25,7 +25,9 @@ Animations, one row per facing (frames side by side), listed in bot.json:
   idle     a slow hover-bob, and a blink
   talk     the eyes pulse brighter, a little bob
   move     leaning into its flight, bobbing
+  clean_start / clean / clean_end   deploy intake, lower and sweep, stow it again
 `face` is where its eyes are, from the foot anchor, per facing: the game keeps them lit at night.
+`nozzle_tips` exports the exact vacuum intake position per facing/absolute atlas frame.
 
 Writes assets/maps/base_interior/bot/bot.png and bot.json.
 """
@@ -51,7 +53,7 @@ OID = M.OID
 # A pose: how high it floats off the floor (world units), how far it slumps forward (radians),
 # what its eyes are (dark, lit, blinking shut, brighter while talking), and its antenna tip.
 DORMANT = dict(z=1.6, slump=0.42, eyes='darkwin', tip='deadbulb', blink=False)
-AWAKE = dict(z=3.0, slump=0.0, eyes='screen', tip='beacon', blink=False)
+AWAKE = dict(z=3.0, slump=0.0, eyes='screen', tip='beacon', blink=False, vacuum=0., sweep=0.)
 
 
 def pose(**kw):
@@ -182,6 +184,10 @@ def animations():
     add('talk', [pose(z=AWAKE['z'] + 0.3 * math.sin(i / 4 * math.tau), eyes='ledcyan' if i % 2 else 'screen') for i in range(4)],
         8, True)
     add('move', [pose(z=AWAKE['z'] + 0.4 * math.sin(i / 4 * math.tau), slump=0.16) for i in range(4)], 8, True)
+    add('clean_start', [pose(z=3.-1.3*i/3, slump=.3*i/3, vacuum=i/3) for i in range(4)], 10, False)
+    add('clean', [pose(z=1.7 + .15 * math.sin(i / 8 * math.tau), slump=.3,
+                       vacuum=1., sweep=math.sin(i / 8 * math.tau)) for i in range(8)], 8, True)
+    add('clean_end', [pose(z=1.7+1.3*i/3, slump=.3*(1.-i/3), vacuum=1.-i/3) for i in range(4)], 10, False)
     return frames, anims
 
 
@@ -248,7 +254,19 @@ def main():
     I.set_frame()
     make = DESIGNS[DESIGN]
     poses, anims = animations()
-    models = [make(p) for p in poses]
+    models = []
+    for pose_data in poses:
+        parts, face = make(pose_data)
+        amount = pose_data.get('vacuum', 0.)
+        tip = np.array([pose_data.get('sweep', 0.) * 1.5, -4.-3.*amount, .6])
+        if amount > 0.:
+            shoulder = np.array([0., -3.2, 4.1])
+            elbow = np.array([tip[0]*.5, -4.8, 2.3])
+            parts += [P_('vacuum_arm', A.RoundCone(shoulder, elbow, .4, .3), 'steel', 'bot'),
+                      P_('vacuum_hose', A.RoundCone(elbow, tip, .3, .4), 'dark', 'bot'),
+                      P_('vacuum_head', A.RoundBox(tip, (2.6, .9, .45), .25), 'coral', 'bot'),
+                      P_('vacuum_intake', A.RoundBox(tip + [0., -.7, -.1], (2., .3, .2), .1), 'dark', 'bot')]
+        models.append((parts, face))
     face = models[anims['idle'][0]][1]                   # the eyes, upright
     rows = [[faced(parts, i) for parts, _ in models] for i in range(len(FACINGS))]
     box = M.sprite_box([fp for row in rows for fp in row], pad=3)
@@ -258,6 +276,8 @@ def main():
     data = dict(design=DESIGN, file='bot.png', facings=FACINGS, frames=len(poses), frame_size=[box[2], box[3]],
                 anchor=[round(M.AX - box[0], 1), round(M.AY - box[1], 1)],
                 face=[face_offset(face, i) for i in range(len(FACINGS))], animations=anims,
+                nozzle_tips=[[face_offset(np.array([p.get('sweep', 0.)*1.5, -4.-3.*p.get('vacuum',0.), .6]), i)
+                              for p in poses] for i in range(len(FACINGS))],
                 note='The base\'s bot (sleeps at base_interior.json -> bot.world). One row per facing (Player.DIRS order, '
                      'screen compass: right for every view), one column per frame; anchor = its foot in a frame; face = '
                      'its eyes from the foot, map px, per facing. animations: [first frame, count, fps, loop].')

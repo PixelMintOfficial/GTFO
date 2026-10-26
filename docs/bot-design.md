@@ -5,6 +5,35 @@ default; B and C are kept as `BOT_DESIGN`. Every name is a placeholder in `data/
 the one place to change them. Values the team must still fill in are marked **TBD**. Ideas for
 what else it could do are at the end, for the team meeting: none of them are approved or built.
 
+## Current behaviour (2026-10-26)
+
+UNIT no longer follows. Both maintenance bodies patrol and vacuum floor sites, with native
+deploy/sweep/stow frames, canonical walk-grid paths and session positions. Six generated soil,
+leaf and tray-chip piles in each facility shrink progressively under its body's vacuum. Its generated
+nozzle anchors attach pickup particles to the actual intake; completed piles stay gone across
+views/airlocks. The bodies stroll for a random 16–30 seconds between jobs, with 1.2–3.5-second
+idle pauses; then choose an actual unfinished pile. Empty floor never triggers cleaning.
+Timing comes from bot_story.json maintenance; per-body remaining delays persist in StoryState.
+The quiet, local bot_vacuum sound has its own generator recipe, independent of the multitool.
+Paths validate each movement leg around curved room walls, with alternate reachable approaches.
+Pauses, conversations and out-of-reach positions cannot advance cleanup. A second, initially broken
+nursery body uses the same UNIT mind. Repairing it with the equipped held scanner is a
+prerequisite for nursery systems. Its introduction teaches crops, night Moonwell seeds
+(20:00–05:00), and day-long growth.
+
+Main advice proceeds O2 → three storage panes → generator → solar. New advice raises an
+exclamation until heard. Seven tasks include opening feeds and all three solar routes.
+Glass advice resolves current turn bindings. Maintenance access opens bulkheads mechanically;
+`access_opened` is separate from O2-only reserve and generator/solar mains. Nursery tasks track
+the body, three systems, five planted beds and first harvests. UNIT's own cleaning stays off
+the player checklist. Its introduction explains that repairing the console screen switches on
+nursery lighting; main-base oxygen supply remains separate.
+F1's nursery UNIT toggle completes/resets this body and its local introduction. The live body
+updates scanner registration, dormant/idle animation and patrol immediately; reset stops its
+vacuum and returns it home. Other nursery repairs/crops and the main-base story stay intact.
+This update supersedes the follower/two-task
+behaviour in the original design history below. See data/bot_story.json and the facility tests.
+
 ## Why
 
 The player came through the airlock into storage with the power and oxygen rooms open on either

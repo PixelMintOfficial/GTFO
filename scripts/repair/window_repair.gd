@@ -19,7 +19,7 @@ var box_cracks := {}
 var box_world: Variant = null
 var box_broken := false
 var puzzles: Dictionary = {}
-## "base" once every storage pane is mended: all three main-base domes have whole glass.
+## "base" once every storage pane is mended: storage's exterior holes have whole glass.
 ## Empty while broken; a room ID remains supported for single-room developer previews.
 var dome_mended := ""
 

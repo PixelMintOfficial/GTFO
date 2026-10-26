@@ -5,7 +5,8 @@ extends Node
 ## time and freeze a need, Esc closes it and gives the controls back, and it never opens in a
 ## cutscene.
 ## Task toggles use real keys, clicks and gamepad buttons, bypass inventory/reach, refresh
-## broken/restored room/window/solar art, retain state through scenes and follow manual edits.
+## broken/restored room/window/solar/nursery art, retain state through scenes and follow manual edits.
+## Nursery toggles cover the live UNIT scanner/patrol state and screen-controlled lighting.
 ## Run: godot --headless --path . res://tests/dev_panel_test.tscn  (failures exit nonzero)
 ## Native captures: -- --gallery=shots/admin-tasks (run without --headless).
 
@@ -42,6 +43,7 @@ func _ready() -> void:
 	_clock()
 	await _scene()
 	await _interior()
+	await _nursery()
 	print("DEV PANEL TESTS: %d checks, %d failures" % [_checks, _failures])
 	await Audio.quit(1 if _failures else 0)
 
@@ -135,7 +137,7 @@ func _scene() -> void:
 		_check(DevPanel.task_complete(task), task + " completes remotely")
 		_check(GameState.inventory == inventory, task + " costs no materials")
 	_check(GameState.base_powered() and BasePower.active, "all prerequisites immediately light the base")
-	_check((world.get_node("DomeFX") as DomeFX)._glass.size() == 6, "all base domes mend without a camera turn")
+	_check((world.get_node("DomeFX") as DomeFX)._glass.size() == 2, "both visible storage holes mend without a camera turn")
 	_check(not GameState.suit_light, "task completion never enables the suit lamp")
 	GameState.clock = 22.0
 	await _frames()
@@ -143,8 +145,10 @@ func _scene() -> void:
 	# A real solar control invalidates DONE; toggling solves the actual optics again.
 	GameState.solar_field.toggle_feed(0)
 	_check(not DevPanel.task_complete("solar"), "solar row follows a manually closed feed")
-	await _tap(KEY_ENTER)
+	await _click_task(panel, 3)
 	_check(GameState.solar_field.supplies_power(), "solar toggle repairs a manually changed route")
+	for i in DevPanel.TASKS.size() - 4:
+		await _tap(KEY_DOWN)
 	await _tap(KEY_DOWN)
 	_check(panel._row == 0, "down wraps from final task to time")
 	await _tap(KEY_UP)
@@ -152,7 +156,7 @@ func _scene() -> void:
 	await _click_task(panel, 2)
 	_check((world.get_node("DomeFX") as DomeFX)._glass.is_empty(), "outside reset removes glass immediately")
 	await _click_task(panel, 2)
-	_check((world.get_node("DomeFX") as DomeFX)._glass.size() == 6, "outside toggle restores all three domes again")
+	_check((world.get_node("DomeFX") as DomeFX)._glass.size() == 2, "outside toggle restores both visible storage holes again")
 	await _pad(JOY_BUTTON_B)
 	_check(not panel.opened and player.controls_enabled, "gamepad B closes and restores controls")
 	await _tap(KEY_F1)
@@ -274,6 +278,50 @@ func _interior() -> void:
 	var world := load("res://scenes/overworld.tscn").instantiate() as Node2D
 	get_tree().root.add_child.call_deferred(world)
 	await _frames()
-	_check(BasePower.active and (world.get_node("DomeFX") as DomeFX)._glass.size() == 6, "completed tasks survive leaving the base")
+	_check(BasePower.active and (world.get_node("DomeFX") as DomeFX)._glass.size() == 2, "completed tasks survive leaving the base")
 	world.queue_free()
+	await _frames()
+
+
+func _nursery() -> void:
+	GameState.heading = 0
+	GameState.clock = 22.
+	var room := load("res://scenes/nursery.tscn").instantiate() as Node2D
+	get_tree().root.add_child.call_deferred(room)
+	await _frames()
+	room.day_night.speed = 0.
+	var panel: DevPanel
+	for node in room.get_children():
+		if node is DevPanel: panel = node
+	_check(room._repair_mask == 7 and room.bot.state == Bot.State.PATROL, "remote nursery repairs persist on entry")
+	_check(DayNight.fixture_power == 1., "completed screen powers the nursery")
+	var inventory := GameState.inventory.duplicate(true)
+	var base_story := [GameState.story.bot_awake, GameState.story.named, GameState.story.objectives_given]
+	await _tap(KEY_F1)
+	await _shot("nursery-all-done-night")
+	await _click_task(panel, 5)
+	_check(not GameState.nursery_powered() and DayNight.fixture_power == 0. and room._repair_mask == 6, "screen reset switches lights and screen art off live")
+	await _shot("nursery-screen-reset-night")
+	await _click_task(panel, 5)
+	_check(GameState.nursery_powered() and DayNight.fixture_power == 1. and room._repair_mask == 7, "screen completion restores power without closing master control")
+	for index in [6, 7]:
+		await _click_task(panel, index)
+		var id: String = DevPanel.TASKS[index][1].trim_prefix("nursery_")
+		_check(not GameState.cultivation.repaired(id) and not GameState.cultivation.repair_progress.has(id), id + " reset clears its scanner progress")
+		_check(DayNight.fixture_power == 1., id + " reset leaves console power intact")
+		await _click_task(panel, index)
+		_check(GameState.cultivation.repaired(id) and room._repair_mask == 7, id + " completion refreshes nursery art")
+	await _click_task(panel, 4)
+	_check(room.bot.state == Bot.State.DORMANT and room.bot._anim == "dormant", "UNIT reset returns live body to dormant animation")
+	_check(not room.bot._fix.is_empty() and room.bot._fix["progress"] == 0., "UNIT reset reinstates its repair scanner")
+	_check(GameState.cultivation.repairs == 7 and DayNight.fixture_power == 1., "UNIT reset does not reset other nursery systems")
+	await _shot("nursery-unit-reset-night")
+	await _click_task(panel, 4)
+	_check(room.bot.state == Bot.State.PATROL and room.bot._fix.is_empty() and not room.dialogue.opened, "UNIT completion resumes patrol without interrupting F1")
+	_check(base_story == [GameState.story.bot_awake, GameState.story.named, GameState.story.objectives_given], "nursery controls preserve main story progress")
+	_check(GameState.inventory == inventory, "nursery controls never spend or grant items")
+	_check(panel.opened and not room.player.controls_enabled, "nursery art refresh retains master-control ownership")
+	await _shot("nursery-controls-restored-night")
+	await _tap(KEY_ESCAPE)
+	room.queue_free()
 	await _frames()

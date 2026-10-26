@@ -1,0 +1,419 @@
+{
+  "sites": [
+    {
+      "id": "base_litter_0",
+      "world": [
+        -61.0,
+        540.0
+      ],
+      "views": [
+        {
+          "file": "pile_0.png",
+          "data": "pile_0_data.png",
+          "frames": 4,
+          "frame_size": [
+            36,
+            26
+          ],
+          "anchor": [
+            16.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_0_r1.png",
+          "data": "pile_0_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            41,
+            24
+          ],
+          "anchor": [
+            21.0,
+            11.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_0_r2.png",
+          "data": "pile_0_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            36,
+            26
+          ],
+          "anchor": [
+            20.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_0_r3.png",
+          "data": "pile_0_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            41,
+            24
+          ],
+          "anchor": [
+            20.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "base_litter_1",
+      "world": [
+        48.0,
+        512.0
+      ],
+      "views": [
+        {
+          "file": "pile_1.png",
+          "data": "pile_1_data.png",
+          "frames": 4,
+          "frame_size": [
+            31,
+            22
+          ],
+          "anchor": [
+            17.0,
+            12.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_1_r1.png",
+          "data": "pile_1_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            32,
+            21
+          ],
+          "anchor": [
+            14.0,
+            12.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_1_r2.png",
+          "data": "pile_1_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            31,
+            23
+          ],
+          "anchor": [
+            14.0,
+            11.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_1_r3.png",
+          "data": "pile_1_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            32,
+            21
+          ],
+          "anchor": [
+            18.0,
+            10.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "base_litter_2",
+      "world": [
+        21.0,
+        457.0
+      ],
+      "views": [
+        {
+          "file": "pile_2.png",
+          "data": "pile_2_data.png",
+          "frames": 4,
+          "frame_size": [
+            40,
+            23
+          ],
+          "anchor": [
+            20.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_2_r1.png",
+          "data": "pile_2_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            34,
+            26
+          ],
+          "anchor": [
+            15.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_2_r2.png",
+          "data": "pile_2_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            40,
+            23
+          ],
+          "anchor": [
+            20.0,
+            11.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_2_r3.png",
+          "data": "pile_2_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            34,
+            26
+          ],
+          "anchor": [
+            19.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "base_litter_3",
+      "world": [
+        -258.0,
+        495.0
+      ],
+      "views": [
+        {
+          "file": "pile_3.png",
+          "data": "pile_3_data.png",
+          "frames": 4,
+          "frame_size": [
+            45,
+            28
+          ],
+          "anchor": [
+            21.0,
+            15.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_3_r1.png",
+          "data": "pile_3_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            42,
+            28
+          ],
+          "anchor": [
+            19.0,
+            14.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_3_r2.png",
+          "data": "pile_3_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            45,
+            28
+          ],
+          "anchor": [
+            24.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_3_r3.png",
+          "data": "pile_3_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            42,
+            29
+          ],
+          "anchor": [
+            23.0,
+            15.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "base_litter_4",
+      "world": [
+        -213.77163859753387,
+        573.1480502970953
+      ],
+      "views": [
+        {
+          "file": "pile_4.png",
+          "data": "pile_4_data.png",
+          "frames": 4,
+          "frame_size": [
+            36,
+            28
+          ],
+          "anchor": [
+            15.0,
+            14.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_4_r1.png",
+          "data": "pile_4_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            45,
+            24
+          ],
+          "anchor": [
+            23.0,
+            11.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_4_r2.png",
+          "data": "pile_4_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            36,
+            28
+          ],
+          "anchor": [
+            21.0,
+            15.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_4_r3.png",
+          "data": "pile_4_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            45,
+            23
+          ],
+          "anchor": [
+            22.0,
+            13.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    },
+    {
+      "id": "base_litter_5",
+      "world": [
+        214.0,
+        488.0
+      ],
+      "views": [
+        {
+          "file": "pile_5.png",
+          "data": "pile_5_data.png",
+          "frames": 4,
+          "frame_size": [
+            40,
+            28
+          ],
+          "anchor": [
+            18.0,
+            14.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_5_r1.png",
+          "data": "pile_5_r1_data.png",
+          "frames": 4,
+          "frame_size": [
+            44,
+            25
+          ],
+          "anchor": [
+            23.0,
+            12.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_5_r2.png",
+          "data": "pile_5_r2_data.png",
+          "frames": 4,
+          "frame_size": [
+            40,
+            28
+          ],
+          "anchor": [
+            22.0,
+            15.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        },
+        {
+          "file": "pile_5_r3.png",
+          "data": "pile_5_r3_data.png",
+          "frames": 4,
+          "frame_size": [
+            44,
+            26
+          ],
+          "anchor": [
+            21.0,
+            14.0
+          ],
+          "depth_offset": 64.0,
+          "local_depth_scale": 512.0
+        }
+      ]
+    }
+  ],
+  "clean_seconds": 4.5
+}

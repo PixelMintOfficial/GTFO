@@ -1,0 +1,26 @@
+{
+  "reach": 26.0,
+  "growth_hours": 24.0,
+  "regrow_hours": 24.0,
+  "wild_regrow_hours": 4.0,
+  "seed_handful": 3,
+  "wild_per_species": 16,
+  "clearing_radius": 24.0,
+  "site_spacing": 95.0,
+  "forest_fraction_min": 0.55,
+  "wild_scale": {"moonwell": 0.55, "cindercoil": 0.58},
+  "repairs": [
+    {"id": "console", "label": "CONTROL PANEL", "bit": 1},
+    {"id": "light", "label": "GROW LIGHTS", "bit": 2},
+    {"id": "rack", "label": "GROWING RACK", "bit": 4}
+  ],
+  "beds": {"rack0": "food", "rack1": "food", "rack2": "food", "silo0": "water", "silo1": "water"},
+  "crops": {
+    "food": {"seed": "emberpod_seed", "fruit": "emberpod", "label": "EMBERPODS", "wild": "cindercoil", "yield": 3},
+    "water": {"seed": "dewpod_seed", "fruit": "dewpod", "label": "DEWPODS", "wild": "moonwell", "yield": 2}
+  },
+  "wild": {
+    "cindercoil": {"crop": "food", "label": "CINDERCOIL"},
+    "moonwell": {"crop": "water", "label": "MOONWELL"}
+  }
+}

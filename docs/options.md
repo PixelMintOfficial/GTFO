@@ -9,10 +9,10 @@ The horizontal **Volume** slider controls the existing Master bus, including amb
 effects and interface sounds. Zero mutes the bus. Individual authored bus levels and every
 sound's generated mix remain unchanged. Drag/click the slider or use left/right while focused.
 
-**GUI Scale** offers **Small**, **Medium** and **Large**. Large retains the original UI size.
-Small and Medium shrink the day/night clock, stat panel, six-slot hotbar and E backpack.
+**GUI Scale** offers **Small**, **Medium** and **Large**. Small is the compact default; Large retains the original UI size.
+Small and Medium shrink the day/night clock, stat panel, task checklist, O2 reserve counter, six-slot hotbar and E backpack.
 The hotbar stays bottom-centred, the backpack stays centred, and the stat panel retains its
-normalized saved position. Mouse hitboxes use the same transforms as drawing. The options
+fixed top-left position. Mouse hitboxes use the same transforms as drawing. The options
 screen keeps a fixed size so its controls remain stable while changing GUI size.
 
 Target relative sizes are 60%, 80% and 100%, rounded to distinct whole display-pixel scales
@@ -23,8 +23,8 @@ not change. Keyboard arrows/d-pad navigate; Enter/A selects a size.
 `GameState.settings` owns `GameSettings` across scenes. Changes apply immediately and save
 on resume (or scene/window exit while options are open) to `user://settings.cfg`:
 `audio.master_volume` (0–1) and `interface.gui_size`
-(`small`, `medium`, `large`). Missing/invalid entries default to full volume and Large.
-This is a preference file, separate from inventory/world progress and HUD position.
+(`small`, `medium`, `large`). Missing/invalid entries default to full volume and Small.
+This is a preference file, separate from inventory and world progress.
 
 `PauseMenu` owns tree pause while open and consumes input before world handlers. Its
 independent `Multitool.options_suppressed` guard waits for F/X release after resuming.

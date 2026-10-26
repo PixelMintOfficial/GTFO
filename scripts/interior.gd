@@ -4,8 +4,8 @@ extends Node2D
 ## F at the airlock door goes back outside.
 ## Escape opens the paused volume/GUI options (PauseMenu).
 ## Storage's three smashed panes and the cargo box you stand on to reach them: WindowCracks. The
-## bot asleep in its cradle in storage (then following you round the base), the bulkheads sealing
-## the power and oxygen rooms until it switches on reserve power, and the objective line:
+## bot asleep in its cradle in storage (then patrolling and cleaning), the bulkheads sealing
+## the power and oxygen rooms until it releases maintenance access, and the objective line:
 ## scripts/story/.
 ##
 ## Test hooks (after "--"): --spawn=X,Y  --walk=DX,DY[,run]  --capture=PATH
@@ -30,7 +30,7 @@ extends Node2D
 ## --quit=SECONDS (run for this long, then shut the sound down and quit cleanly)
 ## --turn=N (start with the camera turned N quarter turns round; G / H turn it)
 ## --turn-left / --turn-right (turn the camera once after a second, see ViewTurn)
-## --story=awake (the bot already awake and named, reserve power on, objectives handed out)
+## --story=awake (bot awake/named, maintenance access open, objectives handed out)
 ## --bot-wake (stand by the bot with the tool out and hold F: the fix job wakes it)
 ## --bot-talk (stand by the awake bot and talk to it)  --story-auto=S (lines move on after S seconds)
 ## --bot-follow (the bot awake and following, beside you from the start; implies --story=awake)
@@ -46,7 +46,9 @@ var repairs: MachineRepairs
 var cracks: WindowCracks
 var view_turn: ViewTurn
 var solar_input: SolarPowerInput
+var reserve_meter: ReserveMeter
 var suit_light: SuitLight
+var cleanup: NurseryCleanup
 var bot: Bot
 var bulkheads: Array[Bulkhead] = []
 var dialogue: BotDialogue
@@ -79,16 +81,11 @@ func _ready() -> void:
 	stream.published.connect(_window_moved)
 	multitool.setup(PROPS_JSON, player, terrain, $Actors)
 	fx.setup(terrain.view_json, player)
+	day_night.facility = true
 	day_night.setup($Map, terrain.light_mask, terrain.sun_mask, terrain)
 	player.step_source = func() -> String: return "step_metal"
 	var meta := ViewData.get_json(terrain.view_json)
-	# Damaged O2 room has unsafe air; the suit spends its reserve until wiring is restored.
-	# Room coordinates are world metadata and remain valid through camera turns.
-	var room: Dictionary = meta["rooms"]["oxygen"]
-	var air_center := Vector2(room["center"][0], room["center"][1])
-	var air_radius := float(room["radius"]) * float(GameState.survival.config["unsafe_room_radius_fraction"])
-	player.air_source = func() -> bool:
-		return player.world_pos.distance_to(air_center) >= air_radius or GameState.repair_for("oxygen").task_completed("wiring")
+	player.air_source = GameState.facility_air.breathable
 	_setup_door(meta)
 	repairs = MachineRepairs.new()
 	add_child(repairs)
@@ -96,6 +93,9 @@ func _ready() -> void:
 	solar_input = SolarPowerInput.new()
 	add_child(solar_input)
 	solar_input.setup(meta, terrain)
+	reserve_meter = ReserveMeter.new()
+	add_child(reserve_meter)
+	reserve_meter.setup(meta, terrain)
 	for machine_id in ["power", "oxygen"]:
 		GameState.repair_for(machine_id).changed.connect(_repair_changed)
 	cracks = WindowCracks.new()
@@ -113,7 +113,11 @@ func _ready() -> void:
 	suit_light = SuitLight.new()                       # L: the base is dead, so bring your own
 	add_child(suit_light)
 	suit_light.setup(player, multitool)
+	cleanup = NurseryCleanup.new()
+	add_child(cleanup)
+	cleanup.setup(terrain, $Actors, NurseryCleanup.BASE_ART)
 	_setup_story(meta)
+	bot.set_cleanup(cleanup)
 	view_turn = ViewTurn.new()
 	add_child(view_turn)
 	view_turn.setup(terrain, player, _apply_view, _turn_boards, stream)
@@ -123,7 +127,6 @@ func _ready() -> void:
 	var args := _args()
 	if GameState.arrive == "interior" or args.has("arrive"):
 		door.arrive()
-		bot.greet_at(door.stand_point())                 # it waited inside; it meets you at the door
 	GameState.arrive = ""
 	_run_test_hooks(args)
 
@@ -150,7 +153,7 @@ func _setup_story(meta: Dictionary) -> void:
 
 
 func _story_changed() -> void:
-	if GameState.story.reserve_power:
+	if GameState.story.access_opened:
 		for b in bulkheads:
 			b.open()
 
@@ -175,12 +178,14 @@ func _apply_view(k: int, world_facing: Vector2) -> void:
 	multitool.set_view()
 	repairs.set_view(meta)
 	solar_input.load_view(meta)
+	reserve_meter.load_view(meta)
 	cracks.set_view(meta)
 	for info in meta["bulkheads"]:
 		for b in bulkheads:
 			if b.id == info["id"]:
 				b.set_view(info, terrain.view_json.get_base_dir())
 	bot.set_view()
+	cleanup.load_view()
 	door.queue_free()
 	_setup_door(meta)
 
@@ -190,6 +195,7 @@ func _window_moved(_heading: int) -> void:
 	player.refresh_window()
 	multitool.refresh_window()
 	bot.refresh_window()
+	if cleanup != null: cleanup.refresh_window()
 	for b in bulkheads:
 		b.refresh_window()
 
@@ -201,6 +207,7 @@ func _turn_boards() -> Array:
 		if n is WorldProp and not (n as WorldProp).gone:
 			out.append(ViewTurn.prop_board(terrain, n))
 	out.append_array(bot.boards())
+	out.append_array(cleanup.boards())
 	for b in bulkheads:
 		out.append_array(b.boards())
 	return out

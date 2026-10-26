@@ -12,9 +12,10 @@ The bot and its bulkheads: the corridors to the power and oxygen rooms are seale
 until the bot wakes. Their frames are baked into the room (their threshold is walkable); their
 leaves are sprite sheets (anim/bulkhead_<room>*.png, closed -> open; `bulkheads` in each view's
 JSON). The bot's charging cradle is baked into storage; the bot itself is a sprite
-(tools/bot_gen.py), sleeping at `bot.world`. Reserve power lights the emergency lines:
-base_interior_reserve*.png (game.reserve_png) is that light, laid over the map additively once
-the bot switches it on.
+(tools/bot_gen.py), sleeping at `bot.world`. Main generator + solar power lights the emergency lines:
+base_interior_reserve*.png (game.reserve_png) retains its historical name. Maintenance access
+only releases bulkheads; the O2 reserve is separate. reserve_meter_gen.py adds a compact native
+physical RESERVES gauge in every view/variant; --meter-only refreshes it independently.
 
     python tools/interior_gen.py
 
@@ -2343,7 +2344,10 @@ def export_door():
 
 if __name__ == '__main__':
     np.seterr(all='ignore')
-    if '--solar-input-only' in sys.argv:
+    if '--meter-only' in sys.argv:
+        from reserve_meter_gen import build as meter_build
+        meter_build()
+    elif '--solar-input-only' in sys.argv:
         M.SUN = SUN_IN
         export_solar_input()
     elif '--repair-metadata-only' in sys.argv:
@@ -2377,3 +2381,5 @@ if __name__ == '__main__':
             OUT = os.path.join(root, folder)
             build(fixed)
         export_solar_input()
+        from reserve_meter_gen import build as meter_build
+        meter_build()

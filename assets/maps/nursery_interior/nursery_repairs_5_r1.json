@@ -1,0 +1,214 @@
+{
+  "name": "nursery_interior",
+  "image": "nursery_repairs_5_r1.png",
+  "size": [
+    1300,
+    900
+  ],
+  "origin_px": [
+    650.0,
+    1188.4442799572107
+  ],
+  "view": 1,
+  "views": [
+    "nursery_repairs_5.json",
+    "nursery_repairs_5_r1.json",
+    "nursery_repairs_5_r2.json",
+    "nursery_repairs_5_r3.json"
+  ],
+  "game": {
+    "depth_png": "nursery_repairs_5_depth_r1.png",
+    "light_png": "nursery_repairs_5_light_r1.png",
+    "sun_png": "nursery_repairs_5_sun_r1.png",
+    "walk_png": "nursery_repairs_5_walk.png",
+    "depth_scale": 20.0,
+    "height_offset": 100.0,
+    "height_scale": 150.0,
+    "world_units_per_px": 0.43301270189221935,
+    "depth_to_px": 0.5773502691896257,
+    "px_per_unit": 2.0,
+    "character_scale": 0.5,
+    "grid_size": 760,
+    "spawn_world": [
+      0.0,
+      404.0
+    ],
+    "heading": 1,
+    "layout_scale": 0.8,
+    "view_center": [
+      0.0,
+      520.0
+    ]
+  },
+  "zoom": {
+    "max_view_px": [
+      1300,
+      900
+    ],
+    "frames": {}
+  },
+  "doors": [
+    {
+      "id": 1,
+      "file": "anim/door_1_r1.png",
+      "frames": 12,
+      "position": [
+        438,
+        318
+      ],
+      "frame_size": [
+        166,
+        168
+      ],
+      "sort_y": 434,
+      "world": [
+        -133.63712939501946,
+        463.7317349915706
+      ],
+      "dir": [
+        0.9216353751380653,
+        0.38805700005813376
+      ],
+      "lamp_px": [
+        522.9397053993653,
+        369.03590016174667
+      ],
+      "height": 34.04
+    },
+    {
+      "id": 5,
+      "file": "anim/door_5_r1.png",
+      "frames": 12,
+      "position": [
+        336,
+        586
+      ],
+      "frame_size": [
+        148,
+        168
+      ],
+      "sort_y": 704,
+      "world": [
+        100.32627766916414,
+        415.3117102582634
+      ],
+      "dir": [
+        -0.6919053632356148,
+        0.7219882051154248
+      ],
+      "lamp_px": [
+        413.60165123575507,
+        633.1942087828672
+      ],
+      "height": 34.04
+    }
+  ],
+  "rooms": {
+    "nursery": {
+      "label": "NURSERY",
+      "center": [
+        0.0,
+        520.0
+      ],
+      "radius": 148.0
+    }
+  },
+  "fx": {
+    "shafts": [],
+    "leds": [],
+    "core": [
+      0,
+      0
+    ],
+    "tanks": [],
+    "sparks": [],
+    "vapor": []
+  },
+  "repair_variants": {
+    "1": "nursery_repairs_1.json",
+    "2": "nursery_repairs_2.json",
+    "3": "nursery_repairs_3.json",
+    "4": "nursery_repairs_4.json",
+    "5": "nursery_repairs_5.json",
+    "6": "nursery_repairs_6.json",
+    "7": "nursery_repairs_7.json"
+  },
+  "cultivation": {
+    "repair_mask": 5,
+    "repairs": [
+      {
+        "id": "console",
+        "label": "CONTROL PANEL",
+        "bit": 1,
+        "world": [
+          0.0,
+          418.4
+        ],
+        "stand_world": [
+          0.0,
+          396.8
+        ],
+        "scan_height": 32.0
+      },
+      {
+        "id": "light",
+        "label": "GROW LIGHTS",
+        "bit": 2,
+        "world": [
+          -81.60000000000001,
+          508.0
+        ],
+        "stand_world": [
+          -82.4,
+          502.4
+        ],
+        "scan_height": 9.600000000000001
+      },
+      {
+        "id": "rack",
+        "label": "GROWING RACK",
+        "bit": 4,
+        "world": [
+          0.0,
+          635.2
+        ],
+        "stand_world": [
+          0.0,
+          615.2
+        ],
+        "scan_height": 36.0
+      }
+    ],
+    "crops": "crops.json"
+  },
+  "bot": {
+    "body": "nursery",
+    "world": [
+      -38.400000000000006,
+      443.2
+    ],
+    "facing": [
+      0.0,
+      -1.0
+    ],
+    "radius": 7.0,
+    "cleaning_spots": [
+      [
+        -38.400000000000006,
+        457.6
+      ],
+      [
+        35.2,
+        483.2
+      ],
+      [
+        9.600000000000001,
+        569.6
+      ],
+      [
+        -48.0,
+        558.4
+      ]
+    ]
+  }
+}

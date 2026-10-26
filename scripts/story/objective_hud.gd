@@ -1,13 +1,14 @@
 class_name ObjectiveHUD
 extends CanvasLayer
-## What the bot asked of you, just under the time panel (top left), in both scenes: one row per
+## Base or nursery tasks under the time panel (top left): one row per
 ## objective with a small box that ticks when it is done (the done ones dim and struck through),
-## in the time panel's plate. It appears once the bot hands the objectives out (StoryState) and
+## in the time panel's plate. Base tasks follow UNIT's introduction; nursery tasks show on entry and
 ## lights up when one is done. Hidden in cutscenes, while the world is paused and once everything
 ## is done and the moment has passed. Owner-approved exception to the compact HUD (§9, §12).
 ## Resetting a task through F1 brings its objective back after the completion linger.
+## GUI changes update layout immediately, including while the options menu pauses the world.
 
-const ORIGIN := Vector2(6, 37)
+const ORIGIN := Vector2(6, 75)
 const ROW := 9
 const TEXT := Color("#f2f0f8")
 const DONE := Color("#7fe6cf")
@@ -16,6 +17,7 @@ const DIM := Color("#8f8ba8")
 const LINGER := 6.0
 
 var _player: Player
+var _context := "base"
 var _panel: Node2D
 var _was := {}
 var _flash := 0.0
@@ -23,26 +25,37 @@ var _all_done_t := -1.0
 var _drawn: Variant = null      # what the panel showed last time it was drawn
 
 
-func setup(player: Player) -> void:
+func setup(player: Player, context := "base") -> void:
 	_player = player
+	_context = context
 	layer = 6
 	_panel = Node2D.new()
 	_panel.draw.connect(_draw_panel)
 	add_child(_panel)
-	for o in GameState.story.objectives():
+	GameState.settings.changed.connect(_layout)
+	_layout()
+	for o in GameState.story.objectives(_context):
 		_was[o["id"]] = o["done"]
-	if GameState.story.objectives_given and GameState.story.all_done():
+	if GameState.story.all_done(_context):
 		_all_done_t = LINGER
 
 
+func _layout() -> void:
+	_panel.scale = Vector2.ONE * SurvivalHUD.compact_scale(_panel)
+	_panel.queue_redraw()
+
+
 func _process(delta: float) -> void:
+	var next_scale := Vector2.ONE * SurvivalHUD.compact_scale(_panel)
+	if _panel.scale != next_scale:
+		_layout()
 	_flash = maxf(0.0, _flash - delta * 1.4)
-	var objectives := GameState.story.objectives()
+	var objectives := GameState.story.objectives(_context)
 	for o in objectives:
 		if o["done"] and not _was.get(o["id"], false):
 			_flash = 1.0
 		_was[o["id"]] = o["done"]
-	if not objectives.is_empty() and GameState.story.all_done():
+	if not objectives.is_empty() and GameState.story.all_done(_context):
 		_all_done_t = maxf(_all_done_t, 0.0) + delta
 	else:
 		_all_done_t = -1.0
@@ -50,15 +63,14 @@ func _process(delta: float) -> void:
 			and not _player.puppet and not get_tree().paused
 	# Redraw only when something it shows has changed (as DayClock does): the ticks, the flash
 	# fading in steps, or the plate moving aside for the survival panel.
-	var state := [objectives.map(func(o: Dictionary) -> bool: return o["done"]), ceili(_flash * 8.0),
+	var state := [objectives, ceili(_flash * 8.0),
 			_plate_rect(objectives).position if not objectives.is_empty() else Vector2.ZERO]
 	if state != _drawn:
 		_drawn = state
 		_panel.queue_redraw()
 
 
-## Where the plate goes and how big it is: under the time panel, out of the movable survival
-## panel's way.
+## The compact plate sits under the fixed stats/time/supply panels.
 func _plate_rect(objectives: Array) -> Rect2:
 	var w := 0
 	for o in objectives:
@@ -69,7 +81,7 @@ func _plate_rect(objectives: Array) -> Rect2:
 
 
 func _draw_panel() -> void:
-	var objectives := GameState.story.objectives()
+	var objectives := GameState.story.objectives(_context)
 	if objectives.is_empty():
 		return
 	var r := _plate_rect(objectives)

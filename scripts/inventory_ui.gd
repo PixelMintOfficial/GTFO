@@ -3,11 +3,12 @@ extends CanvasLayer
 ## Six-slot quick access and a paused 24-slot backpack, shared by both scenes.
 ## E / Start toggles; F / X remains world interaction. Click two slots to swap;
 ## arrows / d-pad navigate, Enter / A picks and places. 1-6 / wheel select quick access.
-## Draws with PixelFont and generated resource sprites (including window glass), at 384x216.
+## Draws with PixelFont and generated resource sprites on a compact, bottom-centred canvas.
 ## Test hooks (both scenes): --open-inventory opens after setup, --inventory-demo
 ## seeds ore/scrap explicitly for screenshots; normal games start with only the tool.
 ## GUI preferences scale the backpack about the centre and keep the hotbar at the bottom;
 ## input uses the same canvas transform, including after live changes in the pause menu.
+## Native cultivation icons cover Emberpod/Dewpod seeds and food/water fruit; C consumes fruit.
 
 const DARK := Color("#22182c")
 const VOID := Color("#0b0915")
@@ -62,6 +63,9 @@ func setup(player: Player, tool: Multitool) -> void:
 	glass.atlas = load("res://assets/maps/base_interior/" + glass_data["file"])
 	glass.region = Rect2(Vector2.ZERO, Vector2(glass_data["frame_size"][0], glass_data["frame_size"][1]))
 	_textures["glass"] = glass
+	var crops := ViewData.get_json("res://assets/cultivation/cultivation.json")
+	for kind in crops["icons"]:
+		_textures[kind] = load("res://assets/cultivation/" + crops["icons"][kind])
 	_portrait = player.sprite.sprite_frames.get_frame_texture("idle_SE", 0)
 	GameState.inventory_changed.connect(_refresh)
 	tool.inventory_full.connect(func() -> void:
@@ -211,7 +215,7 @@ func _input(event: InputEvent) -> void:
 
 func _layout() -> void:
 	var view := _canvas.get_viewport_rect().size
-	var factor := minf(view.x / 384.0, view.y / 216.0) * GameState.settings.gui_factor(_canvas)
+	var factor := SurvivalHUD.compact_scale(_canvas)
 	_canvas.scale = Vector2.ONE * factor
 	_canvas.position = ((view - Vector2(384, 216) * factor) * 0.5).floor()
 	_hotbar_offset = Vector2(0, maxf(0, (view.y / factor - 216) * .5)).round()
@@ -282,7 +286,7 @@ func _draw_inventory() -> void:
 	elif opened:
 		name = "QUICK ACCESS - " + name
 	else:
-		name += "   C - USE" if selected.get("kind", "") in ["ration", "water"] else "   E - BACKPACK"
+		name += "   C - USE" if GameState.survival.config["consumables"].has(selected.get("kind", "")) else "   E - BACKPACK"
 	var w := PixelFont.width(name)
 	_canvas.draw_rect(Rect2(Vector2(192 - floori(w / 2.0) - 4, 163) + _hotbar_offset, Vector2(w + 8, 10)), VOID)
 	PixelFont.draw(_canvas, Vector2(192 - floori(w / 2.0), 165) + _hotbar_offset, name, WHITE)
@@ -312,7 +316,7 @@ func _draw_slot(index: int) -> void:
 			SurvivalHUD.draw_icon(_canvas, "hunger" if kind == "ration" else "thirst", r.position + Vector2(9, 9), GOLD if kind == "ration" else TEAL, 2)
 		else:
 			var tex: Texture2D = _textures[kind]
-			# Existing pixel art, rendered at native size; no new generated assets.
+			# Generator-owned resource/crop art, rendered at its native pixel size.
 			_canvas.draw_texture(tex, (r.position + (CELL - tex.get_size()) * 0.5).floor())
 		if slot["count"] > 1:
 			var count_text := str(slot["count"])

@@ -10,7 +10,7 @@ extends Node
 ## scripts' lights are left alone (additive layers, and nodes tagged with the meta "dn_unlit").
 ## Unpowered places stay dark: the lamp the astronaut carries is SuitLight's, off until they
 ## switch it on.
-## BasePower adds the main base's normal lighting once both machines and solar are restored.
+## BasePower adds the main base's normal lighting once generator and solar are restored.
 ## Interiors with no_sun_map remove baked daylight exactly at night, rather than dimming rays.
 ##
 ## Every other world node with no material of its own (smoke, dust, gas, snow, the doors, the
@@ -18,6 +18,9 @@ extends Node
 ## CanvasLayer is left alone. The time panel (DayClock) is made here too.
 ##
 ## Test hooks (after "--"): --time=HOUR (e.g. 21.5)  --day=N  --day-speed=X (time runs X times faster)
+## Facilities use switched indoor lighting: dim without mains at every hour; bright with
+## the facility's power source. Base uses generator/solar; nursery uses its repaired console.
+## The astronomical night/clock remain unchanged.
 
 signal phase_changed(phase: String)
 signal new_day(day: int)
@@ -66,6 +69,10 @@ static var light_mul := Color.WHITE
 var clock_panel: DayClock
 ## How many times faster than normal the clock runs (a test hook sets it).
 var speed := 1.0
+var facility := false
+var facility_power_source: Callable
+static var darkness := 0.0
+static var fixture_power := 1.0
 
 var _graded: ShaderMaterial
 var _map_mat: ShaderMaterial
@@ -148,11 +155,22 @@ func _update(delta: float, quiet: bool) -> void:
 	daylight = 1.0 - night
 	var mul: Color = light[0]
 	var add: Color = light[1]
+	var saturation: float = light[2]
+	darkness = night
+	fixture_power = 1.
+	if facility:
+		var powered: bool = facility_power_source.call() if facility_power_source.is_valid() else GameState.base_powered()
+		fixture_power = 1. if powered else 0.
+		mul = Color(.88, .91, .94) if fixture_power > 0. else Color(.075, .085, .13)
+		add = Color(.025, .025, .03) if fixture_power > 0. else Color(.006, .006, .014)
+		saturation = .96 if fixture_power > 0. else .58
+		darkness = 1. - fixture_power
 	light_mul = Color(mul.r + add.r, mul.g + add.g, mul.b + add.b)
 	RenderingServer.global_shader_parameter_set("dn_mul", Vector3(mul.r, mul.g, mul.b))
 	RenderingServer.global_shader_parameter_set("dn_add", Vector3(add.r, add.g, add.b))
-	RenderingServer.global_shader_parameter_set("dn_sat", light[2])
+	RenderingServer.global_shader_parameter_set("dn_sat", saturation)
 	RenderingServer.global_shader_parameter_set("dn_night", night)
+	RenderingServer.global_shader_parameter_set("dn_power", fixture_power)
 	if quiet:
 		day = d
 		phase = ph

@@ -25,6 +25,7 @@ func tap(key: int) -> void:
 
 func _ready() -> void:
 	var state := SurvivalState.new()
+	state.config["oxygen"]["depletion"] = 5. # accelerated fixture for depletion-boundary checks
 	for kind in SurvivalState.KINDS:
 		state.set_value(kind, 1000)
 		check(state.values[kind] == 100, kind + " upper clamp")
@@ -75,6 +76,7 @@ func _ready() -> void:
 	check(state.values["health"] == 100, "repeated depletion clears old damage time")
 	state.reset()
 	var other := SurvivalState.new()
+	other.config["oxygen"]["depletion"] = 5.
 	state.advance(25, false, true)
 	for i in 100:
 		other.advance(0.25, false, true)
@@ -111,7 +113,7 @@ func _ready() -> void:
 	for size in [Vector2i(384, 216), Vector2i(768, 432), Vector2i(1024, 768), Vector2i(1920, 1080)]:
 		get_tree().root.size = size
 		await get_tree().process_frame
-		check(hud._canvas.scale == bag._canvas.scale and hud._canvas.position == bag._canvas.position, "HUD matches inventory at " + str(size))
+		check(hud._canvas.scale == bag._canvas.scale and hud._panel.position == SurvivalHUD.MARGIN, "compact HUD remains anchored at " + str(size))
 	GameState.select_slot(1)
 	GameState.survival.set_value("hunger", 30)
 	await tap(KEY_C)
@@ -148,7 +150,9 @@ func _ready() -> void:
 	check(not astronaut.can_breathe(), "damaged oxygen room air")
 	GameState.repair_for("oxygen").complete_task("cracks")             # wiring follows cracks
 	GameState.repair_for("oxygen").complete_task("wiring")
-	check(astronaut.can_breathe(), "wiring restores air")
+	check(not astronaut.can_breathe(), "repaired O2 still leaks through broken storage glass")
+	for pane in ["burst", "crescent", "gash"]: GameState.window_repair.fix(pane)
+	check(astronaut.can_breathe(), "sealed glass retains reserve O2")
 	astronaut.head_submerged = true
 	check(not astronaut.can_breathe(), "submerged head overrides air")
 	astronaut.head_submerged = false

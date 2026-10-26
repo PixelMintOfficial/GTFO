@@ -18,7 +18,7 @@ extends Node2D
 ## panes. Completing a scan also removes that hole's live shaft/dust from InteriorFX.
 ## Paired no_sun pixels follow sealed panes and partial scans, keeping nighttime light separate
 ## from the daylight image through camera turns, machine swaps and scene changes.
-## With every pane mended, all three main-base domes outside are mended too:
+## With every pane mended, all three storage-dome holes outside are mended too:
 ## GameState.window_repair.dome_mended = "base", drawn on the overworld by DomeFX.
 ## State changes from the F1 toggles restore/reopen panes and their lighting immediately.
 
