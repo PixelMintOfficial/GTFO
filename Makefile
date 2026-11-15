@@ -192,6 +192,8 @@ check-tests:
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-solar.log
 	@$(GODOT) --headless --path . res://tests/solar_beam_test.tscn 2>&1 | tee /tmp/gtfo-beams.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-beams.log
+	@$(GODOT) --headless --path . res://tests/reply_cutscene_test.tscn 2>&1 | tee /tmp/gtfo-reply.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-reply.log
 	@$(GODOT) --headless --path . res://tests/survival_test.tscn 2>&1 | tee /tmp/gtfo-survival.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-survival.log
 	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn 2>&1 | tee /tmp/gtfo-hud.log | grep -v '^$$' || true

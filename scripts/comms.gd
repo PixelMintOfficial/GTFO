@@ -6,6 +6,8 @@ extends Node2D
 ## Test hooks: --arrive --exit --turn=N --turn-right --time=H --console
 ## --capture=PATH --seconds=S --quit=S --equip --use --suit-light
 ## --comms-main-power starts with the main-base reactor and solar feeds restored.
+## --comms-reply also repairs the screen and has Earth's reply due at once, so ReplyCutscene
+## plays (debug builds); --reply-auto=S moves its lines on S seconds after each is complete.
 
 const MAP_JSON := "res://assets/maps/comms_interior/comms.json"
 const PROPS_JSON := "res://assets/maps/comms_interior/comms_props.json"
@@ -20,6 +22,7 @@ var _screen: Dictionary = {}
 var _console_hint: Node2D
 var _console_message := ""
 var _release_guard := false
+var _reply: ReplyCutscene
 
 @onready var player: Player = $Actors/Player
 @onready var multitool: Multitool = $Multitool
@@ -34,9 +37,11 @@ func _ready() -> void:
 	Audio.bed("amb_dome", 1.0)
 	if args.has("turn"):
 		GameState.heading = posmod(int(args["turn"]), 4)
-	if args.has("comms-main-power") and OS.is_debug_build():
+	if (args.has("comms-main-power") or args.has("comms-reply")) and OS.is_debug_build():
 		GameState.repair_for("power").debug_complete(true)
 		GameState.solar_field.debug_complete(true)
+	if args.has("comms-reply") and OS.is_debug_build():
+		GameState.comms_repair_progress = 1.0
 	_variant = _art_state()
 	terrain = MapTerrain.new(_map_path(), GameState.heading)
 	$Map.texture = terrain.map_texture
@@ -71,6 +76,7 @@ func _ready() -> void:
 	if args.has("suit-light") and not suit_light.on():
 		suit_light.toggle()
 	PauseMenu.attach(self, player, multitool)
+	_setup_reply()
 	if GameState.tool_out:
 		player.set_tool_out(true)
 	if GameState.arrive == "interior" or args.has("arrive"):
@@ -133,6 +139,15 @@ func _setup_screen() -> void:
 		multitool.add_fixable(_screen, _screen_fixed)
 
 
+## Earth's answer plays here, at the console, once (last child: it takes input first).
+func _setup_reply() -> void:
+	var stand: Array = ViewData.get_json(terrain.view_json)["console_stand"]
+	_reply = ReplyCutscene.new()
+	add_child(_reply)
+	_reply.setup(player, terrain, _screen["world"], float(_screen["scan_height"]), Vector2(float(stand[0]), float(stand[1])))
+	_reply.finished.connect(func() -> void: day_night.clock_panel.visible = true)
+
+
 func _place_screen() -> void:
 	var world: Vector2 = _screen["world"]
 	var floor_height := terrain.height_at(world)
@@ -151,6 +166,13 @@ func _process(_delta: float) -> void:
 			and not multitool.suppressed and not multitool.inventory_suppressed \
 			and not multitool.options_suppressed and player.world_pos.distance_to(world) <= Multitool.REACH
 	var mission := GameState.comms_mission
+	if mission.reply_received and not mission.reply_shown and _variant == 2 and not _reply.playing \
+			and player.controls_enabled and not player.puppet and not player.turning and not player.is_airborne() \
+			and not multitool.window_panel_open and not GameState.survival.dead:
+		day_night.clock_panel.visible = false
+		_reply.play()
+	if _reply.playing:
+		in_reach = false
 	var can_send := _variant == 2 and in_reach and not mission.has_transmitted()
 	multitool.comms_suppressed = can_send or _release_guard
 	if can_send and not _release_guard and Input.is_action_just_pressed("interact"):
@@ -213,6 +235,9 @@ func _run_test_hooks(args: Dictionary) -> void:
 		var stand: Array = ViewData.get_json(terrain.view_json)["console_stand"]
 		player.teleport(Vector2(float(stand[0]), float(stand[1])))
 		player.puppet_face(Vector2.DOWN)
+	if args.has("comms-reply") and OS.is_debug_build():
+		GameState.comms_mission.transmit(GameState.clock - 2.0 * CommsMission.LEG_HOURS - 0.01, true)
+		_reply.auto_advance = float(args.get("reply-auto", "-1"))
 	if args.has("equip"):
 		player.set_tool_out(true)
 	if args.has("use"):

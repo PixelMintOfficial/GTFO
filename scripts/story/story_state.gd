@@ -168,7 +168,7 @@ func comms_objectives(context: String) -> Array:
 		CommsMission.Stage.RECEIVER_OFFLINE:
 			label = labels["offline"]
 		CommsMission.Stage.RECEIVED:
-			label = labels["received"]
+			label = labels["received"] if mission.reply_shown else labels["unread"]
 	return [{"id": "comms_sos", "label": label, "done": mission.reply_received}]
 
 

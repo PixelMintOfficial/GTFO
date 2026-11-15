@@ -2,6 +2,8 @@ class_name CommsMission
 extends RefCounted
 ## One SOS per session. The signal travels on the game clock, even after the player
 ## leaves the dish. The repaired, powered receiver logs the reply once it can hear it.
+## The message itself is read in the comms room: a reply logged while the player is away
+## waits on the screen, and ReplyCutscene plays it the next time they are there.
 
 enum Stage { READY, OUTBOUND, INBOUND, RECEIVER_OFFLINE, RECEIVED }
 
@@ -11,6 +13,8 @@ const LEG_HOURS := LEG_MINUTES / 60.0
 
 var _sent_at := -1.0
 var reply_received := false
+## Earth's message has been read on the comms screen (ReplyCutscene plays once).
+var reply_shown := false
 
 
 func transmit(clock_hours: float, link_online: bool) -> bool:
