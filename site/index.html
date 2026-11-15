@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GTFO – Great Time For Oxygen</title>
+<meta name="description" content="A cozy isometric pixel-art survival game on the red planet Araxys. Crash-land, bring a dead outpost back to life with your multitool, and send an SOS home. Free for Windows, Linux and the browser.">
+<meta property="og:title" content="GTFO – Great Time For Oxygen">
+<meta property="og:description" content="Survive the red planet. Repair the base. Call home. Free for Windows, Linux and the browser.">
+<meta property="og:image" content="img/hero.png">
+<meta name="theme-color" content="#070a1a">
+<link rel="icon" href="img/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Silkscreen:wght@400;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="#top" aria-label="GTFO home"><span class="brand-mark" aria-hidden="true"></span>GTFO</a>
+  <nav aria-label="Main">
+    <a href="#story">Story</a>
+    <a href="#features">Features</a>
+    <a href="#screens">Screens</a>
+    <a href="#controls">Controls</a>
+    <a href="#download">Download</a>
+  </nav>
+  <a class="btn btn-small" href="play/">Play in browser</a>
+</header>
+
+<main id="top">
+
+<!-- ───────────────────────── hero ───────────────────────── -->
+<section class="hero">
+  <div class="hero-grid" aria-hidden="true"></div>
+  <div class="hero-planet" aria-hidden="true"></div>
+  <div class="hero-copy">
+    <p class="eyebrow">GTFO &nbsp;·&nbsp; Great Time For Oxygen</p>
+    <h1>Survive the Red Planet.<br>Call Home.</h1>
+    <p class="lead">A cozy pixel-art survival game. Crash-land on Araxys, bring a dead outpost back to life with your multitool, and send an SOS to Earth before the next solar storm.</p>
+    <div class="cta">
+      <a class="btn btn-primary" id="dl-windows" href="#download" data-os="windows">
+        <span class="btn-label">Download for Windows</span><span class="btn-sub" data-size="windows"></span>
+        <span class="btn-bar" aria-hidden="true"></span>
+      </a>
+      <a class="btn btn-ghost" id="dl-linux" href="#download" data-os="linux">
+        <span class="btn-label">Download for Linux</span><span class="btn-sub" data-size="linux"></span>
+        <span class="btn-bar" aria-hidden="true"></span>
+      </a>
+    </div>
+    <p class="cta-note">or <a href="play/">play it in your browser</a> &mdash; nothing to install</p>
+  </div>
+  <div class="hero-art">
+    <img src="img/hero.png" alt="The astronaut's lander lies smouldering in the red dust after the crash, hatch open, as the astronaut steps out." width="1920" height="635">
+  </div>
+  <ul class="pills" aria-label="Highlights">
+    <li><i class="ic ic-nasa" aria-hidden="true"></i>NASA Space Apps Challenge</li>
+    <li><i class="ic ic-sun" aria-hidden="true"></i>Solar storms from real NASA DONKI data</li>
+    <li><i class="ic ic-pc" aria-hidden="true"></i>Windows · Linux · Browser</li>
+    <li><i class="ic ic-free" aria-hidden="true"></i>Free to play</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── story ───────────────────────── -->
+<section class="section" id="story">
+  <p class="eyebrow">The story</p>
+  <h2>A planet to make livable.<br>A base that went silent.</h2>
+  <p class="section-lead">The crew before you built a base on Araxys and then stopped answering. Your ship doesn&rsquo;t survive the landing. Everything after that is up to you.</p>
+  <div class="steps">
+    <article class="step">
+      <img src="img/crash.png" alt="The lander tumbling out of control over the red dust." loading="lazy">
+      <span class="step-n">01</span>
+      <h3>Crash-land</h3>
+      <p>A solar storm cuts the radio mid-warning. The ship ploughs a trench beside the base and you climb out into the dust.</p>
+    </article>
+    <article class="step">
+      <img src="img/night.png" alt="The astronaut at night, lighting the way to the base airlock with the lamp on their suit." loading="lazy">
+      <span class="step-n">02</span>
+      <h3>Wake the base</h3>
+      <p>The base is dead and the nights are truly dark. Fix the oxygen plant, the reactor and the cracked windows, then line up the mirrors that power it.</p>
+    </article>
+    <article class="step">
+      <img src="img/earth.png" alt="The comms terminal showing a message from Mission Control: we will be sending a rescue team, estimated time of arrival 100 days." loading="lazy">
+      <span class="step-n">03</span>
+      <h3>Call home</h3>
+      <p>Repair the comms dish on the ice, send your SOS, and wait out the light-speed delay for Earth&rsquo;s answer.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ───────────────────────── features ───────────────────────── -->
+<section class="section" id="features">
+  <p class="eyebrow">What you&rsquo;ll do</p>
+  <h2>Small world. Lots to fix.</h2>
+  <div class="cards">
+    <article class="card">
+      <h3>One tool, four jobs</h3>
+      <p>Your multitool picks its job from what you point it at: mine rock, gather scrap, lift a crate, or fix what&rsquo;s broken. One button does it all.</p>
+    </article>
+    <article class="card">
+      <h3>Three lands</h3>
+      <p>Red-dust plains round the base, a glowing alien forest round the nursery, and a frozen massif where the comms dish waits.</p>
+    </article>
+    <article class="card">
+      <h3>Real solar storms</h3>
+      <p>Radiation warnings follow timing from archived NASA DONKI flare and particle data. Get inside, or the exposure meter fills.</p>
+    </article>
+    <article class="card">
+      <h3>Dark nights</h3>
+      <p>Day turns to a violet dusk and then to real dark in 12 minutes. Only glowing things stay lit, so you carry a lamp on your suit.</p>
+    </article>
+    <article class="card">
+      <h3>Grow your food</h3>
+      <p>Revive the nursery, collect wild seeds, and plant Emberpods for food and Dewpods for water. Moonwell seeds only open at night.</p>
+    </article>
+    <article class="card">
+      <h3>Turn the camera</h3>
+      <p>Every map is pre-rendered four times. Press G or H to swing the whole world a quarter turn and find what&rsquo;s hiding behind it.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ───────────────────────── screens ───────────────────────── -->
+<section class="section" id="screens">
+  <p class="eyebrow">Screens</p>
+  <h2>Every pixel is generated by code.</h2>
+  <p class="section-lead">No hand-drawn art: each map, machine and sprite is ray-marched from signed-distance models, then dithered and outlined in one shared palette.</p>
+  <div class="gallery">
+    <figure><img src="img/forest.png" alt="The alien forest: giant spotted mushroom trees and glowing plants." loading="lazy"><figcaption>The alien forest</figcaption></figure>
+    <figure><img src="img/ice.png" alt="The snowfields below the comms dish, with the airlock to the right." loading="lazy"><figcaption>The ice, below the comms dish</figcaption></figure>
+    <figure><img src="img/dusk.png" alt="The base airlock in the golden evening light." loading="lazy"><figcaption>Evening at the base airlock</figcaption></figure>
+    <figure><img src="img/cockpit.png" alt="The cockpit cut-away in the opening cutscene, with the planet rising behind it." loading="lazy"><figcaption>The opening cutscene</figcaption></figure>
+  </div>
+</section>
+
+<!-- ───────────────────────── download ───────────────────────── -->
+<section class="section" id="download">
+  <p class="eyebrow">Download</p>
+  <h2>Get GTFO</h2>
+  <p class="section-lead">Free, one file, nothing to install. Pick your system, or play right here in the browser.</p>
+
+  <div class="dl-grid">
+    <article class="dl" id="card-windows">
+      <h3>Windows</h3>
+      <p class="dl-meta">Windows 10 or 11, 64-bit &nbsp;·&nbsp; <span data-size="windows">&hellip;</span></p>
+      <a class="btn btn-primary btn-block" href="#" data-os="windows">
+        <span class="btn-label">Download for Windows</span>
+        <span class="btn-bar" aria-hidden="true"></span>
+      </a>
+      <p class="dl-status" data-status="windows" role="status" aria-live="polite"></p>
+      <ol class="how">
+        <li>Unzip <code>GTFO-windows.zip</code>.</li>
+        <li>Double-click <code>GTFO.exe</code>.</li>
+        <li>If Windows says it protected your PC, choose <b>More info</b>, then <b>Run anyway</b>. The game isn&rsquo;t code-signed.</li>
+      </ol>
+      <p class="hash">SHA-256 <code data-hash="windows">&hellip;</code></p>
+    </article>
+
+    <article class="dl" id="card-linux">
+      <h3>Linux</h3>
+      <p class="dl-meta">64-bit (x86_64), OpenGL 3.3 &nbsp;·&nbsp; <span data-size="linux">&hellip;</span></p>
+      <a class="btn btn-primary btn-block" href="#" data-os="linux">
+        <span class="btn-label">Download for Linux</span>
+        <span class="btn-bar" aria-hidden="true"></span>
+      </a>
+      <p class="dl-status" data-status="linux" role="status" aria-live="polite"></p>
+      <ol class="how">
+        <li>Unzip <code>GTFO-linux.zip</code>.</li>
+        <li>Make it runnable: <code>chmod +x GTFO.x86_64</code></li>
+        <li>Start it: <code>./GTFO.x86_64</code></li>
+      </ol>
+      <p class="hash">SHA-256 <code data-hash="linux">&hellip;</code></p>
+    </article>
+
+    <article class="dl dl-web">
+      <h3>In your browser</h3>
+      <p class="dl-meta">Chrome, Edge or Firefox on a computer &nbsp;·&nbsp; about 190 MB on first load</p>
+      <a class="btn btn-ghost btn-block" href="play/"><span class="btn-label">Play now</span></a>
+      <p class="dl-note">The first load downloads the whole game, so wait for the loading bar. After that the browser keeps it. A keyboard is needed; there are no touch controls yet.</p>
+    </article>
+  </div>
+
+  <p class="verify-note">The download checks itself: after the file arrives, the page compares its SHA-256 with the value above before it lets you save it.</p>
+
+  <details class="trouble">
+    <summary>The download button doesn&rsquo;t work</summary>
+    <p>Each file is stored in parts so it can be hosted for free. If your browser blocks the button, download the parts below and join them. On Windows (Command Prompt, in the folder with the parts):</p>
+    <pre><code>copy /b GTFO-windows.zip.part0+GTFO-windows.zip.part1+GTFO-windows.zip.part2 GTFO-windows.zip</code></pre>
+    <p>On Linux or macOS:</p>
+    <pre><code>cat GTFO-linux.zip.part* &gt; GTFO-linux.zip</code></pre>
+    <p class="parts" id="parts"></p>
+  </details>
+</section>
+
+<!-- ───────────────────────── controls ───────────────────────── -->
+<section class="section" id="controls">
+  <p class="eyebrow">Controls</p>
+  <h2>Keyboard or gamepad</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Action</th><th>Keyboard</th><th>Gamepad</th></tr></thead>
+      <tbody>
+        <tr><td>Move</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows</td><td>Left stick</td></tr>
+        <tr><td>Run</td><td><kbd>Shift</kbd></td><td>Right shoulder</td></tr>
+        <tr><td>Jump (hold to go higher)</td><td><kbd>Space</kbd></td><td>A</td></tr>
+        <tr><td>Take out / put away the multitool</td><td><kbd>T</kbd></td><td>Y</td></tr>
+        <tr><td>Use (hold to fix, mine or gather) &amp; open doors</td><td><kbd>F</kbd></td><td>X</td></tr>
+        <tr><td>Backpack</td><td><kbd>E</kbd></td><td>Start</td></tr>
+        <tr><td>Suit lamp</td><td><kbd>L</kbd></td><td>B</td></tr>
+        <tr><td>Turn the camera</td><td><kbd>G</kbd> / <kbd>H</kbd></td><td>D-pad left / right</td></tr>
+        <tr><td>Zoom (outdoors)</td><td><kbd>I</kbd> / <kbd>O</kbd></td><td>D-pad up / down</td></tr>
+        <tr><td>Map</td><td><kbd>M</kbd></td><td>Back</td></tr>
+        <tr><td>Eat or drink the selected item</td><td><kbd>C</kbd></td><td>Right-stick click</td></tr>
+        <tr><td>Options</td><td><kbd>Esc</kbd></td><td>Share / Misc 1</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-top">
+    <div>
+      <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>GTFO</a>
+      <p class="footer-line">Great Time For Oxygen. Made by Team Araxys for the NASA Space Apps Challenge. This is an independent entry and is not endorsed by NASA.</p>
+    </div>
+    <div class="footer-links">
+      <a href="#download">Download</a>
+      <a href="play/">Play in browser</a>
+      <a href="#controls">Controls</a>
+    </div>
+  </div>
+  <div class="credits">
+    <h4>Sound credits</h4>
+    <p>Natural sounds are open-licence recordings; the alien tech is synthesised. <a href="https://opengameart.org/content/jc-sounds-nature-ambient-pack-vol-1">Nature Ambient Pack Vol 1</a> by JC Sounds, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Also used, all CC0: Fire Crackling by AntumDeluge; 42 Snow and Gravel Footsteps by Corsica_S; Impact Sounds by Kenney; and several packs by rubberduck. Solar-storm timing uses archived data from NASA&rsquo;s DONKI database.</p>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>

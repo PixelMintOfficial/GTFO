@@ -27,6 +27,7 @@
 #   make shot           screenshot a scene: make shot ARGS="--spawn=-827,1440"
 #   make sounds         open assets/audio/viewer.html to listen to every sound
 #   make verify         import + check (what "done" needs, minus looking at it)
+#   make site           assemble the public website in build/site (landing page, /play, downloads)
 #   make export         build the Web, Windows and Linux versions into build/ and zip them
 #                       (needs Godot's export templates for the same version, see the target)
 #
@@ -39,7 +40,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: export help env sources sfx props solar base-power interior nursery comms cultivation windows astronaut astronaut-quick map intro tiles all import check \
+.PHONY: site export help env sources sfx props solar base-power interior nursery comms cultivation windows astronaut astronaut-quick map intro tiles all import check \
         check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots nursery-metadata nursery-cleanup dome-light reserve-meter
 
 help:
@@ -253,3 +254,9 @@ export: import
 	cd build/windows && zip -q ../GTFO-windows.zip GTFO.exe
 	cd build/linux && zip -q ../GTFO-linux.zip GTFO.x86_64
 	@ls -lh build/GTFO-*.zip
+
+# The public website: the landing page (site/), the browser game at /play/ and the Windows/Linux downloads, cut into
+# parts under 100 MB with a checksum manifest. Deploy build/site as a static site (vercel deploy build/site --prod).
+site: export
+	python3 tools/web_split_pck.py
+	python3 tools/build_site.py
