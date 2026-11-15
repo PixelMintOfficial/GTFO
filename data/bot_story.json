@@ -200,7 +200,23 @@
     "outbound": "SOS SENT / EARTH IN %d MIN",
     "inbound": "EARTH REPLIED / ETA %d MIN",
     "offline": "REPLY DUE / RESTORE MAIN POWER",
-    "received": "EARTH REPLY RECEIVED",
-    "acknowledgement": "WE READ YOU. RESCUE ALERTED."
+    "unread": "REPLY WAITING AT COMMS",
+    "received": "RESCUE TEAM ETA 100 DAYS",
+    "acknowledgement": "RESCUE TEAM ETA 100 DAYS"
+  },
+  "reply": {
+    "note": "Earth's answer, played once at the comms screen (scripts/story/reply_cutscene.gd). The message lines run together and wrap on the terminal; eta is drawn large under them.",
+    "header": "EARTH LINK",
+    "incoming": "INCOMING",
+    "decoding": "DECODING TRANSMISSION",
+    "from": "FROM: MISSION CONTROL, EARTH",
+    "message": [
+      "WE WILL BE SENDING A RESCUE TEAM.",
+      "ESTIMATED TIME OF ARRIVAL:"
+    ],
+    "eta": "100 DAYS",
+    "astronaut": "GUESS I GOTTA SURVIVE FOR A YEAR HERE...",
+    "unnamed": "YOU",
+    "skip": "ESC: SKIP"
   }
 }

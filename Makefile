@@ -27,6 +27,9 @@
 #   make shot           screenshot a scene: make shot ARGS="--spawn=-827,1440"
 #   make sounds         open assets/audio/viewer.html to listen to every sound
 #   make verify         import + check (what "done" needs, minus looking at it)
+#   make site           assemble the public website in build/site (landing page, /play, downloads)
+#   make export         build the Web, Windows and Linux versions into build/ and zip them
+#                       (needs Godot's export templates for the same version, see the target)
 #
 # Override the tools if yours are named differently:
 #   make check GODOT=godot4
@@ -37,7 +40,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props solar base-power interior nursery comms cultivation windows astronaut astronaut-quick map intro tiles all import check \
+.PHONY: site export help env sources sfx props solar base-power interior nursery comms cultivation windows astronaut astronaut-quick map intro tiles all import check \
         check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots nursery-metadata nursery-cleanup dome-light reserve-meter
 
 help:
@@ -192,6 +195,8 @@ check-tests:
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-solar.log
 	@$(GODOT) --headless --path . res://tests/solar_beam_test.tscn 2>&1 | tee /tmp/gtfo-beams.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-beams.log
+	@$(GODOT) --headless --path . res://tests/reply_cutscene_test.tscn 2>&1 | tee /tmp/gtfo-reply.log | grep -v '^$$' || true
+	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-reply.log
 	@$(GODOT) --headless --path . res://tests/survival_test.tscn 2>&1 | tee /tmp/gtfo-survival.log | grep -v '^$$' || true
 	@! grep -qiE 'ERROR|WARNING|[1-9][0-9]* failures' /tmp/gtfo-survival.log
 	@$(GODOT) --headless --path . res://tests/survival_hud_test.tscn 2>&1 | tee /tmp/gtfo-hud.log | grep -v '^$$' || true
@@ -228,3 +233,30 @@ sounds:
 
 clean-shots:
 	rm -rf $(SHOTS)
+
+# Playable builds for sharing, as zips in build/ (git-ignored). They need Godot's export templates
+# for this exact version: Godot > Editor > Manage Export Templates > Download, or the
+# Godot_v4.7.2-stable_export_templates.tpz from godotengine/godot-builds, unpacked into
+# ~/.local/share/godot/export_templates/4.7.2.stable/. Presets: export_presets.cfg.
+#   GTFO-web.zip      upload to itch.io as an HTML5 game (index.html at the zip's root); single-threaded,
+#                     so no special server headers. The game data is ~150 MB, over GitHub Pages' 100 MB file limit.
+#                     For a host with a 100 MB file limit (Vercel): python3 tools/web_split_pck.py
+#   GTFO-windows.zip  GTFO.exe, one file, nothing to install
+#   GTFO-linux.zip    GTFO.x86_64
+export: import
+	@mkdir -p build/web build/windows build/linux
+	@touch build/.gdignore
+	$(GODOT) --headless --path . --export-release "Web" build/web/index.html
+	$(GODOT) --headless --path . --export-release "Windows Desktop" build/windows/GTFO.exe
+	$(GODOT) --headless --path . --export-release "Linux" build/linux/GTFO.x86_64
+	@rm -f build/web/*.import build/GTFO-*.zip
+	cd build/web && zip -qr ../GTFO-web.zip .
+	cd build/windows && zip -q ../GTFO-windows.zip GTFO.exe
+	cd build/linux && zip -q ../GTFO-linux.zip GTFO.x86_64
+	@ls -lh build/GTFO-*.zip
+
+# The public website: the landing page (site/), the browser game at /play/ and the Windows/Linux downloads, cut into
+# parts under 100 MB with a checksum manifest. Deploy build/site as a static site (vercel deploy build/site --prod).
+site: export
+	python3 tools/web_split_pck.py
+	python3 tools/build_site.py

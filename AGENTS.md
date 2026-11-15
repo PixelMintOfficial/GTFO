@@ -53,7 +53,15 @@ it goes. Nothing in the pipeline needs to be remembered as a command line.
    plays first (the ship's approach, its crash by the base, the astronaut climbing out); any
    button skips it.
 3. You only need Python if you change art, sound, maps or data (§6): `make env`.
-4. The sound's source recordings are not in the repo (they are large and they are other
+4. To hand the game to someone who has no Godot, `make export` builds a Web version (itch.io
+   HTML5 zip), a one-file Windows `.exe` and a Linux binary into `build/` as zips (presets in
+   `export_presets.cfg`; needs Godot's 4.7.2 export templates installed). macOS is not exported.
+   For a live link, `make site` builds the whole public website into `build/site/` (the landing page from
+   `site/`, the browser game at `/play/` with its 150 MB data file cut into parts, and the Windows and Linux
+   zips cut into parts with a SHA-256 manifest, because hosts like Vercel refuse files over 100 MB). Deploy that
+   folder as a static site (`vercel deploy build/site --prod`). The page's download buttons join the parts in the
+   browser and check the checksum before saving.
+5. The sound's source recordings are not in the repo (they are large and they are other
    people's work). `make sources` downloads and checksums them into `assets/audio/sources/`.
    You only need them to *regenerate* sound; the baked `assets/audio/*.wav` are committed.
 
@@ -106,7 +114,7 @@ scripts/
                        window_repair.gd / window_cracks.gd: storage's smashed panes and the cargo box
                        glass_puzzle.gd / glass_repair_ui.gd: live glass jigsaw and sealing scan
   story/               the opening chapter: StoryState (session), PlayerProfile (the name, user://), Bot,
-                       Bulkhead, BotDialogue, NameEntry, ObjectiveHUD
+                       Bulkhead, BotDialogue, NameEntry, ObjectiveHUD, CommsMission, ReplyCutscene
   intro_cutscene.gd    IntroCutscene: the opening - cockpit, orbit, descent, the crash, the hatch
   crash_site.gd        the ship's fall, trench and impact, its hatch, and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
@@ -156,6 +164,7 @@ data/repair_circuits.json   authored five-circuit sequences for power and oxygen
 data/cultivation.json       repair/crop IDs, growth/yields, wild scales and clearing balance
 data/bot_story.json         every placeholder name (the bot, the previous owner), the bot's lines,
                             objectives and lore: change a name here and everything follows
+site/                  the landing page: index.html, style.css, main.js, img/ (game screenshots); built by tools/build_site.py
 assets/                (lowercase, always)
   intro/                   the opening cutscene: cockpit.png, planet.png, ship_orbit.png, intro.json, preview
   cultivation/             four-view wild plants, native colour/depth/glow sheets and inventory icons
@@ -807,6 +816,20 @@ consts in the named files.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
     blinks, the door unseals and vents gas, the astronaut walks in, the door closes, and
     the screen fades.
+- **Earth's reply** (`story/reply_cutscene.gd`, started by `comms.gd`): once per session, in
+  the comms room, when `CommsMission.reply_received` and not yet `reply_shown`. A reply logged
+  while the player is away waits there (objective `REPLY WAITING AT COMMS`); it plays as soon
+  as the astronaut is free in the online room. Letterboxed, the world keeps running:
+  - an amber mark beeps over the console while the astronaut (a puppet) walks to
+    `console_stand` and faces the screen;
+  - a terminal in the screen's own materials (white bezel, darkwin glass, pale lettering,
+    cyan dots, coral strip) grows out of the console, decodes, and types Mission Control's
+    message, then the ETA large in mustard;
+  - it folds back into the console, the astronaut turns to the camera and speaks on the
+    dialogue plate (their name on a coral tab, `YOU` if unnamed).
+  F / Enter / Space / A / X finish a line or move on; Esc / B skips. Controls come back once
+  F / X / Space are let go. Afterwards the objective and console read `RESCUE TEAM ETA 100 DAYS`.
+  Every line is in `data/bot_story.json → reply`; sounds reuse the intro's radio and UI panels.
 - **Intro** (`intro_cutscene.gd`, `crash_site.gd`): once per run, about 33 s, letterboxed; any
   key or button skips to the end (an `ANY KEY: SKIP` hint sits in the bottom bar).
   - Cockpit: the astronaut at the helm of a cut-away cockpit, stars streaming past the
@@ -1004,6 +1027,9 @@ the repaired variants; read by `Bulkhead`, `Bot`, `InteriorFX`), and `bot/bot.js
 `Bot`). `data/bot_story.json` (read by `StoryState`) owns `names`, `name_entry`, the line groups (`wake`, `correction`, `named`, `reserve`,
 `nursery_intro`, `nursery_remind`), ordered `guidance` (oxygen/glass/power/solar/done),
 `objectives` (`id`, `label`, optional `machine`/`route`) and talk `lore` (`id`, `trigger`, `lines`).
+`comms` holds the SOS objective labels (`unread` while Earth's reply waits on the screen) and
+the console's `acknowledgement`; `reply` (read by `ReplyCutscene`) holds the terminal's `header`,
+`incoming`, `decoding`, `from`, `message` lines, `eta`, the astronaut's line, `unnamed`, `skip`.
 Camera hints use `{TURN_LEFT}` / `{TURN_RIGHT}` resolved from InputMap. Nursery metadata
 adds `bot.body`, `world`, `facing`, `radius`, and canonical `cleaning_spots` for its body.
 
@@ -1242,6 +1268,8 @@ godot --headless --path . res://tests/solar_field_test.tscn          # solar opt
 godot --headless --path . res://tests/survival_test.tscn             # survival needs, damage, rescue
 godot --headless --path . res://tests/survival_hud_test.tscn         # the fixed compact survival panel
 godot --headless --path . res://tests/bot_story_test.tscn            # bulkheads, waking the bot, its talk, your name, reserve power, following
+godot --headless --path . res://tests/reply_cutscene_test.tscn       # Earth's reply in the comms room: waits, plays once, F/Esc, controls back
+godot --path . res://scenes/comms.tscn -- --arrive --comms-reply --reply-auto=1.5   # watch the reply cutscene
 godot --path . res://scenes/interior.tscn -- --bot-wake --name=ASTRO --story-auto=0.5 --capture=wake.png --seconds=1.4 --burst=10 --gap=0.45
 godot --path . res://scenes/interior.tscn -- --window=gash --turn=2 --cargo-mended=2 --window-fit=6 --capture=break.png --seconds=2.4 --burst=6 --gap=0.3
 godot --path . res://scenes/overworld.tscn -- --no-intro --turn-right --capture=turn.png --seconds=1.1 --burst=6 --gap=0.05
@@ -1461,7 +1489,8 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - Escape options now save master-volume and GUI-size preferences; gameplay saving is not built;
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
-- **Not built yet:** nursery minigames, Earth messaging, saving and loading (the clock
+- **Not built yet:** nursery minigames, the rescue itself (Earth's reply gives a 100-day ETA;
+  nothing counts it down or arrives yet), saving and loading (the clock
   would be saved with `GameState.clock`, the suit lamp with `GameState.suit_light`), sleep
   and night dangers, music (and there will not be any, §9).
 
@@ -1967,3 +1996,27 @@ Write one line per decision: date — decision (who approved it).
   gives the message 20 minutes per leg. `GameState.comms_mission` keeps the transmission
   and reply through airlocks, turns and rescue. The existing objective HUD shows signal
   progress. The storm alert shows the countdown and whether the player is sheltered.
+
+- 2026-11-15 — Owner: when Earth's reply arrives, play a cutscene in the comms room where the
+  message appears: "WE WILL BE SENDING A RESCUE TEAM. ESTIMATED TIME OF ARRIVAL: 100 DAYS",
+  then the astronaut says "GUESS I GOTTA SURVIVE FOR A YEAR HERE...". `ReplyCutscene` is drawn
+  in the comms screen's own materials and grows out of the console; it plays once
+  (`CommsMission.reply_shown`), waiting for the room if the reply came in elsewhere. Lines in
+  `bot_story.json → reply`; sounds reuse existing recipes. `--comms-reply` / `--reply-auto=S`
+  hooks and `tests/reply_cutscene_test.tscn` (in `make check`) cover it.
+
+
+- 2026-11-15 — Owner: the game must be shareable by link without installing Godot. Export presets
+  for Web (single-threaded, no special headers), Windows and Linux, and `make export`, which zips
+  them into `build/` (git-ignored). The web data file is ~150 MB, so it needs a host without a
+  100 MB file limit (itch.io); the desktop builds are one file each. The web build was run in
+  Chromium (intro, skip, walking) and the Linux build standalone; the Windows build is untested here.
+  It is live on Vercel as `gtfo-araxys` (https://gtfo-araxys.vercel.app), deployed from
+  `build/web-split`; its Vercel Authentication is off so the link is public.
+
+- 2026-11-15 — Owner: a landing page like the Qdrant hero (big headline, two buttons, art, badge row) with proper
+  Windows and Linux downloads. `site/` holds it; its imagery is our own game screenshots (no outside art), the
+  hero is the crashed lander. Downloads are the zips cut into three parts each; `site/main.js` fetches them in
+  parallel, joins them and checks the SHA-256 in `downloads/manifest.json` before offering the file. The browser
+  game moves to `/play/`. Tested in Chromium (a real download matched its checksum; desktop and phone layouts).
+  Deployed to Vercel as `gtfo-araxys`. The sound credits (CC BY) are on the page.

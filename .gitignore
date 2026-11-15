@@ -23,3 +23,6 @@ desktop.ini
 # by `make sources` (checksums are in tools/sfx_gen.py). The baked assets/audio/*.wav are
 # what the game ships.
 /assets/audio/sources/
+
+# Exported builds (godot --export-release; see export_presets.cfg)
+build/
