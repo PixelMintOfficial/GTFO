@@ -56,9 +56,11 @@ it goes. Nothing in the pipeline needs to be remembered as a command line.
 4. To hand the game to someone who has no Godot, `make export` builds a Web version (itch.io
    HTML5 zip), a one-file Windows `.exe` and a Linux binary into `build/` as zips (presets in
    `export_presets.cfg`; needs Godot's 4.7.2 export templates installed). macOS is not exported.
-   For a live link, `python3 tools/web_split_pck.py` cuts the web build's 150 MB data file into parts
-   under 100 MB (a Vercel/GitHub Pages limit) into `build/web-split/`; deploy that folder as a static
-   site (`vercel deploy build/web-split --prod`).
+   For a live link, `make site` builds the whole public website into `build/site/` (the landing page from
+   `site/`, the browser game at `/play/` with its 150 MB data file cut into parts, and the Windows and Linux
+   zips cut into parts with a SHA-256 manifest, because hosts like Vercel refuse files over 100 MB). Deploy that
+   folder as a static site (`vercel deploy build/site --prod`). The page's download buttons join the parts in the
+   browser and check the checksum before saving.
 5. The sound's source recordings are not in the repo (they are large and they are other
    people's work). `make sources` downloads and checksums them into `assets/audio/sources/`.
    You only need them to *regenerate* sound; the baked `assets/audio/*.wav` are committed.
@@ -162,6 +164,7 @@ data/repair_circuits.json   authored five-circuit sequences for power and oxygen
 data/cultivation.json       repair/crop IDs, growth/yields, wild scales and clearing balance
 data/bot_story.json         every placeholder name (the bot, the previous owner), the bot's lines,
                             objectives and lore: change a name here and everything follows
+site/                  the landing page: index.html, style.css, main.js, img/ (game screenshots); built by tools/build_site.py
 assets/                (lowercase, always)
   intro/                   the opening cutscene: cockpit.png, planet.png, ship_orbit.png, intro.json, preview
   cultivation/             four-view wild plants, native colour/depth/glow sheets and inventory icons
@@ -2010,3 +2013,10 @@ Write one line per decision: date — decision (who approved it).
   Chromium (intro, skip, walking) and the Linux build standalone; the Windows build is untested here.
   It is live on Vercel as `gtfo-araxys` (https://gtfo-araxys.vercel.app), deployed from
   `build/web-split`; its Vercel Authentication is off so the link is public.
+
+- 2026-11-15 — Owner: a landing page like the Qdrant hero (big headline, two buttons, art, badge row) with proper
+  Windows and Linux downloads. `site/` holds it; its imagery is our own game screenshots (no outside art), the
+  hero is the crashed lander. Downloads are the zips cut into three parts each; `site/main.js` fetches them in
+  parallel, joins them and checks the SHA-256 in `downloads/manifest.json` before offering the file. The browser
+  game moves to `/play/`. Tested in Chromium (a real download matched its checksum; desktop and phone layouts).
+  Deployed to Vercel as `gtfo-araxys`. The sound credits (CC BY) are on the page.
