@@ -25,12 +25,16 @@
 
 ## 🛰️ The challenge
 
-> **NASA Space Apps Challenge · Hackathon Challenge #3**
+> **NASA Space Apps Challenge · Challenge #03: Build a Junior Astronaut Mission Trainer** *(Games, Software)*
 
-GTFO is our entry for Challenge #3. Instead of a dashboard, we turned the problem into something you
-can *feel*: you are an astronaut on a broken outpost, with limited oxygen and a sky that can turn
-dangerous. Real solar-storm timing from **NASA's DONKI database** drives the radiation warnings, so the
-space-weather threat in the game follows real archived flares and particle events.
+The brief asks for an interactive game that lets young players manage a lunar or Martian outpost: life
+support, radiation protection, power and food, with communication delays and trade-offs between them,
+using NASA open data wherever possible.
+
+GTFO is our answer. You are an astronaut on a broken outpost and every system is something you fix and
+keep running yourself: you restore **oxygen**, bring back **power** by aligning solar mirrors, grow **food
+and water**, shelter from **radiation**, and send an SOS that takes real time to reach Earth. Radiation
+warnings follow archived solar-flare and particle events from **NASA's DONKI database**.
 
 ## 🌌 The game
 
@@ -99,16 +103,17 @@ No install and no Godot needed. The download page checks each file's SHA-256 bef
 
 <div align="center">
 
-| | Name | Role |
-|:-:|---|---|
-| 🧑‍🚀 | **[Member name]** | [Role, e.g. game design & code] |
-| 👩‍🚀 | **[Member name]** | [Role, e.g. art & pipeline] |
-| 🧑‍🚀 | **[Member name]** | [Role, e.g. story & sound] |
-| 👩‍🚀 | **[Member name]** | [Role, e.g. NASA data & testing] |
+| | Team member |
+|:-:|---|
+| 🧑‍🚀 | **Ahsan Faizan** |
+| 🧑‍🚀 | **Saad Salman** |
+| 🧑‍🚀 | **Talha Saquib** |
+| 🧑‍🚀 | **Ibrahim Kazmi** |
+| 🧑‍🚀 | **Burhan Farooq** |
+
+*Five people, one very red planet.* 🪐
 
 </div>
-
-> ✏️ *Replace the bracketed placeholders with your names and roles.*
 
 ## 🧰 Built with
 
@@ -247,7 +252,7 @@ table in `tools/sfx_gen.py` and kept up to date automatically.
 
 <div align="center">
 
-**GTFO** · Team Araxys · NASA Space Apps Challenge, Hackathon Challenge #3
+**GTFO** · Team Araxys · NASA Space Apps Challenge #03: Build a Junior Astronaut Mission Trainer
 
 <sub>An independent hackathon entry. It is not endorsed by or affiliated with NASA.</sub>
 
