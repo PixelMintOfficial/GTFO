@@ -441,7 +441,7 @@ See docs/cultivation.md.
     Each stores its crack placements/seams, circuit puzzle/countdown/index and completed tasks.
     Closing or changing scenes preserves both puzzles. `item_count` and `consume_item` perform
     the atomic three-scrap transaction only on crack success; ore is never consumed here.
-  - `survival`: `SurvivalState` with health/oxygen/hunger/thirst, changed/died signals and
+  - `survival`: `SurvivalState` with health, oxygen, hunger, thirst and radiation, changed/died signals and
     clamped mutation APIs. `data/survival.json` owns balance, starter supplies and consumable
     restoration. `consume_slot` uses the existing inventory. `rescue` restores vitals and
     supplies at overworld spawn while preserving session progress. See docs/survival.md.
@@ -1283,7 +1283,7 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
 - **Trails are not drawn on the ground**: they form where the plants thin out (no trail lamps
   since 2026-10-11, §12).
 - The base starts dead and broken; it gets repaired through play.
-- **Compact HUD only**; four survival meters, inventory stack counts, a six-slot hotbar,
+- **Compact HUD only**; five survival meters, inventory stack counts, a six-slot hotbar,
   local machine repair progress, the time panel and the objective line under it are
   approved (§12).
 - **A day/night cycle** with four parts of the day; lights stay lit at night. **The night is
@@ -1892,3 +1892,8 @@ Write one line per decision: date — decision (who approved it).
   bypasses only its nursery introduction for immediate patrol; reset restores its dormant
   repair job. Preserve main story, inventory, crops, harvests and cleaned dirt. Keep all eight
   task rows visible on the native 384x216 panel; keyboard, pad and pointer input retain one list.
+
+- 2026-11-15 — Owner: add a fifth survival wheel for radiation. Archived DONKI flare and
+  particle timestamps set the warning lead on the game clock. Exposure rises outdoors during
+  the storm and drains indoors. At full exposure, use the existing death and rescue flow.
+  `data/survival.json → radiation` owns timing and rates. See [Solar storms](docs/survival.md#solar-storms).

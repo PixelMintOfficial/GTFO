@@ -5,8 +5,15 @@ extends RefCounted
 signal changed
 signal died(cause: String)
 
-const KINDS := ["health", "oxygen", "hunger", "thirst"]
+const KINDS := ["health", "oxygen", "hunger", "thirst", "radiation"]
+enum SolarActivity { QUIET, WARNING, STORM }
 var config: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/survival.json"))
+var _radiation_rules: Dictionary = config["radiation"]
+## The recorded flare-to-particle interval sets the training warning time.
+var _warning_hours := (
+	Time.get_unix_time_from_datetime_string(str(_radiation_rules["particle_record"]).left(19))
+	- Time.get_unix_time_from_datetime_string(str(_radiation_rules["flare_record"]).left(19))
+) / 3600.0
 var values: Dictionary = {}
 var dead := false
 var cause := ""
@@ -31,6 +38,9 @@ func set_value(kind: String, value: float) -> void:
 	if _damage_time.has(kind) and values[kind] > float(config[kind]["damage_threshold"]):
 		_damage_time[kind] = 0.0
 	changed.emit()
+	if kind == "radiation" and values[kind] >= maximum(kind):
+		damage(maximum("health"), "RADIATION POISONING")
+		return
 	if kind == "health" and values[kind] <= 0.0:
 		dead = true
 		if cause.is_empty():
@@ -51,7 +61,7 @@ func reset() -> void:
 	dead = false
 	cause = ""
 	for kind in KINDS:
-		values[kind] = maximum(kind)
+		values[kind] = 0.0 if kind == "radiation" else maximum(kind)
 	for kind in _damage_time:
 		_damage_time[kind] = 0.0
 	changed.emit()
@@ -89,6 +99,26 @@ func advance(seconds: float, breathable: bool, sprinting: bool) -> void:
 			else:
 				_damage_time[kind] = 0.0
 		remaining -= step
+
+
+## Replay the archived warning and particle arrival once per game day.
+func solar_activity(clock_hours: float) -> SolarActivity:
+	var since_warning := fposmod(clock_hours - float(_radiation_rules["warning_hour"]), 24.0)
+	if since_warning < _warning_hours:
+		return SolarActivity.WARNING
+	if since_warning < _warning_hours + float(_radiation_rules["storm_hours"]):
+		return SolarActivity.STORM
+	return SolarActivity.QUIET
+
+
+func advance_radiation(seconds: float, indoors: bool, activity: SolarActivity) -> void:
+	if dead or seconds <= 0.0 or not is_finite(seconds):
+		return
+	var current: float = values["radiation"]
+	if indoors and current > 0.0:
+		set_value("radiation", current - float(_radiation_rules["recovery_per_second"]) * seconds)
+	elif not indoors and activity == SolarActivity.STORM:
+		set_value("radiation", current + float(_radiation_rules["exposure_per_second"]) * seconds)
 
 
 func restore(kind: String, amount: float) -> bool:

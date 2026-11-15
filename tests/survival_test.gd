@@ -27,6 +27,8 @@ func _ready() -> void:
 	var state := SurvivalState.new()
 	state.config["oxygen"]["depletion"] = 5. # accelerated fixture for depletion-boundary checks
 	for kind in SurvivalState.KINDS:
+		if kind == "radiation":
+			continue
 		state.set_value(kind, 1000)
 		check(state.values[kind] == 100, kind + " upper clamp")
 	state.set_value("hunger", -4)
@@ -82,6 +84,26 @@ func _ready() -> void:
 		other.advance(0.25, false, true)
 	for kind in SurvivalState.KINDS:
 		check(is_equal_approx(state.values[kind], other.values[kind]), kind + " frame partition")
+	var solar := SurvivalState.SolarActivity
+	check(state.solar_activity(9.99) == solar.QUIET, "quiet before flare")
+	check(state.solar_activity(10.0) == solar.WARNING and state.solar_activity(10.8) == solar.WARNING, "DONKI flare warns before particle arrival")
+	check(state.solar_activity(10.84) == solar.STORM and state.solar_activity(12.84) == solar.QUIET, "recorded onset and authored storm end")
+	check(state.solar_activity(34.0) == solar.WARNING, "storm replays each day")
+	check(state.values["radiation"] == 0, "starts without exposure")
+	state.advance_radiation(10, false, solar.WARNING)
+	check(state.values["radiation"] == 0, "warning does not expose")
+	state.advance_radiation(20, false, solar.STORM)
+	check(state.values["radiation"] == 50, "active storm raises exposure outdoors")
+	state.advance_radiation(10, false, solar.QUIET)
+	check(state.values["radiation"] == 50, "outdoors cannot recover even after storm")
+	state.advance_radiation(10, true, solar.STORM)
+	check(state.values["radiation"] == 10, "shelter recovers even during storm")
+	state.advance_radiation(10, true, solar.QUIET)
+	check(state.values["radiation"] == 0, "recovery clamps at zero")
+	state.advance_radiation(40, false, solar.STORM)
+	check(state.dead and state.cause == "RADIATION POISONING" and deaths[0] == 2, "full exposure kills once")
+	state.reset()
+	check(not state.dead and state.values["radiation"] == 0, "rescue clears exposure")
 	GameState.survival.reset()
 	GameState.reset_inventory()
 	GameState.stock_supplies()
@@ -108,6 +130,9 @@ func _ready() -> void:
 		if node is InventoryUI: bag = node
 	check(hud != null and bag != null, "scene UI")
 	check(not hud.debug_enabled, "development controls opt in")
+	GameState.clock = 11.0
+	await get_tree().create_timer(0.1).timeout
+	check(GameState.survival.values["radiation"] > 0, "overworld exposes player during storm")
 	await tap(KEY_F6)
 	check(GameState.survival.values["health"] == 100, "debug damage inactive normally")
 	for size in [Vector2i(384, 216), Vector2i(768, 432), Vector2i(1024, 768), Vector2i(1920, 1080)]:
@@ -120,8 +145,10 @@ func _ready() -> void:
 	check(GameState.survival.values["hunger"] > 64, "hotbar C input")
 	bag.toggle()
 	var hunger: float = GameState.survival.values["hunger"]
+	var exposure: float = GameState.survival.values["radiation"]
 	await get_tree().create_timer(0.1).timeout
 	check(GameState.survival.values["hunger"] == hunger, "modal pause")
+	check(GameState.survival.values["radiation"] == exposure, "modal pauses radiation")
 	bag._focus = 1
 	await tap(KEY_C)
 	check(GameState.survival.values["hunger"] > hunger, "backpack consumption")
@@ -141,6 +168,7 @@ func _ready() -> void:
 	await tap(KEY_ENTER)
 	await get_tree().process_frame
 	check(not get_tree().paused and not GameState.survival.dead, "rescue input")
+	GameState.survival.set_value("radiation", 50)
 	get_tree().change_scene_to_file("res://scenes/interior.tscn")
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -148,6 +176,9 @@ func _ready() -> void:
 	var astronaut: Player = inside.get_node("Actors/Player")
 	astronaut.teleport(Vector2(-236, 492))
 	check(not astronaut.can_breathe(), "damaged oxygen room air")
+	await get_tree().create_timer(0.1).timeout
+	check(GameState.survival.values["radiation"] > 0 and GameState.survival.values["radiation"] < 50,
+			"interior recovers retained exposure even without breathable air")
 	GameState.repair_for("oxygen").complete_task("cracks")             # wiring follows cracks
 	GameState.repair_for("oxygen").complete_task("wiring")
 	check(not astronaut.can_breathe(), "repaired O2 still leaks through broken storage glass")
