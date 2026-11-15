@@ -104,7 +104,7 @@ func _ready() -> void:
 	inventory_ui.setup(player, multitool)
 	var survival_hud := SurvivalHUD.new()
 	add_child(survival_hud)
-	survival_hud.setup(player, multitool)
+	survival_hud.setup(player, multitool, false)
 	var dev_panel := DevPanel.new()                    # F1, debug builds: time and frozen needs
 	add_child(dev_panel)
 	dev_panel.setup(player)

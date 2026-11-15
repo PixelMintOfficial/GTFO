@@ -1,6 +1,6 @@
 class_name SurvivalHUD
 extends CanvasLayer
-## Four compact SurvivalMeter children, anchored at the top left in every facility/view.
+## Compact SurvivalMeter children, anchored at the top left in every facility/view.
 ## Fixed placement: pointer input and old saved HUD positions cannot move the stats.
 ## Compact O2 reserve counter only after O2 repair while mains are off; hides again on mains.
 ## Owns scene ticking/input only; vitals remain in GameState. Pauses in ordinary modals and
@@ -17,12 +17,13 @@ const ICONS := {
 	"hunger": ["..###..", ".#####.", ".#####.", "..###..", "...#...", "..###.."],
 	"thirst": ["...#...", "..###..", "..###..", ".#####.", ".#####.", "..###.."],
 }
-const PANEL_SIZE := Vector2(128, 34)
+const PANEL_SIZE := Vector2(159, 34)
 const METER_ORIGIN := Vector2(2, 2)
 const METER_SPACING := 31
 const MARGIN := Vector2(6, 6)
 var _player: Player
 var _tool: Multitool
+var _indoors := true
 var _canvas: Control
 var oxygen_counter: Node2D
 var _panel: Control
@@ -34,12 +35,13 @@ var speed := 1.0
 var _pulse := 0.0
 
 
-func setup(player: Player, tool: Multitool) -> void:
+func setup(player: Player, tool: Multitool, indoors := true) -> void:
 	add_to_group("survival_hud")
 	layer = 11
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_player = player
 	_tool = tool
+	_indoors = indoors
 	_canvas = Control.new()
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.draw.connect(_draw_hud)
@@ -52,7 +54,7 @@ func setup(player: Player, tool: Multitool) -> void:
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.draw.connect(_draw_container)
 	_canvas.add_child(_panel)
-	for i in 4:
+	for i in SurvivalState.KINDS.size():
 		var meter := SurvivalMeter.new()
 		meter.kind = SurvivalState.KINDS[i]
 		meter.index = i
@@ -129,6 +131,7 @@ static func toast_position(canvas: CanvasItem, desired: Vector2, width: int) -> 
 var _hud_drawn := []
 var _air_state := ""
 var _air_notice := 0.0
+var _solar_activity := SurvivalState.SolarActivity.QUIET
 
 
 func _layout() -> void:
@@ -142,6 +145,7 @@ func _layout() -> void:
 
 
 func _process(delta: float) -> void:
+	_solar_activity = GameState.survival.solar_activity(GameState.clock)
 	var air_state := GameState.facility_air.status() + str(GameState.facility_air.sealed())
 	if air_state != _air_state:
 		_air_state = air_state
@@ -155,6 +159,7 @@ func _process(delta: float) -> void:
 			and _player.controls_enabled and not _player.puppet and not GameState.survival.dead
 	if not get_tree().paused and (_player.controls_enabled or _tool.window_panel_open) and not _player.puppet and not _player.turning:
 		GameState.survival.advance(delta * speed, _player.can_breathe(), _player.sprinting)
+		GameState.survival.advance_radiation(delta * speed, _indoors, _solar_activity)
 	if GameState.survival.dead:
 		layer = 20
 		_tool.cancel_work()
@@ -167,7 +172,8 @@ func _process(delta: float) -> void:
 		meter.pulse = _pulse
 		meter.refresh()
 	var hud := [_player.controls_enabled, _player.can_breathe(), GameState.survival.dead,
-			debug_enabled, meters[0].preview, _air_state, _air_notice > 0., roundi(GameState.facility_air.reserve_fraction() * 100.)]
+			debug_enabled, meters[0].preview, _air_state, _air_notice > 0.,
+			roundi(GameState.facility_air.reserve_fraction() * 100.), _solar_activity]
 	if hud != _hud_drawn:                                 # a few lines of text, and only on a change
 		_hud_drawn = hud
 		_canvas.queue_redraw()
@@ -234,6 +240,13 @@ func _draw_hud() -> void:
 	var state := GameState.survival
 	if not _player.controls_enabled and not state.dead:
 		return
+	if not state.dead and not _indoors and _solar_activity != SurvivalState.SolarActivity.QUIET:
+		var label := "SOLAR FLARE - FIND SHELTER"
+		if _solar_activity == SurvivalState.SolarActivity.STORM:
+			label = "RADIATION STORM - GET INSIDE"
+		var at := MARGIN + Vector2(PANEL_SIZE.x + 6, 4)
+		_canvas.draw_rect(Rect2(at, Vector2(PixelFont.width(label) + 8, 11)), InventoryUI.DARK)
+		PixelFont.draw(_canvas, at + Vector2(4, 3), label, InventoryUI.GOLD)
 	if debug_enabled:
 		PixelFont.draw(_canvas, Vector2(6, 39), "DEV %dX AIR %s" % [int(speed), "ON" if _player.can_breathe() else "OFF"], InventoryUI.GOLD)
 		if meters[0].preview >= 0:

@@ -6,12 +6,14 @@ extends Control
 const SEGMENTS := 12
 const SIZE := Vector2(30, 30)
 const CENTER := Vector2(15, 15)
-const COLORS := [Color("#ff4869"), Color("#26d9ed"), Color("#ffb24a"), Color("#25b9ff")]
+const COLORS := [Color("#ff4869"), Color("#26d9ed"), Color("#ffb24a"), Color("#25b9ff"), Color("#c29aff")]
 const ICONS := [
 	[".22...22.", "2332.2221", "233322221", ".2322221.", "..22221..", "...221...", "....1...."],
 	["....2....", "..2.2.2..", ".32.2.23.", "332222223", "3321.1223", "3221.1222", ".21...12."],
 	["....222..", "...23321.", "...33221.", "...22211.", "....211..", "...32....", "..32.....", ".33......"],
 	["....2....", "...232...", "..23321..", "..33221..", ".2332221.", ".2322221.", "..22211..", "...111..."],
+	# Radiation trefoil: two upper blades, one lower blade and a separate center dot.
+	[".2.....2.", "122...221", "222...222", "222.3.222", "...333...", "....3....", "...222...", "..22222..", "...111..."],
 ]
 
 var kind := "health"
@@ -50,16 +52,21 @@ static func percentage(current: float, maximum: float) -> int:
 func displayed_value() -> int:
 	if preview >= 0:
 		return clampi(preview, 0, 100)
-	return percentage(float(GameState.survival.values[kind]), GameState.survival.maximum(kind))
+	var current: float = GameState.survival.values[kind]
+	var maximum := GameState.survival.maximum(kind)
+	var percent := percentage(current, maximum)
+	return mini(percent, 99) if kind == "radiation" and current < maximum else percent
 
 
 func active_segments() -> int:
-	return roundi(displayed_value() * SEGMENTS / 100.0)
+	var percent := displayed_value()
+	var segments := roundi(percent * SEGMENTS / 100.0)
+	return mini(segments, SEGMENTS - 1) if kind == "radiation" and percent < 100 else segments
 
 
 ## Redraw only when something the dial shows has changed. A meter is ~200 draw_rect calls (the
-## recessed face, the ring, the twelve segments, the icon, the number) and there are four of
-## them, so redrawing every frame was most of the HUD's cost for a reading that moves a few
+## recessed face, the ring, the twelve segments, the icon, the number). Redrawing every
+## frame was most of the HUD's cost for a reading that moves a few
 ## times a minute. The one thing that does animate is a 4x1 bar pulsing on `pulse`; six steps a
 ## second is as much of that as anyone can see.
 const PULSE_HZ := 6.0
@@ -106,6 +113,7 @@ func _draw() -> void:
 	PixelFont.draw(self, Vector2.ZERO, "/100", Color("#79758e"))
 	draw_set_transform(Vector2.ZERO)
 	var ratio := displayed_value() / 100.0
-	if ratio <= float(GameState.survival.config["warning_fraction"]):
+	var warning := float(GameState.survival.config["warning_fraction"])
+	if (kind == "radiation" and ratio >= 1.0 - warning) or (kind != "radiation" and ratio <= warning):
 		# Quiet warning below the dial; ring and number always represent the same value.
 		draw_rect(Rect2(13, 28, 4, 1), Color(color, 0.5 + 0.3 * sin(pulse * 4)))
