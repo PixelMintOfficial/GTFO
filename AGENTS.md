@@ -53,7 +53,10 @@ it goes. Nothing in the pipeline needs to be remembered as a command line.
    plays first (the ship's approach, its crash by the base, the astronaut climbing out); any
    button skips it.
 3. You only need Python if you change art, sound, maps or data (§6): `make env`.
-4. The sound's source recordings are not in the repo (they are large and they are other
+4. To hand the game to someone who has no Godot, `make export` builds a Web version (itch.io
+   HTML5 zip), a one-file Windows `.exe` and a Linux binary into `build/` as zips (presets in
+   `export_presets.cfg`; needs Godot's 4.7.2 export templates installed). macOS is not exported.
+5. The sound's source recordings are not in the repo (they are large and they are other
    people's work). `make sources` downloads and checksums them into `assets/audio/sources/`.
    You only need them to *regenerate* sound; the baked `assets/audio/*.wav` are committed.
 
@@ -1995,3 +1998,10 @@ Write one line per decision: date — decision (who approved it).
   (`CommsMission.reply_shown`), waiting for the room if the reply came in elsewhere. Lines in
   `bot_story.json → reply`; sounds reuse existing recipes. `--comms-reply` / `--reply-auto=S`
   hooks and `tests/reply_cutscene_test.tscn` (in `make check`) cover it.
+
+
+- 2026-11-15 — Owner: the game must be shareable by link without installing Godot. Export presets
+  for Web (single-threaded, no special headers), Windows and Linux, and `make export`, which zips
+  them into `build/` (git-ignored). The web data file is ~150 MB, so it needs a host without a
+  100 MB file limit (itch.io); the desktop builds are one file each. The web build was run in
+  Chromium (intro, skip, walking) and the Linux build standalone; the Windows build is untested here.

@@ -27,6 +27,8 @@
 #   make shot           screenshot a scene: make shot ARGS="--spawn=-827,1440"
 #   make sounds         open assets/audio/viewer.html to listen to every sound
 #   make verify         import + check (what "done" needs, minus looking at it)
+#   make export         build the Web, Windows and Linux versions into build/ and zip them
+#                       (needs Godot's export templates for the same version, see the target)
 #
 # Override the tools if yours are named differently:
 #   make check GODOT=godot4
@@ -37,7 +39,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props solar base-power interior nursery comms cultivation windows astronaut astronaut-quick map intro tiles all import check \
+.PHONY: export help env sources sfx props solar base-power interior nursery comms cultivation windows astronaut astronaut-quick map intro tiles all import check \
         check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots nursery-metadata nursery-cleanup dome-light reserve-meter
 
 help:
@@ -230,3 +232,23 @@ sounds:
 
 clean-shots:
 	rm -rf $(SHOTS)
+
+# Playable builds for sharing, as zips in build/ (git-ignored). They need Godot's export templates
+# for this exact version: Godot > Editor > Manage Export Templates > Download, or the
+# Godot_v4.7.2-stable_export_templates.tpz from godotengine/godot-builds, unpacked into
+# ~/.local/share/godot/export_templates/4.7.2.stable/. Presets: export_presets.cfg.
+#   GTFO-web.zip      upload to itch.io as an HTML5 game (index.html at the zip's root); single-threaded,
+#                     so no special server headers. The game data is ~150 MB, over GitHub Pages' 100 MB file limit.
+#   GTFO-windows.zip  GTFO.exe, one file, nothing to install
+#   GTFO-linux.zip    GTFO.x86_64
+export: import
+	@mkdir -p build/web build/windows build/linux
+	@touch build/.gdignore
+	$(GODOT) --headless --path . --export-release "Web" build/web/index.html
+	$(GODOT) --headless --path . --export-release "Windows Desktop" build/windows/GTFO.exe
+	$(GODOT) --headless --path . --export-release "Linux" build/linux/GTFO.x86_64
+	@rm -f build/web/*.import build/GTFO-*.zip
+	cd build/web && zip -qr ../GTFO-web.zip .
+	cd build/windows && zip -q ../GTFO-windows.zip GTFO.exe
+	cd build/linux && zip -q ../GTFO-linux.zip GTFO.x86_64
+	@ls -lh build/GTFO-*.zip
