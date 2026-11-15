@@ -11,7 +11,7 @@ extends Node2D
 ##              sounds like walking out of the forest. Plus the suit's own fan, always there.
 ##
 ##   emitters   Things on the map you can hear when you get near them: the glowing pools, the
-##              crystal spires, the embers still burning in the satellite's wreck, and the
+##              crystal spires, the embers still burning round the ship's wreck, and the
 ##              two domes that still have power. Their positions are not written down
 ##              anywhere new - they are clustered out of the glow points the map generator
 ##              already exports in red_planet_fx.json, so the sound sits exactly where the
@@ -87,8 +87,20 @@ func _cluster_glows(fx: Dictionary) -> void:
 		n += 1
 
 
+## A cutscene is somewhere else (out in space, inside the ship): the planet is silent until
+## this is cleared again.
+var quiet := false
+
+
 func _process(_delta: float) -> void:
 	if _player == null:
+		return
+	if quiet:
+		for bed_name in ["amb_suit", "amb_red", "amb_forest", "amb_ice"]:
+			Audio.bed(bed_name, 0.0)
+		for key in _live.keys():
+			Audio.release(key)
+		_live = {}
 		return
 	_beds()
 	_emit()

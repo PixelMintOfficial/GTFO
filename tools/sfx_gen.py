@@ -1065,6 +1065,86 @@ def syn_reserve_on(name):
     return run(out, [hp(40), lp(6000), fade(0.002, 0.3), norm(-6.0)])
 
 
+def syn_cockpit_hum(name):
+    """Inside the ship on the way in: the engines as a deep, even drone through the hull and
+    the hiss of the air scrubbers over it, breathing slowly. 3 s, seamless."""
+    rng = seeded(name)
+    sec = 3.0
+    t = sig(sec)
+    breath = 0.5 + 0.5 * np.sin(TAU * t / sec)
+    body = (0.5 * sine(sec, 47.0) + 0.3 * sine(sec, 73.0) * (0.8 + 0.2 * breath) + 0.12 * sine(sec, 131.0)
+            + 0.35 * loop_noise(sec, rng, 900, 6000, -0.8) * (0.7 + 0.3 * loop_lfo(sec, rng, 0.33, 1.0)))
+    return run(body, [hp(30), lp(6500), rms_to(-22.0), limit()])
+
+
+def syn_radio_blip(name):
+    """The radio keying up: a squelch tick and a short burst of carrier hiss, band-limited the
+    way a radio is. Each variant is a little different."""
+    rng = seeded(name)
+    sec = 0.16
+    out = 0.7 * run(noise(sec, rng), [bp(1100, 3800)]) * dec(sec, 0.035)
+    _add(out, 0.5 * modes(0.05, [2350.0, 3710.0], [0.012, 0.008]), 0.0)
+    return run(out, [hp(400), lp(5200), fade(0.001, 0.04), norm(-10.0)])
+
+
+def syn_radio_static(name):
+    """The open channel under the voice: thin band-passed hiss with crackles scattered through
+    it. 2 s, seamless; quiet."""
+    rng = seeded(name)
+    sec = 2.0
+    hiss = 0.4 * loop_noise(sec, rng, 1400, 4200, -0.3)
+    crack = np.zeros(_ns(sec))
+    for at in rng.uniform(0, sec - 0.02, 26):
+        _add(crack, rng.uniform(0.3, 0.9) * run(noise(0.006, rng), [bp(1800, 6000)]), at)
+    return run(hiss + crack, [hp(700), lp(5000), rms_to(-30.0), limit()])
+
+
+def syn_radio_glitch(name):
+    """The signal breaking up mid-word: the voice band choked by stuttering static, a buzz
+    tearing downward (bzzt... vzz) and then the hiss of an empty channel. 1.6 s."""
+    rng = seeded(name)
+    sec = 1.6
+    t = sig(sec)
+    gate = (np.mod(t * rng.uniform(13, 17), 1.0) < 0.55).astype(float)
+    burst = run(noise(sec, rng), [bp(600, 5000)]) * gate * ramp(sec, [(0, 1.0), (0.55, 0.8), (0.75, 0.25), (1, 0.12)])
+    buzz = 0.5 * np.sign(np.sin(TAU * np.cumsum(np.interp(t, [0, 0.4, 1.0], [180.0, 95.0, 41.0])) / SR))
+    buzz = run(buzz, [lp(1800)]) * ramp(sec, [(0, 0.0), (0.12, 0.8), (0.6, 0.6), (0.85, 0.0), (1, 0)])
+    return run(0.8 * burst + buzz, [hp(120), lp(6000), fade(0.002, 0.3), norm(-6.0)])
+
+
+def syn_alarm(name):
+    """The cockpit's master alarm: a harsh warble gliding between two pitches at an
+    inharmonic ratio twice a second, through a small grille. 1 s, seamless."""
+    sec = 1.0
+    t = sig(sec)
+    f = 690.0 + 245.0 * (0.5 - 0.5 * np.cos(TAU * 2.0 * t))
+    ph = TAU * np.cumsum(f) / SR
+    tone = 0.6 * np.sin(ph) + 0.25 * np.sin(2.13 * ph) + 0.12 * np.sign(np.sin(ph))
+    return run(tone, [bp(450, 3400), rms_to(-20.0), limit()])
+
+
+def syn_hatch_thump(name):
+    """Someone inside the wreck shouldering the jammed hatch: a heavy, muffled steel thud,
+    low inharmonic modes under a dull knock."""
+    rng = seeded(name)
+    out = 0.9 * modes(0.6, [58.0, 91.0, 143.0, 227.0, 351.0], [0.2, 0.14, 0.09, 0.05, 0.03], [1.0, 0.8, 0.55, 0.3, 0.18])
+    _add(out, 0.5 * run(noise(0.04, rng), [lp(900), fade(0.001, 0.03)]), 0.0)
+    return run(out, [hp(30), lp(2200), fade(0.001, 0.25), norm(-5.0)])
+
+
+def syn_hatch_pop(name):
+    """The hatch's explosive bolts letting go: a sharp pressure bang, a long ringing clang as
+    the door tears away, and the hiss of the cabin's last air. 1.4 s."""
+    rng = seeded(name)
+    sec = 1.4
+    out = np.zeros(_ns(sec))
+    _add(out, 1.0 * run(noise(0.12, rng), [lp(2400)]) * dec(0.12, 0.02), 0.0)
+    _add(out, 0.8 * sweep(0.3, 120.0, 42.0, 0.6) * dec(0.3, 0.08), 0.0)
+    _add(out, 0.55 * modes(1.2, [412.0, 1063.0, 1797.0, 2741.0], [0.5, 0.32, 0.2, 0.1], [1.0, 0.7, 0.45, 0.3], 0.004, rng), 0.02)
+    _add(out, 0.3 * run(noise(1.1, rng), [bp(2500, 8000)]) * ramp(1.1, [(0, 0), (0.05, 1.0), (1, 0)]), 0.05)
+    return run(out, [hp(35), lp(9000), fade(0.001, 0.4), norm(-3.0)])
+
+
 def _add(dst, src, at_sec):
     """Mix src into dst starting at at_sec (clipped to dst)."""
     i = _ns(at_sec) if at_sec > 0 else 0
@@ -1498,6 +1578,29 @@ RECIPES = {
                        note='Reserve power: a relay clunk, then the emergency hum stuttering on '
                             'in step with the flicker InteriorFX draws on the emergency lines.'),
 
+    # ---------------------------------------------------------------- the opening cutscene
+    'intro_cockpit_hum': dict(bus='amb', gain_db=-12.0, loop=True, fade=0.8, synth=syn_cockpit_hum, chain=[declick()],
+                              note='The cockpit on the way in: an even engine drone through the hull with the '
+                                   'air scrubbers breathing over it. Seamless 3 s.'),
+    'intro_radio_blip': dict(bus='ui', gain_db=-14.0, pitch=(0.95, 1.05), variants=3, synth=syn_radio_blip,
+                             note='Mission Control keying up before each line: a squelch tick and a burst of '
+                                  'carrier hiss.'),
+    'intro_radio_static': dict(bus='ui', gain_db=-20.0, loop=True, fade=0.2, synth=syn_radio_static,
+                               chain=[declick()],
+                               note='The open channel under the radio lines: thin hiss and scattered crackle. '
+                                    'Near the threshold of notice. Seamless 2 s.'),
+    'intro_radio_glitch': dict(bus='ui', gain_db=-8.0, synth=syn_radio_glitch,
+                               note='The signal breaking up mid-word in the radiation storm: stuttering static and '
+                                    'a buzz tearing downward, then an empty channel.'),
+    'intro_alarm': dict(bus='sfx', gain_db=-14.0, loop=True, fade=0.1, synth=syn_alarm, chain=[declick()],
+                        note='The cockpit master alarm as control is lost: a warble between two pitches at an '
+                             'inharmonic ratio, through a grille. Seamless 1 s.'),
+    'intro_hatch_thump': dict(bus='sfx', gain_db=-6.0, dist=900.0, pitch=(0.92, 1.06), synth=syn_hatch_thump,
+                              note='Someone inside the wreck shouldering the jammed hatch: a muffled steel thud.'),
+    'intro_hatch_pop': dict(bus='sfx', gain_db=-4.0, dist=1200.0, synth=syn_hatch_pop,
+                            note='The hatch blown off its explosive bolts: a pressure bang, a long clang as the '
+                                 'door tears away, and the cabin air hissing out.'),
+
     # ---------------------------------------------------------------- UI
     'ui_map_open': dict(bus='ui', gain_db=-13.0,
                         take=('oga_rubberduck_sfx100v2', 'sfx100v2_switch_01.ogg'),
@@ -1586,6 +1689,7 @@ GROUPS = [
     ('cargo_', 'Storage: the cargo box and the panes'), ('ration_', 'Storage: the cargo box and the panes'),
     ('pane_', 'Storage: the cargo box and the panes'),
     ('crash_', 'The satellite crash'), ('debris', 'The satellite crash'),
+    ('intro_', 'The opening cutscene'),
     ('beacon', 'Lights and beacons'), ('suit_light', 'Lights and beacons'),
     ('ui_', 'Interface'),
 ]
@@ -1967,9 +2071,11 @@ def main():
     if args.fetch:
         fetch()
         return
-    if not os.path.isdir(SRC):
+    picked = [s for n, s in RECIPES.items() if not args.only or args.only in n]
+    recorded = any('take' in s or any(not callable(layer[0]) for layer in s.get('layer', [])) for s in picked)
+    if recorded and not os.path.isdir(SRC):                # purely synthesised sounds need no recordings
         raise SystemExit('no sources yet - run: python tools/sfx_gen.py --fetch')
-    if not shutil.which('ffmpeg'):
+    if recorded and not shutil.which('ffmpeg'):
         raise SystemExit('ffmpeg not found on PATH (needed to decode ogg/mp3/flac)')
     bake(args.only)
 

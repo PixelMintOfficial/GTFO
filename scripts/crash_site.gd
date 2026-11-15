@@ -1,23 +1,39 @@
 class_name CrashSite
 extends Node2D
-## The satellite that came down near the base.
+## The craft that came down near the base: the astronaut's own ship (or, with
+## CRASH_DESIGN=satellite in the map generator, the earlier satellite). fx.crash says which.
 ##
-## At the start of the game it plays the crash: the camera turns to the site, the satellite
-## streaks in glowing from re-entry under a trail of fire and smoke, touches down, ploughs its
-## trench (the untouched ground is uncovered behind it) and slams to a stop in a flash, a
-## shockwave and a cloud of dust and debris. Any button skips it.
+## At the start of the game it plays the crash: the camera turns to the site, the craft
+## streaks in glowing from re-entry under a trail of fire and smoke - the ship lurching, out of
+## control - touches down, ploughs its trench (the untouched ground is uncovered behind it) and
+## slams to a stop in a flash, a shockwave and a cloud of dust and debris.
+## IntroCutscene directs it (hold = true): it starts the fall, and afterwards thumps on and
+## pops the ship's hatch (thump(), pop_hatch()) before the astronaut climbs out. Played on its
+## own (play_intro() without a director), any button skips it.
 ##
-## Afterwards the wreck smoulders: smoke curls up from the hull, the engine and the torn-off
-## wing, the engine burns, the broken wing spits sparks and the distress beacon blinks.
+## Afterwards the wreck smoulders: smoke curls up from the hull, the engines and the torn-off
+## wing, the engines burn, the broken wing spits sparks and the distress beacon blinks. The
+## ship's hatch stands open, its door lying in the dust where it came down, in every view.
 ##
-## Sit this node right after the map: the old ground draws under everything, the air (smoke,
-## fire, sparks, the falling satellite) on its own layer above the astronaut.
+## Sit this node right after the map: the old ground, the open doorway and the fallen door draw
+## under everything, the air (smoke, fire, sparks, the falling craft, the door in flight) on its
+## own layer above the astronaut.
 
 signal finished
+## The craft has stopped dead: the wreck is down (its hatch, if it has one, still shut).
+signal landed
 
 const REVEAL := preload("res://shaders/crash_reveal.gdshader")
+## How long the blown-off hatch door is in the air.
+const LID_FLIGHT := 0.85
 
 enum State { WAIT, FALL, SKID, SETTLE, DONE }
+
+## An IntroCutscene is directing: it starts the fall and handles skipping, and the controls and
+## the camera stay with it when the crash is over.
+var hold := false
+## The ship's hatch is shut: only from the start of the intro until pop_hatch().
+var hatch_shut := false
 
 const SMOKE: Array[Color] = [Color("#1d1824"), Color("#383040"), Color("#5c5064")]   # shadow, body, lit top
 const SMOKE_OLD: Array[Color] = [Color("#3a3240"), Color("#5a4f62"), Color("#857a8c")]   # thinning out as it rises
@@ -50,6 +66,14 @@ var _smoke_at: Array[Vector2] = []
 var _sparks_at: Array[Vector2] = []
 var _fire_at: Array[Vector2] = []
 var _beacon := Vector2.ZERO
+var _hatch: Dictionary = {}   # this view's hatch (the ship), else empty
+var _doorway: Sprite2D        # the open hatch, over the shut door the map shows
+var _lid: Sprite2D            # the door in flight
+var _lid_rest: Sprite2D       # the door where it came down
+var _door := Vector2.ZERO
+var _lands := Vector2.ZERO
+var _lid_t := -1.0            # seconds into the door's flight; < 0 when it is not flying
+var _wobble := false          # the ship lurches as it falls: control is gone
 
 var _state := State.DONE
 var _st := 0.0
@@ -78,6 +102,14 @@ func setup(meta_path: String, camera: GameCamera, player: Player, biome: BiomeFX
 	_before.material = _reveal
 	_before.visible = false
 	add_child(_before)
+	_doorway = Sprite2D.new()
+	_doorway.centered = false
+	_doorway.visible = false
+	add_child(_doorway)
+	_lid_rest = Sprite2D.new()
+	_lid_rest.centered = false
+	_lid_rest.visible = false
+	add_child(_lid_rest)
 	_air = Node2D.new()
 	_air.z_index = 40
 	_air.draw.connect(_draw_air)
@@ -91,6 +123,10 @@ func setup(meta_path: String, camera: GameCamera, player: Player, biome: BiomeFX
 	_sat.centered = false
 	_sat.visible = false
 	_air.add_child(_sat)
+	_lid = Sprite2D.new()
+	_lid.centered = false
+	_lid.visible = false
+	_air.add_child(_lid)
 	load_view(meta_path)
 
 
@@ -125,33 +161,143 @@ func load_view(meta_path: String) -> void:
 	_chunks.clear()
 	_before.texture = load(dir.path_join(c["before"]["file"]))
 	_before.position = _v(c["before"]["position"])
-	_sat.texture = load(dir.path_join(c["satellite"]["file"]))
-	_sat.hframes = int(c["satellite"]["frames"])
-	_sat.offset = -_v(c["satellite"]["origin"]).round()
+	var craft: Dictionary = c["craft"]
+	_sat.texture = load(dir.path_join(craft["file"]))
+	_sat.hframes = int(craft["frames"])
+	_sat.offset = -_v(craft["origin"]).round()
+	_wobble = c.get("design", "satellite") == "ship"
+	_hatch = c.get("hatch", {})
+	_doorway.texture = null
+	if not _hatch.is_empty():
+		_door = _v(_hatch["door"])
+		_lands = _v(_hatch["lands"])
+		if _hatch.has("open"):                       # this view sees the hatch's side
+			_doorway.texture = load(dir.path_join(_hatch["open"]["file"]))
+			_doorway.position = _v(_hatch["open"]["position"])
+		_lid_rest.texture = load(dir.path_join(_hatch["rest"]["file"]))
+		_lid_rest.position = _v(_hatch["rest"]["position"])
+		var lid: Dictionary = _hatch["lid"]
+		_lid.texture = load(dir.path_join(lid["file"]))
+		_lid.hframes = int(lid["frames"])
+		_lid.offset = -_v(lid["origin"]).round()
+	_show_hatch()
 
 
 ## The crash, from the top. The astronaut waits; the camera watches the site.
 func play_intro() -> void:
+	prepare_intro()
+	_state = State.WAIT
+
+
+## The site as it was before the crash, the camera on it, nothing falling yet: start_fall()
+## brings the craft in. The ship's hatch is shut until pop_hatch().
+func prepare_intro() -> void:
 	if _before == null:
 		return
-	_state = State.WAIT
+	_state = State.DONE
 	_st = 0.0
 	_smoulder = 0.0
 	_biome.embers = 0.0
 	_reveal.set_shader_parameter("front", 1.0)
 	_before.visible = true
+	hatch_shut = has_hatch()
+	_show_hatch()
 	_player.controls_enabled = false
 	_camera.focus_override = _focus
 	_camera.set_level(1)
 	_camera.snap_to(_focus)
 
 
+## Bring the craft in now (prepare_intro first).
+func start_fall() -> void:
+	_enter(State.FALL)
+	_sat.visible = true
+	_sat_pos = _sky
+	_sat_last = _sky
+
+
+## Where the camera watches the crash from (map pixels, this view).
+func focus_point() -> Vector2:
+	return _focus
+
+
 func is_playing() -> bool:
 	return _state != State.DONE
 
 
+## The ship has a hatch to climb out of (the satellite does not).
+func has_hatch() -> bool:
+	return not _hatch.is_empty()
+
+
+## The hatch's middle on screen (map pixels, this view).
+func door_point() -> Vector2:
+	return _door
+
+
+## Where the astronaut steps down from the hatch: the ground point (world, view 0's frame).
+func exit_world() -> Vector2:
+	return _v(_hatch["exit"]["world"])
+
+
+## The doorway's sill (world, view 0's frame) and its height above the ground at exit_world().
+func doorway_world() -> Vector2:
+	return _v(_hatch["exit"]["doorway"])
+
+
+func sill_height() -> float:
+	return float(_hatch["exit"]["sill"])
+
+
+## Someone inside shouldering the jammed hatch: a thud, a jolt, a puff of dust off the door.
+func thump(strength: float) -> void:
+	Audio.play("intro_hatch_thump", _door, 1.0, -4.0 + 4.0 * strength)
+	_camera.shake(1.0 + 2.0 * strength, 0.25)
+	for i in int(3 + 5 * strength):
+		_puff(_door + _jitter(6.0), Vector2(randf_range(8.0, 22.0), randf_range(-14.0, -4.0)), randf_range(1.5, 3.0),
+				3.5, randf_range(0.6, 1.1), 1, 1.8)
+
+
+## The hatch's bolts let go: a bang, the door spinning off through the air to land in the dust,
+## the open doorway left behind it.
+func pop_hatch() -> void:
+	if not has_hatch():
+		return
+	hatch_shut = false
+	_lid_t = 0.0
+	_show_hatch()
+	Audio.play("intro_hatch_pop", _door)
+	_camera.shake(3.0, 0.35)
+	for i in 14:
+		var a := randf_range(-1.2, 0.6)
+		_puff(_door + _jitter(4.0), Vector2(cos(a), sin(a) * 0.6) * randf_range(25.0, 70.0), randf_range(2.0, 3.5),
+				6.0, randf_range(0.8, 1.6), 0, 1.6)
+	for i in 10:
+		var a := randf_range(-PI, 0.0)
+		_sparks.append([_door, Vector2(cos(a), sin(a)) * randf_range(40.0, 110.0), 0.0, randf_range(0.3, 0.6)])
+
+
+## The intro was skipped: whatever had happened by now, the wreck is down and its hatch open.
+func skip_to_end() -> void:
+	if _before.visible or (_state != State.DONE and _state != State.SETTLE):   # not down yet (or not even falling)
+		_land(false)
+	_state = State.DONE
+	hatch_shut = false
+	_lid_t = -1.0
+	_lid.visible = false
+	_smoulder = 1.0
+	_biome.embers = 1.0
+	_show_hatch()
+
+
+func _show_hatch() -> void:
+	var on := has_hatch() and not hatch_shut
+	_doorway.visible = on and _doorway.texture != null
+	_lid_rest.visible = on and _lid_t < 0.0
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if _state == State.DONE or event.is_echo():
+	if _state == State.DONE or event.is_echo() or hold:
 		return
 	if (event is InputEventKey or event is InputEventJoypadButton) and event.is_pressed():
 		get_viewport().set_input_as_handled()
@@ -175,7 +321,10 @@ func _process(delta: float) -> void:
 			var k := clampf(_st / fall_time, 0.0, 1.0)
 			var e := k * k * (0.4 + 0.6 * k)                       # gathering speed
 			_sat_pos = _sky.lerp(_bend, e).lerp(_bend.lerp(_touch, e), e)
-			_sat.frame = int(_st * 9.0) % _sat.hframes
+			if _wobble:                                            # the ship lurching, out of control
+				var across := (_touch - _sky).normalized().orthogonal()
+				_sat_pos += across * sin(_st * 11.0) * 9.0 * (1.0 - k) + Vector2(0, sin(_st * 17.0) * 3.0)
+			_sat.frame = int(_st * (13.0 if _wobble else 9.0)) % _sat.hframes
 			_trail()
 			if k >= 1.0:
 				_enter(State.SKID)
@@ -205,6 +354,7 @@ func _process(delta: float) -> void:
 				_finish()
 	_sat_last = _sat_pos
 	_sat.position = _sat_pos.round()
+	_fly_lid(delta)
 	_update_particles(delta)
 	if _state == State.DONE or _state == State.SETTLE:
 		_smoulder_fx(delta)
@@ -220,6 +370,25 @@ func _process(delta: float) -> void:
 func _enter(s: State) -> void:
 	_state = s
 	_st = 0.0
+
+
+## The blown-off door: up and over in an arc, spinning, and down with a clang and a puff.
+func _fly_lid(delta: float) -> void:
+	if _lid_t < 0.0:
+		return
+	_lid_t += delta
+	var k := clampf(_lid_t / LID_FLIGHT, 0.0, 1.0)
+	var arc := 4.0 * k * (1.0 - k) * 46.0
+	_lid.visible = true
+	_lid.position = (_door.lerp(_lands, k) - Vector2(0, arc)).round()
+	_lid.frame = int(_lid_t * 16.0) % _lid.hframes
+	if k >= 1.0:
+		_lid_t = -1.0
+		_lid.visible = false
+		_show_hatch()
+		Audio.play("cargo_drop", _lands)
+		_camera.shake(1.2, 0.2)
+		_dust_burst(_lands, 8, 12.0, 30.0)
 
 
 ## The satellite stops dead: flash, shockwave, dust and debris (or, when skipped, just the aftermath).
@@ -241,6 +410,7 @@ func _land(dramatic: bool) -> void:
 			_chunks.append([_rest + Vector2(randf_range(-6, 6), randf_range(-3, 3)), v, randf_range(2.0, 8.0),
 					randf_range(70.0, 150.0)])
 		_enter(State.SETTLE)
+		landed.emit()
 	else:
 		_smoulder = 1.0
 		_biome.embers = 1.0
@@ -250,9 +420,10 @@ func _finish() -> void:
 	_state = State.DONE
 	_smoulder = 1.0
 	_biome.embers = 1.0
-	_player.controls_enabled = true
-	_camera.release_focus()
-	_camera.set_level(0)
+	if not hold:
+		_player.controls_enabled = true
+		_camera.release_focus()
+		_camera.set_level(0)
 	finished.emit()
 
 

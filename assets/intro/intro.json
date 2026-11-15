@@ -1,0 +1,101 @@
+{
+  "note": "The opening cutscene's art, from tools/intro_gen.py. Positions are pixels in each image.",
+  "cockpit": {
+    "file": "cockpit.png",
+    "size": [
+      384,
+      216
+    ],
+    "pilot": {
+      "feet": [
+        182,
+        119
+      ],
+      "facing": "N"
+    },
+    "radio": [
+      247,
+      94
+    ],
+    "alarms": [
+      [
+        248,
+        51
+      ],
+      [
+        136,
+        51
+      ]
+    ],
+    "screens": [
+      [
+        236,
+        99
+      ],
+      [
+        221,
+        92
+      ],
+      [
+        207,
+        84
+      ],
+      [
+        148,
+        99
+      ],
+      [
+        163,
+        92
+      ],
+      [
+        177,
+        84
+      ]
+    ],
+    "sparks": [
+      [
+        229,
+        94
+      ],
+      [
+        171,
+        86
+      ],
+      [
+        247,
+        95
+      ]
+    ]
+  },
+  "planet": {
+    "file": "planet.png",
+    "frames": 24,
+    "frame_size": [
+      162,
+      162
+    ],
+    "centre": [
+      81.0,
+      81.0
+    ],
+    "radius": 78.5
+  },
+  "ship": {
+    "file": "ship_orbit.png",
+    "size": [
+      62,
+      49
+    ],
+    "engines": [
+      [
+        6.5,
+        32.3
+      ],
+      [
+        10.3,
+        35.8
+      ]
+    ]
+  }
+}

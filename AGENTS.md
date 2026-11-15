@@ -49,8 +49,9 @@ it goes. Nothing in the pipeline needs to be remembered as a command line.
 
 1. Clone, then open `project.godot` in Godot 4.7.2. The first open imports every texture,
    which takes a while (the map is big). `.godot/` is rebuilt locally and is git-ignored.
-2. Press Play: `scenes/overworld.tscn` is the main scene. On a fresh run the satellite crash
-   intro plays first; any button skips it.
+2. Press Play: `scenes/overworld.tscn` is the main scene. On a fresh run the opening cutscene
+   plays first (the ship's approach, its crash by the base, the astronaut climbing out); any
+   button skips it.
 3. You only need Python if you change art, sound, maps or data (§6): `make env`.
 4. The sound's source recordings are not in the repo (they are large and they are other
    people's work). `make sources` downloads and checksums them into `assets/audio/sources/`.
@@ -105,7 +106,8 @@ scripts/
                        glass_puzzle.gd / glass_repair_ui.gd: live glass jigsaw and sealing scan
   story/               the opening chapter: StoryState (session), PlayerProfile (the name, user://), Bot,
                        Bulkhead, BotDialogue, NameEntry, ObjectiveHUD
-  crash_site.gd        the satellite crash intro and the smouldering wreck
+  intro_cutscene.gd    IntroCutscene: the opening - cockpit, orbit, descent, the crash, the hatch
+  crash_site.gd        the ship's fall, trench and impact, its hatch, and the smouldering wreck
   biome_fx.gd          live plants, bioluminescence, pools, ice glints, embers
   dome_fx.gd           dome rim lights, airlock blinkers, comms beacon, animated dome parts
   wind_fx.gd           weather per land: dust gusts, spores, snow
@@ -124,13 +126,14 @@ shaders/
                        the lamp they carry (sprite_lamp)
   prop_depth           props behind scenery: hidden, or tinted behind glass
   flora_depth          live plants hide behind cliffs and thin out round the astronaut
-  crash_reveal         uncovers the untouched ground behind the crashing satellite
+  crash_reveal         uncovers the untouched ground behind the crashing ship
   turn_relief          one view's picture stood up on its depth map, for the turn's swing
   dust_gusts           dithered wind-gust overlay
 tools/                 the pipeline (Python): generates everything in assets/
   astronaut_sprite_gen.py   the astronaut and the multitool: SDF model, rig, every animation
   godot_spriteframes.py     astronaut.json -> astronaut_frames.tres (SpriteFrames)
   mars_map_gen.py           the overworld: terrain, biomes, domes, props, plants, all map data
+  intro_gen.py              the opening cutscene's art: cockpit cut-away, Araxys turning, the ship in space
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
   nursery_gen.py            the approved nursery interior, walk grid and two airlocks, four views
@@ -152,6 +155,7 @@ data/cultivation.json       repair/crop IDs, growth/yields, wild scales and clea
 data/bot_story.json         every placeholder name (the bot, the previous owner), the bot's lines,
                             objectives and lore: change a name here and everything follows
 assets/                (lowercase, always)
+  intro/                   the opening cutscene: cockpit.png, planet.png, ship_orbit.png, intro.json, preview
   cultivation/             four-view wild plants, native colour/depth/glow sheets and inventory icons
   characters/astronaut/     generated sprite sheets, astronaut.json, astronaut_frames.tres, previews
   characters/Astronaut_in_his_space_suit/   OLD reference art, not used by the game; don't build on it
@@ -413,7 +417,7 @@ See docs/cultivation.md.
     preferences between launches; it is separate from gameplay saving. `changed` updates UI
     immediately, including while paused. Large preserves the original size; Small/Medium use
     smaller pixel-snapped display scales. Invalid/missing preferences use compact Small and full volume.
-  - `intro_done`: the crash plays once;
+  - `intro_done`: the opening cutscene plays once;
   - `arrive` and `door_id`: where to appear next;
   - `tool_out`: the multitool stays out across the airlock;
   - `suit_light`: the lamp on the suit, off when the game begins and as you left it after that;
@@ -801,8 +805,22 @@ consts in the named files.
   - Pressing F starts a cutscene: the camera moves behind the astronaut, the warning lamp
     blinks, the door unseals and vents gas, the astronaut walks in, the door closes, and
     the screen fades.
-- **Intro** (`crash_site.gd`): the satellite crash-lands near the base, once per run, and any
-  button skips it. Afterwards the wreck keeps smouldering.
+- **Intro** (`intro_cutscene.gd`, `crash_site.gd`): once per run, about 33 s, letterboxed; any
+  key or button skips to the end (an `ANY KEY: SKIP` hint sits in the bottom bar).
+  - Cockpit: the astronaut at the helm of a cut-away cockpit, stars streaming past the
+    windscreen, Araxys rising behind it. Mission Control on the radio: closing in on the planet.
+  - Orbit: Araxys turning in space, the small ship gliding in. The crew before you built the
+    base and went silent; your mission: make the planet a place people can live.
+  - Descent: re-entry fire behind the windscreen, the cabin shaking, the master alarm and red
+    wash. A solar storm: the radiation warning breaks into static mid-word, SIGNAL LOST.
+  - Outside: white-out, then the overworld: the ship tumbles in out of control, ploughs its
+    trench by the base and slams to a stop (flash, shockwave, dust). Two thumps on the hatch,
+    it blows off and tumbles into the dust, the astronaut steps out of the dark doorway, hops
+    down and looks round. A last broken call, then DAY 1 and the controls.
+  - The radio uses the bot's dialogue plate style (speaker tab, PixelFont typing); lines and
+    the planet's name are in `data/bot_story.json → intro` and `names.planet` (`{PLANET}`).
+  - Afterwards the wreck keeps smouldering, its hatch open and its door lying in the dust, in
+    every view. The astronaut starts beside the wreck (rescue still uses the airlock spawn).
 - **Map screen**: M toggles it. It pauses the game and shows where you are and what the camera
   sees. Sound carries on while it is open (the `Audio` autoload always processes).
 - **Day and night** (`day_night.gd`, `day_clock.gd`):
@@ -816,7 +834,7 @@ consts in the named files.
     down to a deep blue-violet you can just read shapes in, and you need the suit lamp to get
     anywhere. Nothing lights the astronaut for them any more.
   - The time panel sits top left, and a "DAY N" title comes up at dawn. It is hidden during the
-    crash intro and comes in with "DAY 1" when it ends.
+    opening cutscene and comes in with "DAY 1" when it ends.
   - Moonwell seed plants open only during NIGHT (20:00–05:00). There is no sleep or night danger.
 - **The suit lamp** (`suit_light.gd`):
   - L / gamepad B switches it on and off. It **starts off**, every time, and stays as you left
@@ -863,6 +881,7 @@ the existing renderer (`render_groups` / `render_sprite`).
 |---|---|---|---|
 | `python tools/astronaut_sprite_gen.py` then `python tools/godot_spriteframes.py` | `assets/characters/astronaut/*` | you change the astronaut, the multitool or any animation | slow (about 1,000 frames); `--quick` writes only the contact sheet |
 | `python tools/mars_map_gen.py` | `assets/maps/red_planet/*` | you change anything on the overworld | ~35 min for the four views (~9 each, measured on an 8-core laptop), several GB of RAM. `--tiles-only` re-cuts the tiles from the pictures already on disk in a couple of minutes |
+| `python tools/intro_gen.py` | `assets/intro/*` | the cockpit, the planet or the ship change (the ship's model is `mars_map_gen.ship_parts`); `make map` includes it | seconds |
 | `python tools/props_gen.py` | `assets/maps/red_planet/props/*`, `red_planet_props.json` | after **every** map regeneration, or when you change props | fast |
 | `python tools/solar_field_gen.py` | `assets/maps/red_planet/solar/*`, `solar_field.json` | after every map regeneration or equipment change; `make map` includes it | seconds |
 | `python tools/cultivation_gen.py` | `assets/cultivation/*` | wild seed models, opening frames or inventory icons change; `make map` includes it | seconds |
@@ -897,6 +916,9 @@ designs can be compared or restored:
 - `SOLAR_DESIGN` = `field` | `array` (default **field**) — the approved interactive field or the earlier baked panels.
 - `SOLAR_FIELD_LAYOUT` = `v1` | `v2` (default **v2**) — earlier 4/5/4 ground field or the
   approved 3/3/4 terraced field. Use the same value when generating and running the game.
+- `CRASH_DESIGN` = `ship` | `satellite` (default **ship**) — what lies crashed by the base: the
+  astronaut's own white-and-coral lander (hatch, opening cutscene's emergence) or the earlier
+  gold-foil satellite (the cutscene then ends with the astronaut at the base airlock).
 - `BOT_DESIGN` = `pod` | `lantern` | `orb` (default **pod**) — the bot; lantern and orb are the
   other two looks from the approved contact sheet (`docs/bot-mockups.png`), kept for rework.
 - `TRAIL_LAMPS` = `0` | `1` (default **0**) — the lamps along the trails (and their light). Off,
@@ -962,6 +984,18 @@ F continues to control yaw only, in eight 22.5-degree steps.
 Every interior/repair variant exports `solar_input`: a physical diagonal-wall inlet's
 world/anchor/panel_id, housing/lights sprite paths, position/size and eight connection frames.
 `interior_gen.py --solar-input-only` regenerates these without changing existing room art.
+
+The opening cutscene adds (read by `CrashSite` and `IntroCutscene`): in every view's
+`red_planet_fx → crash`, `design` (`ship` | `satellite`), `craft` (the falling sprite: `file`,
+`frames`, `frame_size`, `origin`; it was `satellite`) and, for the ship, `hatch`: `open` (the
+open doorway over exactly the map pixels showing the shut door: `file`, `position`; absent where
+a view sees the far side), `lid` (the blown door tumbling: `file`, `frames`, `frame_size`,
+`origin`), `rest` (the door in the dust, pre-masked by the map's depth: `file`, `position`,
+`world`), `door` / `lands` (map px of the flight's ends) and `exit` (`world`: the ground point
+the astronaut hops down to, `doorway`: the sill, `sill`: its height above that ground; world
+positions in view 0's frame). `assets/intro/intro.json` (written by `intro_gen.py`): `cockpit`
+(`pilot.feet`, `radio`, `alarms`, `screens`, `sparks`, plate pixels), `planet` (`frames`,
+`frame_size`, `centre`, `radius`) and `ship` (`size`, `engines`).
 
 The bot adds (§4.1): `bulkheads`, `bot` and `game.reserve_png` in every interior meta JSON (incl.
 the repaired variants; read by `Bulkhead`, `Bot`, `InteriorFX`), and `bot/bot.json` (read by
@@ -1897,3 +1931,16 @@ Write one line per decision: date — decision (who approved it).
   particle timestamps set the warning lead on the game clock. Exposure rises outdoors during
   the storm and drains indoors. At full exposure, use the existing death and rescue flow.
   `data/survival.json → radiation` owns timing and rates. See [Solar storms](docs/survival.md#solar-storms).
+- 2026-11-15 — Owner's explicit request: a dramatic opening cutscene replaces the satellite
+  crash. Inside the ship ("we are quickly approaching planet Araxys"), the planet in view (pick
+  up where your predecessors left off; make the planet habitable), the landing attempt ("watch
+  out for the radiation wa- bzzz"), the ship losing control and crash-landing by the base, the
+  hatch popping open and the astronaut climbing out; lines rewritten for drama with the owner's
+  leave. The crashed craft becomes the astronaut's own white-and-coral lander (`CRASH_DESIGN=ship`,
+  satellite kept as a version), modelled in mars_map_gen with existing primitives and ramps;
+  its wreck, hatch, door and exit are map data in every view. tools/intro_gen.py draws the
+  cockpit (a cut-away room on the walk grid's diagonals, same camera and renderer), Araxys turning
+  and the small ship. The planet is named Araxys (`names.planet`, token `{PLANET}`). Seven
+  synthesised `intro_*` sounds baked with `--only`; sfx_gen no longer demands the recordings for
+  a purely synthesised `--only` bake. Only the crash region of the regenerated map was taken;
+  every other pixel keeps its committed bytes (owner, requested).

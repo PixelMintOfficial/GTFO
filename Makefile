@@ -19,6 +19,7 @@
 #   make windows        regenerate only glass inspection assets
 #   make astronaut      regenerate the astronaut + SpriteFrames (slow, ~1000 frames)
 #   make map            regenerate the overworld (~35 min for four views, several GB of RAM)
+#   make intro          regenerate the opening cutscene's art: cockpit, planet, ship (seconds)
 #   make tiles          re-cut the map's tiles from the pictures on disk (fast)
 #   make import         re-import assets into Godot (always after a regeneration)
 #   make check          all rooms + the test suites; fails on any error or warning
@@ -35,7 +36,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props solar base-power interior nursery cultivation windows astronaut astronaut-quick map tiles all import check \
+.PHONY: help env sources sfx props solar base-power interior nursery cultivation windows astronaut astronaut-quick map intro tiles all import check \
         check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots nursery-metadata nursery-cleanup dome-light reserve-meter
 
 help:
@@ -111,12 +112,18 @@ astronaut-quick: $(PY)
 # The overworld. props depends on the map's data, so it always follows.
 map: $(PY)
 	$(PY) tools/mars_map_gen.py
+	$(PY) tools/intro_gen.py
 	$(PY) tools/base_power_gen.py
 	$(PY) tests/test_base_power_art.py
 	$(PY) tools/props_gen.py
 	$(PY) tools/solar_field_gen.py
 	$(PY) tools/cultivation_gen.py
 	$(PY) tools/check_solar_field.py
+
+# The opening cutscene: the cockpit, Araxys from orbit and the ship (whose model is the wreck's,
+# in mars_map_gen.py, so map runs this too).
+intro: $(PY)
+	$(PY) tools/intro_gen.py
 
 # Tiling is a pure function of the pictures, so it does not need the planet rendered again.
 tiles: $(PY)

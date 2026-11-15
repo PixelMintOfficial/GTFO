@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ba72wc85qlr8i"
-path="res://.godot/imported/satellite_r3.png-cb1606e38fb0483d303fad5d3ed5e7f9.ctex"
+uid="uid://c5j6ut5m2pinb"
+path="res://.godot/imported/preview.png-28f3ca1cd7172e7c03b4c03d5702121b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/maps/red_planet/anim/satellite_r3.png"
-dest_files=["res://.godot/imported/satellite_r3.png-cb1606e38fb0483d303fad5d3ed5e7f9.ctex"]
+source_file="res://assets/intro/preview.png"
+dest_files=["res://.godot/imported/preview.png-28f3ca1cd7172e7c03b4c03d5702121b.ctex"]
 
 [params]
 
