@@ -239,6 +239,7 @@ clean-shots:
 # ~/.local/share/godot/export_templates/4.7.2.stable/. Presets: export_presets.cfg.
 #   GTFO-web.zip      upload to itch.io as an HTML5 game (index.html at the zip's root); single-threaded,
 #                     so no special server headers. The game data is ~150 MB, over GitHub Pages' 100 MB file limit.
+#                     For a host with a 100 MB file limit (Vercel): python3 tools/web_split_pck.py
 #   GTFO-windows.zip  GTFO.exe, one file, nothing to install
 #   GTFO-linux.zip    GTFO.x86_64
 export: import

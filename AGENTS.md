@@ -56,6 +56,9 @@ it goes. Nothing in the pipeline needs to be remembered as a command line.
 4. To hand the game to someone who has no Godot, `make export` builds a Web version (itch.io
    HTML5 zip), a one-file Windows `.exe` and a Linux binary into `build/` as zips (presets in
    `export_presets.cfg`; needs Godot's 4.7.2 export templates installed). macOS is not exported.
+   For a live link, `python3 tools/web_split_pck.py` cuts the web build's 150 MB data file into parts
+   under 100 MB (a Vercel/GitHub Pages limit) into `build/web-split/`; deploy that folder as a static
+   site (`vercel deploy build/web-split --prod`).
 5. The sound's source recordings are not in the repo (they are large and they are other
    people's work). `make sources` downloads and checksums them into `assets/audio/sources/`.
    You only need them to *regenerate* sound; the baked `assets/audio/*.wav` are committed.
@@ -2005,3 +2008,5 @@ Write one line per decision: date — decision (who approved it).
   them into `build/` (git-ignored). The web data file is ~150 MB, so it needs a host without a
   100 MB file limit (itch.io); the desktop builds are one file each. The web build was run in
   Chromium (intro, skip, walking) and the Linux build standalone; the Windows build is untested here.
+  It is live on Vercel as `gtfo-araxys` (https://gtfo-araxys.vercel.app), deployed from
+  `build/web-split`; its Vercel Authentication is off so the link is public.
