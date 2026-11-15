@@ -21,6 +21,7 @@ extends Node
 ## Facilities use switched indoor lighting: dim without mains at every hour; bright with
 ## the facility's power source. Base uses generator/solar; nursery uses its repaired console.
 ## The astronomical night/clock remain unchanged.
+## Comms follows this same clock, so changing rooms keeps the signal in flight.
 
 signal phase_changed(phase: String)
 signal new_day(day: int)
@@ -139,6 +140,7 @@ static func phase_color() -> Color:
 
 func _process(delta: float) -> void:
 	_update(delta, false)
+	GameState.comms_mission.advance(GameState.clock, GameState.comms_powered)
 	for n in _pending:
 		if is_instance_valid(n) and n.is_inside_tree() and not _in_ui(n):
 			_grade(n as CanvasItem)

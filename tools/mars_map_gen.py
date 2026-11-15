@@ -49,6 +49,7 @@ Pipeline
     MAP_VIEWS=0 python tools/mars_map_gen.py     # only some of the views (default 0123)
     NURSERY_DESIGN=v1 python tools/mars_map_gen.py  # earlier clear, ribbed nursery (default v2)
     NURSERY_SIZE=original python tools/mars_map_gen.py  # restore the earlier 200-unit radius
+    COMMS_DESIGN=v1 python tools/mars_map_gen.py  # earlier glass dome and mast (default v2)
     python tools/mars_map_gen.py --tiles-only    # re-cut the tiles from the pictures on disk
     python tools/mars_map_gen.py --doors-only    # regenerate airlock sheets and routes on existing maps
     python tools/mars_map_gen.py --dome-light-only  # occlude stale interior emission with the native opaque shell
@@ -276,6 +277,10 @@ DOMES['base']['Z'] = DOMES['nursery']['Z'] = 0.0
 BASE_DESIGN = os.environ.get('BASE_DESIGN', 'v3')
 BASE_DOME = {'v1': 'glass', 'hex': 'hex', 'v2': 'rooms', 'v3': 'rooms'}[BASE_DESIGN]
 NURSERY_DESIGN = os.environ.get('NURSERY_DESIGN', 'v2')  # v1: clear ribs; v2: approved tinted honeycomb
+COMMS_DESIGN = os.environ.get('COMMS_DESIGN', 'v2')      # v1: glass dome and mast; v2: pedestal dish
+COMMS_RADIUS = 35.0                                   # design units, including radial supports
+COMMS_DOOR_OFFSET = 34.0
+COMMS_DISH_RADIUS = 39.0
 NURSERY_SIZE = os.environ.get('NURSERY_SIZE', 'compact')  # owner QA: smaller shell; door scale stays usable
 if NURSERY_DESIGN == 'v2' and NURSERY_SIZE == 'compact':
     DOMES['nursery']['R0'] = 60.0
@@ -313,8 +318,10 @@ def dome_units():
                 style = 'hex' if name == 'base' and BASE_DOME == 'hex' else 'glass'
                 if name == 'nursery' and NURSERY_DESIGN == 'v2':
                     style = 'band'
-                _UNITS.append(dict(d, name=name, owner=name, freq=HEX_FREQ,
-                                   style=style))
+                unit = dict(d, name=name, owner=name, freq=HEX_FREQ, style=style)
+                if name == 'comms' and COMMS_DESIGN == 'v2':
+                    unit.update(style='pedestal', R0=COMMS_RADIUS, R=COMMS_RADIUS * DOME_SCALE)
+                _UNITS.append(unit)
     return _UNITS
 DOMES['comms']['Z'] = 108.0       # up on the ice massif
 # The comms dome stands on a stepped charcoal massif: tiers (radius, height, centre offset from
@@ -612,6 +619,17 @@ def airlock_ends():
                         out.append((u, (e + dirv * t - c) / u['R']))
                         break
     return out
+
+
+def primary_comms_airlock():
+    """Keep the base-side trail entrance ID across all four views."""
+    return next(i for i, (d, _) in enumerate(airlock_ends()) if d['owner'] == 'comms')
+
+
+def map_airlocks():
+    comms_id = primary_comms_airlock()
+    return [(i, d, n) for i, (d, n) in enumerate(airlock_ends())
+            if d['style'] != 'pedestal' or i == comms_id]
 
 
 def nursery_entry_clearance(X, Y):
@@ -1490,11 +1508,24 @@ def shadow_map(Hf, win=None):
     z = Hf[a0:a1, b0:b1] + s * SUN[2] / lh - c['Z']
     rad = (7.5 - 4.5 * np.clip(z / (TOWER_TOP * DOME_SCALE), 0, 1)) * DOME_SCALE
     tower = (s > 0) & (perp < rad) & (z > 0) & (z < top)
+    if COMMS_DESIGN == 'v2':
+        # The solid pedestal and the tilted reflector both cast a shadow on the snow.
+        tower = (s > -COMMS_RADIUS * DOME_SCALE) & (perp < COMMS_RADIUS * DOME_SCALE) & (z > 0) & (z < 21 * DOME_SCALE)
+        dx, dy = (pu - pv - cu + cv) / SQ2, (pu + pv - cu - cv) / SQ2
+        origin = np.stack((dx, dy, Hf[a0:a1, b0:b1] - c['Z']), axis=-1)
+        offset, frame = comms_dish_pose()
+        scales = np.array([COMMS_DISH_RADIUS, COMMS_DISH_RADIUS, 6.]) * DOME_SCALE
+        local = ((origin - offset * DOME_SCALE) @ frame) / scales
+        ray = (SUN @ frame) / scales
+        nearest = np.maximum(0., -(local @ ray) / (ray @ ray))
+        tower |= np.sum((local + nearest[..., None] * ray) ** 2, axis=-1) < 1.
     sh[a0:a1, b0:b1] = np.maximum(sh[a0:a1, b0:b1], tower)
 
     # glass domes cast a faint shadow outside their footprint
     Lg = np.array([du, dv, SUN[2]])
     for d in dome_units():
+        if d['style'] == 'pedestal':
+            continue
         du0, dv0 = to_grid(d['X'], d['Y'])
         R = d['R']
         a0, a1 = max(0, int(du0 - R * 2.4)), min(N, int(du0 + R * 2.4))
@@ -2003,7 +2034,8 @@ def airlock(d, dirv, open_=0.0):
     a = C + dirv * (d['R0'] - 8) + np.array([0, 0, 6.0])
     b = C + dirv * (d['R0'] + 13) + np.array([0, 0, 6.0])
     Ry = yaw_to(dirv)
-    white = d.get('style') == 'band'
+    pedestal = d.get('style') == 'pedestal'
+    white = d.get('style') == 'band' or pedestal
     if not white:
         return [P_('tunnel', A.RoundCone(a, b, 6.6, 6.2), 'pack', 'airlock', decal_tunnel),
                 P_('door', A.RoundBox(b + dirv * 1.2, (1.6, 7.0, 7.2), 1.2, Ry), 'coral', 'door'),
@@ -2012,6 +2044,8 @@ def airlock(d, dirv, open_=0.0):
     side = np.array([-dirv[1], dirv[0], 0.0])
     up = np.array([0.0, 0.0, 1.0])
     f = b + dirv * 0.9                                   # the door plane, just off the tube's flat end
+    if pedestal:
+        f = C + dirv * COMMS_DOOR_OFFSET + up * 6.0
     e = open_ * open_ * (3 - 2 * open_)
     parts = [P_('tunnel', A.Disc((a + b) / 2, 6.5, float(np.linalg.norm(b - a)) / 2, 1.2, Ry), 'white', 'airlock',
                 decal_tube_white),
@@ -2025,6 +2059,13 @@ def airlock(d, dirv, open_=0.0):
         hw = 3.2 * (1 - 0.9 * e)                         # each half telescopes into its pocket
         parts.append(P_('half', A.RoundBox(f - dirv * 0.35 * e + side * sgn * (6.4 - hw), (0.75, hw, 6.9), 0.35, Ry),
                         'coral', f'half{sgn}', decal_door_half))
+    if pedestal:
+        parts = parts[1:]                              # the pedestal replaces the projecting tunnel
+        for part in parts:
+            if part.name == 'portal' and part.ramp == 'white':
+                part.ramp = 'coral'
+            elif part.name == 'lamp':
+                part.ramp = 'screen'
     return parts
 
 
@@ -2259,6 +2300,88 @@ def comms_interior(d):
         parts += [P_(p.name, p.sdf, p.ramp, f'lamp{k}') for p in lp]
         lights.append(head)
     return parts, lights
+
+
+class CommsReflector(A.Ellipsoid):
+    """A thin paraboloid in the reflector's local frame, bounded by its rim."""
+
+    def __init__(self, center, frame):
+        super().__init__(center, (COMMS_DISH_RADIUS + 1,) * 3, frame)
+
+    def __call__(self, points):
+        q = self.local(points)
+        radius = np.hypot(q[:, 0], q[:, 1])
+        surface = 12. * (radius / COMMS_DISH_RADIUS) ** 2
+        return np.maximum(radius - COMMS_DISH_RADIUS, (np.abs(q[:, 2] - surface) - .6) * .8)
+
+
+def decal_comms_reflector(part, points):
+    q = part.sdf.local(points)
+    radius = np.hypot(q[:, 0], q[:, 1])
+    angle = np.arctan2(q[:, 1], q[:, 0])
+    seams = np.abs(np.sin(angle * 6.)) * radius < .22
+    seams |= (abs(radius - 12.) < .18) | (abs(radius - 25.) < .18)
+    panel = np.full(len(points), OID['white'])
+    panel[seams & (radius > 11.)] = OID['metal']
+    # A few short enamel rubs, authored in bowl coordinates so they turn with it.
+    for x, y, span, width in ((-19., 14., 4.2, .42), (25., -11., 3.2, .38), (12., 29., 2., .32)):
+        along = q[:, 0] - x
+        rub = (along / span) ** 2 + ((q[:, 1] - y - .35 * along) / width) ** 2 < 1.
+        panel[rub] = OID['metal']
+    return panel
+
+
+def comms_dish_pose():
+    axis = A.nz(np.array([-.38, -.45, .8]))
+    return np.array([0., 0., 49.]) - axis * 3., frame_z(axis)
+
+
+def comms_pedestal(d, entrance):
+    """The usable large radio dish and occupied pedestal, in canonical world space."""
+    c = cam(d['X'], d['Y'], d['Z'])
+    up = np.array([0., 0., 1.])
+    fwd = np.array([*entrance, 0.])
+
+    def disc(height, radius, half, ramp, group):
+        return P_('ring', A.Disc(c + up * height, radius, half, .55, UPAX), ramp, group)
+
+    parts = [disc(5.3, 32.5, 5.5, 'dark', 'plinth'),
+             disc(12., 33., 2.3, 'white', 'plinth'),
+             disc(16.5, 24., 4.3, 'white', 'pedestal'),
+             disc(16.6, 24.15, .62, 'coral', 'pedestal'),
+             disc(20.3, 15.5, 1.3, 'teal', 'bearing'),
+             disc(27.3, 10.5, 7., 'white', 'bearing')]
+    for height in (1.4, 4.4, 7.4):
+        parts.append(disc(height, 32.9, .66, 'pack', 'plinth'))
+    for i in range(10):
+        rad = A.rz((i + .5) * TAU / 10.) @ fwd
+        foot = c + rad * 31.5
+        parts.append(P_('buttress', A.RoundBox(foot + up * 5.4, (3.4, 2.2, 5.2), .9, yaw_to(rad)), 'white', f'brace{i}'))
+        parts.append(P_('toe', A.RoundBox(foot + up * 1.45, (3.45, 2.25, 1.15), .5, yaw_to(rad)), 'coral', f'brace{i}'))
+    side = np.array([-fwd[1], fwd[0], 0.])
+    for sign in (-1, 1):
+        lamp = c + fwd * 23. + side * (sign * 15.)
+        parts.append(P_('status_post', A.RoundCone(lamp + up * 13., lamp + up * 16.5, .68, .5), 'dark', 'status'))
+        parts.append(P_('status_lamp', A.Sphere(lamp + up * 16.8, .82), 'screen', 'status'))
+    offset, frame = comms_dish_pose()
+    axis = frame[:, 2]
+    dish = c + offset
+    parts.append(P_('dish_mount', A.RoundCone(c + up * 32., dish - axis * 5.3, 7., 5.), 'pack', 'bearing'))
+    parts.append(P_('reflector', CommsReflector(dish, frame), 'white', 'reflector', decal_comms_reflector))
+    rim = dish + axis * 12.
+    parts.append(P_('rim', A.Torus(rim, COMMS_DISH_RADIUS - .15, .66, frame), 'metal', 'reflector'))
+    feed = dish + axis * 32.
+    for i, theta in enumerate((.18, .18 + TAU / 3., .18 - TAU / 3.)):
+        radial = frame @ np.array([math.cos(theta), math.sin(theta), 0.])
+        foot = dish + radial * 33. + axis * 9.1
+        tip = feed - axis * 1.2
+        parts.append(P_('feed_strut', A.RoundCone(foot, tip, 1.12, .78), 'white', f'feed_strut{i}'))
+        parts.append(P_('strut_shoe', A.Sphere(foot, 1.55), 'pack', f'feed_strut{i}'))
+        parts.append(P_('strut_band', A.RoundCone(foot * .72 + tip * .28, foot * .66 + tip * .34, 1.15, 1.1),
+                        'coral', f'feed_strut{i}'))
+    parts.append(P_('receiver', A.Disc(feed, 3., 2.2, .5, np.roll(frame, 1, axis=1)), 'teal', 'receiver'))
+    parts.append(P_('receiver_cap', A.Disc(feed + axis * 2.4, 2.7, .42, .2, np.roll(frame, 1, axis=1)), 'white', 'receiver'))
+    return parts
 
 
 def comms_tower(d, with_dish=False):
@@ -2903,6 +3026,8 @@ def glass_front(gx, gy, h, w):
     """Depth of the nearest dome glass over an image rect (inf where there is none)."""
     out = np.full((h, w), np.inf, np.float32)
     for d in dome_units():
+        if d['style'] == 'pedestal':
+            continue
         cx, cy = project(d['X'], d['Y'], d['Z'])
         rp = d['R'] / S
         if gx > cx + rp or gx + w < cx - rp or gy > cy + rp or gy + h < cy - rp:
@@ -4660,7 +4785,8 @@ def export_animated(D):
     if NURSERY_DESIGN == 'v1':
         sheet('nursery_anemometer', apex_anemometer, DOMES['nursery'], 8, 14, DOMES['nursery']['R0'] + 4, 9.5,
               turn=2 * math.pi / 3)
-    sheet('comms_dish', tower_dish_frame, DOMES['comms'], 24, 6, 121.0, 21.0)
+    if COMMS_DESIGN == 'v1':
+        sheet('comms_dish', tower_dish_frame, DOMES['comms'], 24, 6, 121.0, 21.0)
 
     def visible(P):
         px, py = project(*P)
@@ -4669,7 +4795,7 @@ def export_animated(D):
 
     for d in dome_units():                                # rim lights, as decal_ring places them
         name = d['owner']
-        if not d['powered']:
+        if not d['powered'] or d['style'] == 'pedestal':
             continue
         if d['owner'] == 'nursery' and NURSERY_DESIGN == 'v2':
             continue                                      # the new footing is white/coral, without the old rim LEDs
@@ -4681,8 +4807,8 @@ def export_animated(D):
             ok, px = visible(P)
             if ok:
                 out['ring_lights'].append(px + [round(k / n, 4), name])
-    for k, (d, dirv) in enumerate(airlock_ends()):        # a warning light over every airlock door
-        if not d['powered']:
+    for k, d, dirv in map_airlocks():                     # a warning light over every airlock door
+        if not d['powered'] or d['style'] == 'pedestal':
             continue
         C = cam(d['X'], d['Y'], d['Z'] + 0.0)
         dv = np.array([dirv[0], dirv[1], 0.0])
@@ -4693,8 +4819,9 @@ def export_animated(D):
             out['door_lights'].append(px + [round(k * 0.37 % 1.0, 3)])
     cm = DOMES['comms']
     C = cam(cm['X'], cm['Y'], cm['Z'])
-    bx, by = project(*scale_pt(C + np.array([0, 0, TOWER_TOP + 28]), C, DOME_SCALE))
-    out['beacon'] = [int(bx), int(by)]
+    if COMMS_DESIGN == 'v1':
+        bx, by = project(*scale_pt(C + np.array([0, 0, TOWER_TOP + 28]), C, DOME_SCALE))
+        out['beacon'] = [int(bx), int(by)]
     print(f"animated: {len(out['sprites'])} sprites, {len(out['ring_lights'])} rim lights, "
           f"{len(out['door_lights'])} door lights")
     return out
@@ -4841,7 +4968,7 @@ def export_minimap(final, filled, fit=(352, 192)):
         label = name.upper()
         mx, top = to_mm(d['X'], d['Y'], d['Z'] + d['R'] * (1.0 if name != 'comms' else 0.0) + 20)
         if name == 'comms':
-            top = to_mm(d['X'], d['Y'], d['Z'] + (TOWER_TOP + 34) * DOME_SCALE)[1]
+            top = to_mm(d['X'], d['Y'], d['Z'] + (86 if COMMS_DESIGN == 'v2' else TOWER_TOP + 34) * DOME_SCALE)[1]
         draw_text(mm, int(mx - text_width(label) / 2), int(top - 9), label, cream)
     wx, wy = to_mm(CRASH['X'], CRASH['Y'] - CRASH['R'] * 1.4, 0.0)          # under the wreck, clear of the base
     draw_text(mm, int(wx - text_width('WRECK') / 2), int(wy + 2), 'WRECK', A.hex2rgb('#ffb27a'))
@@ -4907,9 +5034,10 @@ def world_walk_grid(G, debris=(), body=None):
         t = np.clip(((Xg - a[0]) * ab[0] + (Yg - a[1]) * ab[1]) / (ab @ ab), 0, 1)
         solid |= np.hypot(Xg - a[0] - t * ab[0], Yg - a[1] - t * ab[1]) < r
 
-    for d, dirv in airlock_ends():                                    # airlock tunnels
+    for _, d, dirv in map_airlocks():                                 # airlock tunnels and portal
         C = np.array([d['X'], d['Y']])
-        block_segment(C + dirv * (d['R0'] - 8) * DOME_SCALE, C + dirv * (d['R0'] + 16) * DOME_SCALE, 8.0 * DOME_SCALE)
+        if d['style'] != 'pedestal':
+            block_segment(C + dirv * (d['R0'] - 8) * DOME_SCALE, C + dirv * (d['R0'] + 16) * DOME_SCALE, 8.0 * DOME_SCALE)
     if BASE_DOME == 'rooms':                                          # the corridors between the base's rooms
         rooms = [u for u in dome_units() if u['owner'] == 'base']
         for a_, b_ in BASE_LINKS:
@@ -5014,9 +5142,9 @@ def export_doors(D, kind):
     adir = os.path.join(OUT, 'anim')
     out = []
     with canonical():
-        ends0 = airlock_ends()
-    for k, ((d, dirv), (d0, dirv0)) in enumerate(zip(airlock_ends(), ends0)):
-        if d.get('owner') not in ('base', 'nursery') or d.get('style') != 'band':
+        ends0 = map_airlocks()
+    for (k, d, dirv), (_, d0, dirv0) in zip(map_airlocks(), ends0):
+        if d['style'] not in ('band', 'pedestal'):
             continue
         C = cam(d['X'], d['Y'], d['Z'])
         C0 = cam(d0['X'], d0['Y'], d0['Z'])
@@ -5025,7 +5153,8 @@ def export_doors(D, kind):
                             for i in range(DOOR_FRAMES)]
         frames_parts = [turned(fp) for fp in frames_parts]
         dv3 = np.array([dirv[0], dirv[1], 0.0])
-        f = C + dv3 * (d['R0'] + 14.4) + np.array([0, 0, 6.0])
+        offset = COMMS_DOOR_OFFSET if d['style'] == 'pedestal' else d['R0'] + 14.4
+        f = C + dv3 * offset + np.array([0, 0, 6.0])
         door_c = scale_pt(f, C, DOME_SCALE)
         r_px = 9.5 * DOME_SCALE / S
         cx, cy = project(*door_c)
@@ -5043,7 +5172,8 @@ def export_doors(D, kind):
         foot0 = to_canon(foot)                                  # the game keeps the world in view 0's frame
         lamp = scale_pt(f + dv3 * 1.4 + np.array([0, 0, 7.9]), C, DOME_SCALE)
         lx, ly = project(*lamp)
-        out.append(dict(id=k, interior='res://scenes/nursery.tscn' if d['owner'] == 'nursery' else 'res://scenes/interior.tscn',
+        interiors = {'base': 'interior', 'nursery': 'nursery', 'comms': 'comms'}
+        out.append(dict(id=k, interior=f'res://scenes/{interiors[d["owner"]]}.tscn',
                         file=fn, frames=DOOR_FRAMES, position=[box[0], box[1]], frame_size=[box[2], box[3]],
                         sort_y=round(float(project(*foot)[1])), world=[round(float(foot0[0]), 2), round(float(foot0[1]), 2)],
                         dir=[round(float(dirv0[0]), 4), round(float(dirv0[1]), 4)], lamp_px=[round(float(lx), 1), round(float(ly), 1)],
@@ -5156,12 +5286,18 @@ def render_view(G, G0, k):
     with canonical():
         comms = DOMES['comms']
         cC = cam(comms['X'], comms['Y'], comms['Z'])
-        tower_parts, beacon = comms_tower(comms)
+        if COMMS_DESIGN == 'v2':
+            entrance = airlock_ends()[primary_comms_airlock()][1]
+            tower_parts = comms_pedestal(comms, entrance)
+        else:
+            tower_parts, _ = comms_tower(comms)
         tower_parts = scaled(tower_parts, cC, DOME_SCALE, 'tower')
     gb = render_groups(turned(tower_parts), img, D, kind, gid, gb)
     interiors = {'base': base_interior, 'nursery': nursery_interior, 'comms': comms_interior,
                  'command': command_room, 'habitat': habitat_room, 'garage': garage_room}
     for d in dome_units():
+        if d['style'] == 'pedestal':
+            continue
         name = d['name']
         d0 = canon_unit(name)
         with canonical():
@@ -5182,7 +5318,7 @@ def render_view(G, G0, k):
     with canonical():
         corridors = base_corridors() if BASE_DOME == 'rooms' else []
         locks = [scaled(airlock(d0, dirv0), cam(d0['X'], d0['Y'], d0['Z']), DOME_SCALE, f'airlock{i}')
-                 for i, (d0, dirv0) in enumerate(airlock_ends())]
+                 for i, d0, dirv0 in map_airlocks()]
         solar = solar_field()
     if corridors:
         gb = render_groups(turned(corridors), img, D, kind, gid, gb)
@@ -5239,6 +5375,8 @@ def render_view(G, G0, k):
     dome_glints = []
     base_cracks = []
     for d in sorted(dome_units(), key=lambda u: -u['Y']):      # far domes first: near glass shows them
+        if d['style'] == 'pedestal':
+            continue
         gb += 1
         if d['style'] == 'hex':
             dome_glints += hex_dome(img, D, kind, gid, d, gb)
@@ -5307,10 +5445,15 @@ def render_view(G, G0, k):
     boxes = {}
     for name, d in DOMES.items():
         cx, cy = project(d['X'], d['Y'], d['Z'])
-        top = max(d['R'] / S, (TOWER_TOP + 31) * DOME_SCALE * PX if name == 'comms' else 0)
-        box = [cx - d['R'] / S, cy - top, cx + d['R'] / S, cy + d['R'] * KY * PX]
+        radius = d['R']
+        height = 0.
+        if name == 'comms':
+            radius = COMMS_DISH_RADIUS * DOME_SCALE if COMMS_DESIGN == 'v2' else radius
+            height = (86 if COMMS_DESIGN == 'v2' else TOWER_TOP + 31) * DOME_SCALE
+        top = max(radius / S, height * PX)
+        box = [cx - radius / S, cy - top, cx + radius / S, cy + radius * KY * PX]
         boxes[name] = box
-        meta['domes'][name] = dict(center_px=[round(cx, 1), round(cy, 1)], radius_world=d['R'],
+        meta['domes'][name] = dict(center_px=[round(cx, 1), round(cy, 1)], radius_world=radius,
                                    bbox_px=[round(b, 1) for b in box])
     names = list(boxes)
     checks = []
@@ -5351,7 +5494,7 @@ def render_view(G, G0, k):
     for name, b in DOMES.items():
         bx, by = project(b['X'], b['Y'], b['Z'])
         xs, ys = [bx - b['R'] / S, bx + b['R'] / S], [by - b['R'] / S, by + b['R'] * KY * PX]
-        for d, dirv in airlock_ends():
+        for _, d, dirv in map_airlocks():
             if d['owner'] == name:
                 for z in (0.0, 30.0 * DOME_SCALE):
                     px_, py_ = project(*(np.array([b['X'], b['Y'], b['Z'] + z]) + np.array([*dirv, 0]) * (b['R0'] + 17) * DOME_SCALE))

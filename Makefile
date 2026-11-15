@@ -11,6 +11,7 @@
 #   make base-power     regenerate four-view base/nursery lighting masks from map geometry
 #   make interior       regenerate the base interior and its bot (about a minute)
 #   make nursery        regenerate the nursery interior and overworld airlock routes
+#   make comms          regenerate the damaged comms room in all four views
 #   make nursery-metadata refresh nursery repair/scanner anchors without rendering
 #   make nursery-cleanup regenerate removable native litter sheets
 #   make reserve-meter  regenerate the physical O2 side-wall reserve meter
@@ -36,7 +37,7 @@ UV    ?= uv
 SHOTS ?= shots
 SCENE ?= res://scenes/overworld.tscn
 
-.PHONY: help env sources sfx props solar base-power interior nursery cultivation windows astronaut astronaut-quick map intro tiles all import check \
+.PHONY: help env sources sfx props solar base-power interior nursery comms cultivation windows astronaut astronaut-quick map intro tiles all import check \
         check-overworld check-interior check-nursery check-tests shot sounds verify clean-shots nursery-metadata nursery-cleanup dome-light reserve-meter
 
 help:
@@ -84,6 +85,9 @@ nursery: $(PY)
 	$(PY) tools/nursery_cleanup_gen.py
 	$(PY) tools/mars_map_gen.py --doors-only
 
+comms: $(PY)
+	$(PY) tools/comms_gen.py
+
 nursery-metadata: $(PY)
 	$(PY) tools/nursery_gen.py --repair-metadata-only
 
@@ -129,7 +133,7 @@ intro: $(PY)
 tiles: $(PY)
 	$(PY) tools/mars_map_gen.py --tiles-only
 
-all: astronaut map interior nursery sfx import
+all: astronaut map interior nursery comms sfx import
 
 # ---------------------------------------------------------------- Godot
 import:

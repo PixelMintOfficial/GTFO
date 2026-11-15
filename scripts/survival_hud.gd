@@ -5,6 +5,7 @@ extends CanvasLayer
 ## Compact O2 reserve counter only after O2 repair while mains are off; hides again on mains.
 ## Owns scene ticking/input only; vitals remain in GameState. Pauses in ordinary modals and
 ## cutscenes; the live window inspection keeps survival ticking along with world physics.
+## Solar alerts show particle arrival and the all-clear countdown, including in shelter.
 ## Explicit development mode: --survival-debug enables F6 damage, F7 air, F8 empty needs,
 ## F9 refill, F10 60x time. --vitals=H,O,F,W and --survival-speed=N require that flag.
 ## --hud-preview=H,O,F,W is UI-only; F11 cycles 0/25/50/75/100, F12 restores live display.
@@ -132,6 +133,7 @@ var _hud_drawn := []
 var _air_state := ""
 var _air_notice := 0.0
 var _solar_activity := SurvivalState.SolarActivity.QUIET
+var _solar_minutes := 0
 
 
 func _layout() -> void:
@@ -146,6 +148,7 @@ func _layout() -> void:
 
 func _process(delta: float) -> void:
 	_solar_activity = GameState.survival.solar_activity(GameState.clock)
+	_solar_minutes = GameState.survival.solar_minutes_left(GameState.clock, _solar_activity)
 	var air_state := GameState.facility_air.status() + str(GameState.facility_air.sealed())
 	if air_state != _air_state:
 		_air_state = air_state
@@ -173,7 +176,7 @@ func _process(delta: float) -> void:
 		meter.refresh()
 	var hud := [_player.controls_enabled, _player.can_breathe(), GameState.survival.dead,
 			debug_enabled, meters[0].preview, _air_state, _air_notice > 0.,
-			roundi(GameState.facility_air.reserve_fraction() * 100.), _solar_activity]
+			roundi(GameState.facility_air.reserve_fraction() * 100.), _solar_activity, _solar_minutes]
 	if hud != _hud_drawn:                                 # a few lines of text, and only on a change
 		_hud_drawn = hud
 		_canvas.queue_redraw()
@@ -240,13 +243,16 @@ func _draw_hud() -> void:
 	var state := GameState.survival
 	if not _player.controls_enabled and not state.dead:
 		return
-	if not state.dead and not _indoors and _solar_activity != SurvivalState.SolarActivity.QUIET:
-		var label := "SOLAR FLARE - FIND SHELTER"
+	if not state.dead and _solar_activity != SurvivalState.SolarActivity.QUIET:
+		var label := "FLARE / STORM IN %d MIN" % _solar_minutes
+		var advice := "STAY INSIDE" if _indoors else "FIND SHELTER"
 		if _solar_activity == SurvivalState.SolarActivity.STORM:
-			label = "RADIATION STORM - GET INSIDE"
+			label = "RADIATION / %d MIN LEFT" % _solar_minutes
+			advice = "SHELTERED" if _indoors else "GET INSIDE"
 		var at := MARGIN + Vector2(PANEL_SIZE.x + 6, 4)
-		_canvas.draw_rect(Rect2(at, Vector2(PixelFont.width(label) + 8, 11)), InventoryUI.DARK)
+		_canvas.draw_rect(Rect2(at, Vector2(maxi(PixelFont.width(label), PixelFont.width(advice)) + 8, 20)), InventoryUI.DARK)
 		PixelFont.draw(_canvas, at + Vector2(4, 3), label, InventoryUI.GOLD)
+		PixelFont.draw(_canvas, at + Vector2(4, 12), advice, InventoryUI.TEAL if _indoors else InventoryUI.WHITE)
 	if debug_enabled:
 		PixelFont.draw(_canvas, Vector2(6, 39), "DEV %dX AIR %s" % [int(speed), "ON" if _player.can_breathe() else "OFF"], InventoryUI.GOLD)
 		if meters[0].preview >= 0:

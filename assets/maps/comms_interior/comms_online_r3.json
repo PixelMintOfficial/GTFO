@@ -1,0 +1,111 @@
+{
+  "name": "comms_interior",
+  "image": "comms_online_r3.png",
+  "size": [
+    384,
+    236
+  ],
+  "origin_px": [
+    192.0,
+    750.4442799572107
+  ],
+  "view": 3,
+  "views": [
+    "comms_online.json",
+    "comms_online_r1.json",
+    "comms_online_r2.json",
+    "comms_online_r3.json"
+  ],
+  "game": {
+    "depth_png": "comms_online_depth_r3.png",
+    "light_png": "comms_online_light_r3.png",
+    "sun_png": "comms_online_sun_r3.png",
+    "walk_png": "comms_walk.png",
+    "depth_scale": 20.0,
+    "height_offset": 100.0,
+    "height_scale": 150.0,
+    "world_units_per_px": 0.43301270189221935,
+    "depth_to_px": 0.5773502691896257,
+    "px_per_unit": 2.0,
+    "character_scale": 0.5,
+    "grid_size": 760,
+    "spawn_world": [
+      -22.199189174382038,
+      504.6313305715817
+    ],
+    "heading": 3,
+    "layout_scale": 0.81,
+    "view_center": [
+      0.0,
+      520.0
+    ]
+  },
+  "zoom": {
+    "max_view_px": [
+      384,
+      236
+    ],
+    "frames": {}
+  },
+  "doors": [
+    {
+      "id": 3,
+      "file": "anim/door_3_r3.png",
+      "frames": 12,
+      "position": [
+        192,
+        90
+      ],
+      "frame_size": [
+        158,
+        168
+      ],
+      "sort_y": 208,
+      "world": [
+        -50.15372369027053,
+        485.2781912913512
+      ],
+      "dir": [
+        0.8221921916437792,
+        0.5692099788303079
+      ],
+      "lamp_px": [
+        267.95378249435635,
+        136.77550957925735
+      ],
+      "height": 34.04
+    }
+  ],
+  "rooms": {
+    "comms": {
+      "label": "COMMS",
+      "center": [
+        0.0,
+        520.0
+      ],
+      "radius": 64.0
+    }
+  },
+  "fx": {
+    "shafts": [],
+    "leds": [],
+    "core": [
+      0,
+      0
+    ],
+    "tanks": [],
+    "sparks": [],
+    "vapor": []
+  },
+  "console_stand": [
+    0.0,
+    539.0
+  ],
+  "console_repair": {
+    "world": [
+      0.0,
+      558.5
+    ],
+    "scan_height": 22.0
+  }
+}

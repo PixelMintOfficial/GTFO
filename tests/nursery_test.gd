@@ -1,12 +1,14 @@
 extends Node
 ## Nursery integration: four-view metadata, solid furniture, reachable approaches,
-## real F/X input on both airlocks, entering one and leaving the other, camera turns,
-## and clock/tool/inventory/suit-light continuity. Runs the real scenes and cutscenes.
+## real F/X input on the nursery airlocks, camera turns and session continuity.
+## Also checks the comms airlock, main-base power gate, SOS and radiation shelter.
 ## Run: godot --headless --path . res://tests/nursery_test.tscn
 
 const WORLD := "res://scenes/overworld.tscn"
 const ROOM := "res://scenes/nursery.tscn"
 const MAP := "res://assets/maps/nursery_interior/nursery.json"
+const COMMS := "res://scenes/comms.tscn"
+const COMMS_ID := 3
 var _checks := 0
 var _failures := 0
 
@@ -105,8 +107,111 @@ func _run() -> void:
 		_check(GameState.suit_light, "suit light survives exit")
 		_check(world.player.tool_state == Player.Tool.READY, "tool survives exit")
 		_check(GameState.item_count("water") == water, "inventory survives both transitions")
+	if _failures == 0:
+		await _comms_round_trip()
 	print("NURSERY TESTS: %d checks, %d failures" % [_checks, _failures])
 	await Audio.quit(1 if _failures else 0)
+
+
+func _comms_round_trip() -> void:
+	var world := get_tree().current_scene as Node2D
+	var entry := _find_door(world, COMMS_ID)
+	_check(entry != null, "comms exterior entrance exists")
+	if entry == null:
+		return
+	_check(world.terrain.is_walkable(entry.stand_point()), "comms entrance stands on traversable ground")
+	world.player.teleport(entry.stand_point())
+	await _wait(.15)
+	_check(entry._prompt, "comms exterior offers the enter prompt")
+	await _interact(false)
+	if not await _scene(COMMS):
+		return
+	var room := get_tree().current_scene as Node2D
+	await _arrival(room, [room.door])
+	_check(GameState.door_id == COMMS_ID, "the comms airlock IDs match")
+	_check(room.player.world_pos.distance_to(room.door.stand_point()) < 2., "arrives inside comms")
+	_check(room.player.camera.zoom_locked, "comms keeps indoor zoom lock")
+	var feet: Vector2 = room.player.world_pos
+	var heading: int = room.terrain.heading
+	await _tap(KEY_H)
+	for tick in 100:
+		if room.player.controls_enabled and room.terrain.heading != heading:
+			break
+		await _wait(.03)
+	_check(room.terrain.heading == (heading + 1) % 4, "comms turns to the next native view")
+	_check(room.player.world_pos.distance_to(feet) < .01, "comms turn keeps the astronaut in place")
+	await _comms_repair(room)
+	var mission := GameState.comms_mission
+	GameState.clock = 10.7
+	await _interact(true)
+	_check(mission.stage(GameState.clock) == CommsMission.Stage.OUTBOUND, "pad X sends a fresh SOS at the console")
+	await _tap(KEY_E)
+	var paused_clock := GameState.clock
+	await _wait(.15)
+	_check(get_tree().paused and GameState.clock == paused_clock, "backpack pauses the signal clock")
+	await _tap(KEY_E)
+	GameState.clock = mission._sent_at + CommsMission.LEG_HOURS + .01
+	GameState.survival.set_value("radiation", 50.)
+	await _wait(.2)
+	_check(mission.stage(GameState.clock) == CommsMission.Stage.INBOUND and not mission.reply_received,
+			"Earth replies after the first leg and the player has to wait for the return")
+	_check(GameState.survival.values["radiation"] < 50., "comms pedestal shelters the player during the storm")
+	await _interact(false)
+	_check(mission.stage(GameState.clock) == CommsMission.Stage.INBOUND, "repeated console input cannot restart the SOS")
+	room.player.teleport(room.door.stand_point())
+	await _wait(.15)
+	await _interact(true)
+	if not await _scene(WORLD):
+		return
+	world = get_tree().current_scene as Node2D
+	await _arrival(world)
+	var exit := _find_door(world, COMMS_ID)
+	_check(exit != null and world.player.world_pos.distance_to(exit.stand_point()) < 2., "returns to the same comms airlock")
+	_check(GameState.comms_repair_progress == 1.0, "screen repair survives leaving comms")
+	var dose: float = GameState.survival.values["radiation"]
+	await _wait(.2)
+	_check(GameState.survival.values["radiation"] > dose, "outside the comms shelter, the storm raises exposure")
+	GameState.solar_field.toggle_feed(0)
+	GameState.clock = mission._sent_at + 2.0 * CommsMission.LEG_HOURS + .01
+	await _wait(.1)
+	_check(mission.stage(GameState.clock) == CommsMission.Stage.RECEIVER_OFFLINE, "a due reply waits until the receiver has power")
+	GameState.solar_field.toggle_feed(0)
+	await _wait(.1)
+	_check(mission.reply_received and GameState.story.comms_objectives("base")[0]["done"],
+			"restoring the receiver completes the SOS even while the player is outside")
+
+
+func _comms_repair(room: Node2D) -> void:
+	_check(DayNight.fixture_power == 0.0, "comms starts dark")
+	GameState.repair_for("power").debug_complete(true)
+	GameState.solar_field.debug_complete(true)
+	await _wait(.1)
+	_check(GameState.base_powered() and DayNight.fixture_power == 0.0, "base mains alone leave comms dark")
+	GameState.solar_field.toggle_feed(0)
+	var stand: Array = ViewData.get_json(room.terrain.view_json)["console_stand"]
+	room.player.teleport(Vector2(stand[0], stand[1]))
+	await _wait(.15)
+	var press := InputEventKey.new()
+	press.physical_keycode = KEY_F
+	press.pressed = true
+	Input.parse_input_event(press)
+	await _wait(Multitool.TIMES["fix"] + .35)
+	press = InputEventKey.new()
+	press.physical_keycode = KEY_F
+	Input.parse_input_event(press)
+	await _wait(.1)
+	_check(GameState.comms_repair_progress == 1.0, "holding F repairs the screen")
+	_check(DayNight.fixture_power == 0.0 and "standby" in room.terrain.view_json, "repaired screen waits for full mains")
+	await _interact(false)
+	_check(not GameState.comms_mission.has_transmitted(), "a repaired but unpowered screen cannot send")
+	GameState.solar_field.toggle_feed(0)
+	await _wait(.1)
+	_check(DayNight.fixture_power == 1.0 and "online" in room.terrain.view_json, "restored mains light the repaired room")
+	GameState.solar_field.toggle_feed(0)
+	await _wait(.1)
+	_check(DayNight.fixture_power == 0.0 and GameState.comms_repair_progress == 1.0, "mains loss keeps the repair")
+	GameState.solar_field.toggle_feed(0)
+	await _wait(.1)
 
 
 func _data() -> void:
@@ -128,8 +233,10 @@ func _data() -> void:
 			_check(int(info["id"]) in [1, 5], "stable exterior/interior door id")
 			_check(is_equal_approx(float(info["sort_y"]), roundf(float(info["sort_y"]))), "whole-pixel sorting")
 		var world_meta := ViewData.get_json("res://assets/maps/red_planet/red_planet_map%s.json" % ("" if heading == 0 else "_r%d" % heading))
+		var destinations := {0: "res://scenes/interior.tscn", 1: ROOM, 2: "res://scenes/interior.tscn",
+				COMMS_ID: COMMS, 5: ROOM}
 		for info in ViewData.fx_of("res://assets/maps/red_planet/red_planet_map%s.json" % ("" if heading == 0 else "_r%d" % heading), world_meta)["doors"]:
-			_check(info["interior"] == (ROOM if int(info["id"]) in [1, 5] else "res://scenes/interior.tscn"), "generated destination")
+			_check(info["interior"] == destinations.get(int(info["id"])), "generated destination")
 			_check(is_equal_approx(float(info["sort_y"]), roundf(float(info["sort_y"]))), "outside whole-pixel sorting")
 
 
@@ -158,10 +265,12 @@ func _scene(path: String) -> bool:
 	return false
 
 
-func _arrival(scene: Node) -> void:
+func _arrival(scene: Node, doors := []) -> void:
+	if doors.is_empty():
+		doors = scene.doors
 	for tick in 200:
 		var busy := false
-		for door in scene.doors:
+		for door in doors:
 			busy = busy or door.busy()
 		if not busy:
 			return

@@ -9,6 +9,7 @@ extends RefCounted
 ## The opening cutscene's radio lines live there too ("intro"), read by IntroCutscene through text().
 ## The player's name is remembered between launches as a preference (PlayerProfile).
 ## F1 can complete/reset the nursery body independently of the main introduction and crops.
+## Comms objectives reflect the current screen, power and signal state in GameState.
 
 signal changed
 
@@ -145,6 +146,30 @@ func objective_done(id: String) -> bool:
 		if objective.has("route"):
 			return GameState.solar_field.routes[int(objective["route"])]["connected"]
 	return false
+
+
+func comms_objectives(context: String) -> Array:
+	var mission := GameState.comms_mission
+	if context != "comms" and not mission.has_transmitted() and not GameState.base_powered():
+		return []
+	var labels: Dictionary = data["comms"]
+	var label: String = labels["send"]
+	var stage := mission.stage(GameState.clock)
+	match stage:
+		CommsMission.Stage.READY:
+			if GameState.comms_repair_progress < 1.0:
+				label = labels["repair"] if context == "comms" else labels["travel"]
+			elif not GameState.base_powered():
+				label = labels["power"]
+		CommsMission.Stage.OUTBOUND:
+			label = labels["outbound"] % mission.minutes_left(GameState.clock, stage)
+		CommsMission.Stage.INBOUND:
+			label = labels["inbound"] % mission.minutes_left(GameState.clock, stage)
+		CommsMission.Stage.RECEIVER_OFFLINE:
+			label = labels["offline"]
+		CommsMission.Stage.RECEIVED:
+			label = labels["received"]
+	return [{"id": "comms_sos", "label": label, "done": mission.reply_received}]
 
 
 func active_stage() -> String:

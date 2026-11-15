@@ -101,9 +101,13 @@ func advance(seconds: float, breathable: bool, sprinting: bool) -> void:
 		remaining -= step
 
 
+func _hours_since_warning(clock_hours: float) -> float:
+	return fposmod(clock_hours - float(_radiation_rules["warning_hour"]), 24.0)
+
+
 ## Replay the archived warning and particle arrival once per game day.
 func solar_activity(clock_hours: float) -> SolarActivity:
-	var since_warning := fposmod(clock_hours - float(_radiation_rules["warning_hour"]), 24.0)
+	var since_warning := _hours_since_warning(clock_hours)
 	if since_warning < _warning_hours:
 		return SolarActivity.WARNING
 	if since_warning < _warning_hours + float(_radiation_rules["storm_hours"]):
@@ -111,8 +115,18 @@ func solar_activity(clock_hours: float) -> SolarActivity:
 	return SolarActivity.QUIET
 
 
+## Count down to particle arrival or the end of the storm in game minutes.
+func solar_minutes_left(clock_hours: float, activity: SolarActivity) -> int:
+	if activity == SolarActivity.QUIET:
+		return 0
+	var end := _warning_hours
+	if activity == SolarActivity.STORM:
+		end += float(_radiation_rules["storm_hours"])
+	return maxi(0, ceili((end - _hours_since_warning(clock_hours)) * 60.0))
+
+
 func advance_radiation(seconds: float, indoors: bool, activity: SolarActivity) -> void:
-	if dead or seconds <= 0.0 or not is_finite(seconds):
+	if dead or frozen.has("radiation") or seconds <= 0.0 or not is_finite(seconds):
 		return
 	var current: float = values["radiation"]
 	if indoors and current > 0.0:

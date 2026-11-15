@@ -58,6 +58,10 @@ var solar_field := SolarFieldState.new()
 var story := StoryState.new()
 ## Nursery repairs/crops and gathered wild seed plants survive views, airlocks and rescue.
 var cultivation := CultivationState.new()
+## Scanner progress for the comms screen. 1.0 means repaired, even while mains are down.
+var comms_repair_progress := 0.0
+## SOS transmission and Earth acknowledgement survive airlocks, turns and rescue.
+var comms_mission := CommsMission.new()
 ## O2 repair reserve time and shared facility supply survive airlocks and rescue.
 var facility_air := FacilityAir.new()
 ## Initial developer vital overrides apply once, never on airlock transitions or rescue.
@@ -81,6 +85,10 @@ func base_powered() -> bool:
 ## The nursery's local screen restores its lighting circuit; O2 still uses FacilityAir.
 func nursery_powered() -> bool:
 	return cultivation.repaired("console")
+
+
+func comms_powered() -> bool:
+	return comms_repair_progress >= 1.0 and base_powered()
 
 
 func _ready() -> void:
@@ -136,6 +144,8 @@ func reset_inventory() -> void:
 	spawned_props.clear()
 	window_repair = WindowRepair.new()
 	cultivation = CultivationState.new()
+	comms_repair_progress = 0.0
+	comms_mission = CommsMission.new()
 	inventory_changed.emit()
 
 

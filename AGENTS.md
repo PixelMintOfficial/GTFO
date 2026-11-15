@@ -71,6 +71,7 @@ scenes/
   overworld.tscn       main scene: the red planet
   interior.tscn        inside the main base (storage / power room / oxygen room)
   nursery.tscn         the damaged nursery, growing beds and two working airlocks
+  comms.tscn           the dish pedestal's damaged communications room and working airlock
   player.tscn          the astronaut: Shadow, AnimatedSprite2D (depth-occlusion shader), GameCamera
 scripts/
   game_state.gd        autoload GameState: the only state carried between scenes (incl. the clock)
@@ -137,6 +138,7 @@ tools/                 the pipeline (Python): generates everything in assets/
   props_gen.py              test props for the multitool and the list of dead lamps
   interior_gen.py           the base interior: rooms, machines, data
   nursery_gen.py            the approved nursery interior, walk grid and two airlocks, four views
+  comms_gen.py              the broken comms console, pedestal interior and shared airlock, four views
   check_nursery.py          nursery floor/door-layer/screen/scale QA against native models and sheets
   cultivation_models.py     approved crop, wild seed plant and modest nursery damage models
   cultivation_gen.py        wild sheets, crop depth/glow and native inventory icons
@@ -1118,6 +1120,8 @@ clear floor while keeping existing scrap/box IDs. Baked glass debris is replaced
   - **ice** around the comms dome: snowfields, frozen lakes, charcoal peaks and cliffs
     under snow.
   - The comms dome sits on a stepped charcoal massif reached by ramped trails.
+    The default comms structure is a worn, intact dish over a solid pedestal. Its base-side
+    trail leads to the working airlock and a communications room with an offline console.
   - Lands blend with soft, dithered, domain-warped edges, never hard lines.
 - **Trails, not roads.** Nothing is drawn on the ground: a trail is the way through where
   nothing grows. Toward a trail the forest thins out gradually and unevenly, and tall plants keep
@@ -1457,7 +1461,7 @@ case a scene hangs — high enough that it cannot win the race. If you ever see
   - Escape options now save master-volume and GUI-size preferences; gameplay saving is not built;
   - `CREDITS.md` is generated but nothing in the game shows it yet. It must be shown before
     the game is distributed (§10.2).
-- **Not built yet:** nursery minigames, the comms interior, saving and loading (the clock
+- **Not built yet:** nursery minigames, Earth messaging, saving and loading (the clock
   would be saved with `GameState.clock`, the suit lamp with `GameState.suit_light`), sleep
   and night dangers, music (and there will not be any, §9).
 
@@ -1927,10 +1931,24 @@ Write one line per decision: date — decision (who approved it).
   repair job. Preserve main story, inventory, crops, harvests and cleaned dirt. Keep all eight
   task rows visible on the native 384x216 panel; keyboard, pad and pointer input retain one list.
 
+- 2026-11-15 — Owner: replace the comms mast with the approved intact dish and add visible
+  wear. The pedestal has one working airlock and houses a damaged communications console.
+  `COMMS_DESIGN=v1` restores the earlier mast and dome when running the map generator.
+  `make comms` renders the room and its matching door ID. The room exports `console_stand`
+  for its capture hook; the outward and inward door routes use the same generated ID.
+
+- 2026-11-15 — Owner: bring the comms room closer to the mockup and start it dark.
+  The equipped multitool repairs the screen with the existing held F/X scan. It writes
+  `GameState.comms_repair_progress`, which survives airlocks and camera turns. The room
+  stays dark until the screen is repaired and `base_powered()` is true (reactor repaired,
+  all solar routes supplying power). `make comms` generates broken, standby and online
+  views with a shared walk grid. `console_repair.world` and `scan_height` anchor the scanner.
+
 - 2026-11-15 — Owner: add a fifth survival wheel for radiation. Archived DONKI flare and
   particle timestamps set the warning lead on the game clock. Exposure rises outdoors during
   the storm and drains indoors. At full exposure, use the existing death and rescue flow.
   `data/survival.json → radiation` owns timing and rates. See [Solar storms](docs/survival.md#solar-storms).
+
 - 2026-11-15 — Owner's explicit request: a dramatic opening cutscene replaces the satellite
   crash. Inside the ship ("we are quickly approaching planet Araxys"), the planet in view (pick
   up where your predecessors left off; make the planet habitable), the landing attempt ("watch
@@ -1944,3 +1962,8 @@ Write one line per decision: date — decision (who approved it).
   synthesised `intro_*` sounds baked with `--only`; sfx_gen no longer demands the recordings for
   a purely synthesised `--only` bake. Only the crash region of the regenerated map was taken;
   every other pixel keeps its committed bytes (owner, requested).
+
+- 2026-11-15 — Owner: send an SOS from the powered comms screen with F/X. The game clock
+  gives the message 20 minutes per leg. `GameState.comms_mission` keeps the transmission
+  and reply through airlocks, turns and rescue. The existing objective HUD shows signal
+  progress. The storm alert shows the countdown and whether the player is sheltered.

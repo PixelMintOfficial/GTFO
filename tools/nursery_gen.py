@@ -303,7 +303,7 @@ def wall_parts():
     return [P('wall', shape, 'white', 'wall_storage')]
 
 
-def world_grid(parts, filename='nursery_walk.png'):
+def world_grid(parts, filename='nursery_walk.png', furniture_approaches=None):
     """Canonical collision from the actual low geometry, like interior_gen's walk grid.
 
     Water is a shallow scenery channel (the existing player has no swimming volume).
@@ -338,10 +338,13 @@ def world_grid(parts, filename='nursery_walk.png'):
         u, v = M.to_grid(point[0], point[1])
         return connected[int(u), int(v)]
     spawn_component = component(SPAWN)
-    assert spawn_component, 'Nursery spawn must be walkable'
+    assert spawn_component, 'Room spawn must be walkable'
     approaches = [C[:2] + normal * (ENTRY_RADIUS - 26.) for _, normal in ENTRIES]
-    approaches += [M.scale_pt(at(x, y), C, LAYOUT_SCALE) for x, y in ((0, -40), (-90, 6), (102, -15), (0, 80))]
-    assert all(component(p) == spawn_component for p in approaches), 'Nursery approaches must connect'
+    if furniture_approaches is None:
+        furniture_approaches = [M.scale_pt(at(x, y), C, LAYOUT_SCALE)
+                                for x, y in ((0, -40), (-90, 6), (102, -15), (0, 80))]
+    approaches += furniture_approaches
+    assert all(component(p) == spawn_component for p in approaches), 'Room approaches must connect'
     # Door approach/arrival stands are inside the wall. Ordinary movement never crosses
     # the outer shell; the existing airlock cutscene puppets through its opening.
     h = int(M.HEIGHT_OFFSET * M.HEIGHT_SCALE)
@@ -366,7 +369,7 @@ def render_door(index, normal):
                 height=14.8 * I.DOOR_K)
 
 
-def render_view(k, parts, name_base='nursery', walk_file='nursery_walk.png', extra=None):
+def render_view(k, parts, name_base='nursery', walk_file='nursery_walk.png', extra=None, room_name='nursery'):
     M.VIEW, M.SFX = k, M.view_sfx(k)
     M.EMIT = np.zeros((M.H, M.W), np.uint8)
     img = np.full((M.H, M.W, 3), A.hex2rgb('#0b0915'), np.uint8)
@@ -429,7 +432,7 @@ def render_view(k, parts, name_base='nursery', walk_file='nursery_walk.png', ext
     dimg[..., 2] = np.where((kind == 4) | (visible_wall & windows), 255, 0)
     M.save_png(Image.fromarray(dimg), str(OUT / f'{name_base}_depth{M.SFX}.png'))
     doors = [render_door(index, normal) for index, normal in ENTRIES]
-    meta = dict(name='nursery_interior', image=f'{name}.png', size=[M.W, M.H], origin_px=[M.AX, M.AY],
+    meta = dict(name=f'{room_name}_interior', image=f'{name}.png', size=[M.W, M.H], origin_px=[M.AX, M.AY],
                 view=k, views=[f'{name_base}{M.view_sfx(i)}.json' for i in range(4)],
                 game=dict(depth_png=f'{name_base}_depth{M.SFX}.png', light_png=f'{name_base}_light{M.SFX}.png',
                           sun_png=f'{name_base}_sun{M.SFX}.png', walk_png=walk_file,
@@ -439,13 +442,13 @@ def render_view(k, parts, name_base='nursery', walk_file='nursery_walk.png', ext
                           layout_scale=LAYOUT_SCALE,
                           view_center=C[:2].tolist()),
                 zoom=dict(max_view_px=[M.W, M.H], frames={}), doors=doors,
-                rooms=dict(nursery=dict(label='NURSERY', center=C[:2].tolist(), radius=RADIUS)),
+                rooms={room_name: dict(label=room_name.upper(), center=C[:2].tolist(), radius=RADIUS)},
                 fx=dict(shafts=[], leds=[], core=[0, 0], tanks=[], sparks=[], vapor=[]))
     if extra:
         meta.update(extra)
     M.save_text(json.dumps(meta, indent=2), str(OUT / f'{name}.json'))
     M.save_png(Image.fromarray(img), str(OUT / 'preview' / f'{name}.png'))
-    print(f'nursery view {k}: {len(doors)} animated exits', flush=True)
+    print(f'{room_name} view {k}: {len(doors)} animated exits', flush=True)
 
 
 def build_restored():

@@ -125,14 +125,14 @@ func _overworld() -> void:
 	_check(player.position == terrain.to_screen(player.world_pos, terrain.height_at(player.world_pos)).round(),
 			"the astronaut is drawn where this view puts them")
 	_check(world.get_node("Map").texture == terrain.map_texture, "the map shows this view's picture")
-	_check(world.doors.size() == 4, "base and nursery airlock doors are rebuilt for the view")
+	_check(world.doors.size() == 5, "all facility airlocks are rebuilt for the view")
 	var door_ids: Array[int] = []
 	for d in world.doors:
 		door_ids.append(int(d.get_meta("id")))
 		_check(Rect2(Vector2.ZERO, terrain.map_size).has_point((d as AirlockDoor).sprite.position + d.position),
 				"door %d sits on this view's map" % d.get_meta("id"))
 	door_ids.sort()
-	_check(door_ids == [0, 1, 2, 5], "camera turns retain both base and both nursery entrances")
+	_check(door_ids == [0, 1, 2, 3, 5], "camera turns retain the base, nursery and comms entrances")
 	var now := _props(world)
 	_check(now.size() == props.size(), "every prop is still there")
 	for p in now:
