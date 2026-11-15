@@ -1,9 +1,10 @@
 name: "Export and Deploy Godot Web Game"
 
+# Disabled: it ran on every push to main, but it builds with Godot 4.3 (the game is 4.7.2) and publishes to
+# GitHub Pages, which rejects files over 100 MB (the web build's data file is ~148 MB). The live site is
+# deployed to Vercel instead (see AGENTS.md, section 2). It can still be started by hand from the Actions tab.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
