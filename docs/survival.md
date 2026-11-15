@@ -13,7 +13,8 @@ multitool icon; no generated assets were edited or new imported art introduced.
 
 ## Default balance
 
-All four values start at 100 and clamp to 0–100. Edit `data/survival.json` to balance them.
+Health, oxygen, hunger and thirst start at 100. Radiation starts at zero. Edit
+`data/survival.json` to balance them. All five values clamp to 0–100.
 Rates below are per active real second, independent of the game-day clock.
 
 | Meter | Drain/recovery | Consequence at zero |
@@ -26,6 +27,21 @@ Rates below are per active real second, independent of the game-day clock.
 Warning indicators pulse below 20%. Health and segmented meters update immediately.
 No depletion during map/backpack/repair pauses, camera turns, intro or doors.
 Damage timers restart after recovery. Long steps handle depletion boundaries before damage.
+
+## Solar storms
+
+The violet radiation wheel fills outdoors during a storm. It holds its value when the
+astronaut is outdoors in quiet conditions and drains inside a facility, even when the
+facility has no breathable air. Its warning pulses from 80% upward. At 100% the existing
+death screen reports radiation poisoning. Rescue clears exposure.
+
+At 10:00 each game day the HUD warns of a flare. The particle storm starts 50 game
+minutes later, based on the timestamps of the archived September 10, 2017 flare and
+linked GOES-13 particle event. At the default clock speed, the warning gives players 25
+seconds to find shelter. The storm lasts two game hours. Uninterrupted outdoor exposure
+fills the meter in 40 active seconds. Shelter drains it at four points per active second.
+The repetition, duration, exposure threshold and shelter recovery are training rules.
+The source timestamps come from near-Earth instruments. [NASA CCMC event record](https://ccmc.gsfc.nasa.gov/CMESB-Earth/prediction/detail/761)
 
 Outdoors and unpressurized facilities drain suit oxygen continuously. Full O2 repair
 starts 24 game hours of reserve. All three storage panes must seal before either main-base

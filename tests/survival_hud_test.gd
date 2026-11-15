@@ -1,7 +1,7 @@
 extends Node
 ## Focused real-input HUD tests. Uses its own ConfigFile so player preferences stay intact.
 ## Default-size assertions use isolated options regardless of the player's saved GUI size.
-## Real-input compact HUD tests: four live meters stay fixed at the top left.
+## Real-input compact HUD tests: five live meters stay fixed at the top left.
 ## Covers pointer/keyboard/pad attempts, resizing, UI-only previews and modal visibility.
 ## Run: godot --headless --path . res://tests/survival_hud_test.tscn.
 var checks := 0
@@ -43,7 +43,7 @@ func _ready() -> void:
 	for node in world.get_children():
 		if node is SurvivalHUD:
 			hud = node
-	check(hud != null and hud.meters.size() == 4, "single parent four meters")
+	check(hud != null and hud.meters.size() == 5 and hud.meters[4].kind == "radiation", "fifth meter shows radiation")
 	check(hud._panel.position == SurvivalHUD.MARGIN, "stats fixed top left")
 	check(SurvivalHUD.toast_position(hud._canvas, Vector2(20, 14), 60).y > SurvivalHUD.PANEL_SIZE.y, "overlapping toast avoids stats")
 	check(SurvivalHUD.toast_position(hud._canvas, Vector2(20, 70), 60) == Vector2(20, 70), "unrelated toast stays put")
@@ -54,6 +54,9 @@ func _ready() -> void:
 			check(meter.active_segments() == value * 12 / 100, meter.kind + " segments " + str(value))
 		check(meter._ring_pixels.size() > 100, "inactive ring geometry retained")
 		meter.preview = -1
+	GameState.survival.set_value("radiation", 99.9)
+	check(hud.meters[4].displayed_value() == 99 and hud.meters[4].active_segments() == 11, "radiation wheel only fills at lethal exposure")
+	GameState.survival.set_value("radiation", 0)
 	check(SurvivalMeter.percentage(15, 20) == 75, "normalize different maximum")
 	check(SurvivalMeter.percentage(-5, 100) == 0 and SurvivalMeter.percentage(500, 100) == 100, "display clamp")
 	check(SurvivalMeter.percentage(3, 0) == 0 and SurvivalMeter.percentage(NAN, 100) == 0, "invalid ranges safe")

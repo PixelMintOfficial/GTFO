@@ -29,6 +29,16 @@
     "damage_interval": 4,
     "cause": "DEHYDRATION"
   },
+  "radiation": {
+    "maximum": 100,
+    "exposure_per_second": 2.5,
+    "recovery_per_second": 4.0,
+    "flare_record": "2017-09-10T15:35:00-FLR-001",
+    "particle_record": "2017-09-10T16:25:00-SEP-001",
+    "source": "https://ccmc.gsfc.nasa.gov/CMESB-Earth/prediction/detail/761",
+    "warning_hour": 10.0,
+    "storm_hours": 2.0
+  },
   "warning_fraction": 0.2,
   "consumables": {
     "ration": {
