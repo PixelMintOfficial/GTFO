@@ -1,9 +1,30 @@
 {
   "names": {
     "bot": "UNIT",
-    "previous_owner": "COMMANDER"
+    "previous_owner": "COMMANDER",
+    "planet": "ARAXYS"
   },
-  "note": "Names and guidance live here. Tokens: {BOT}, {OWNER}, {NAME}, {TURN_LEFT}, {TURN_RIGHT}; turn keys resolve from InputMap.",
+  "note": "Names and guidance live here. Tokens: {BOT}, {OWNER}, {NAME}, {PLANET}, {TURN_LEFT}, {TURN_RIGHT}; turn keys resolve from InputMap.",
+  "intro": {
+    "note": "The opening cutscene's radio (scripts/intro_cutscene.gd). In a line, | is where the signal breaks up: what follows it is drawn as static.",
+    "speaker": "MISSION CONTROL",
+    "lost": "SIGNAL LOST",
+    "skip": "ANY KEY: SKIP",
+    "approach": [
+      "THIS IS MISSION CONTROL. YOU'RE CLOSING IN ON PLANET {PLANET}... FAST."
+    ],
+    "orbit": [
+      "THE CREW BEFORE YOU BUILT A BASE DOWN THERE. THEN THEY WENT SILENT.",
+      "PICK UP WHERE THEY LEFT OFF. YOUR MISSION: MAKE {PLANET} A PLACE PEOPLE CAN LIVE."
+    ],
+    "descent": [
+      "BEGINNING DESCENT. A SOLAR STORM JUST LIT UP OUR SCOPES!",
+      "WATCH OUT FOR THE RADIATION WA|KSSHHT... BZZZT... VZZ"
+    ],
+    "after": [
+      "...{PLANET}... DO YOU... READ...?"
+    ]
+  },
   "name_entry": {
     "max_length": 12,
     "title": "WHO ARE YOU?"

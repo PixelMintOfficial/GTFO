@@ -16,8 +16,9 @@ Pipeline
      domes, paths and the solar field. Three lands blend into each other with
      domain-warped edges: red dust around the base, an alien forest around the nursery
      (moss, glowing pools, crystal spires) and ice around the comms dome (snowfields,
-     frozen lakes, charcoal peaks and cliffs under snow). Near the base, the satellite
-     that crashed: its crater and the trench it ploughed, kept apart from the rest.
+     frozen lakes, charcoal peaks and cliffs under snow). Near the base, the astronaut's
+     own ship that crashed there (CRASH_DESIGN=ship; satellite keeps the earlier wreck):
+     its crater and the trench it ploughed, kept apart from the rest.
   2. Terrain: exact per-pixel ray/heightfield hits, solved per screen column with a
      running-max + binary search (no ray stepping), plus the cut-away crust walls.
   3. Light: cel-shaded ramps per land with ordered dithering, patchy dithered seams
@@ -32,7 +33,8 @@ Pipeline
   6. Glass: back shell, interior, front shell with fresnel tint, ribs and shine.
   7. Lines, glows, haze per land, space backdrop, and the game data: depth map,
      walk/height grid, biome grid, plant sheets, glow points and the crash scene
-     (the ground as it was before, the falling satellite, smoke and spark points), and the
+     (the ground as it was before, the falling craft, smoke and spark points, and the ship's
+     hatch: the open doorway, the blown-off door in flight and at rest, the way out), and the
      light mask: how much of each pixel is its own light, so it stays lit at night.
      Forest cultivation clearings remove only nearby filler after the original random
      stream; forage_sites.json exports the canonical seed plants and removed filler.
@@ -2612,6 +2614,226 @@ def satellite_wreck(ground):
     return parts, fx, debris, dict(X=float(body_c[0]), Y=float(body_c[1]), z=float(body_c[2]))
 
 
+# --- the crashed ship (CRASH_DESIGN=ship, the default; satellite keeps the earlier wreck) ---------
+# The astronaut's own lander: a white and coral shuttle in the base's colours, a tinted canopy,
+# swept wings, a tail fin with a beacon, twin engines and a mustard side hatch. It comes down in
+# the opening cutscene (scripts/intro_cutscene.gd), belly-lands in the crater and the astronaut
+# climbs out of the hatch. Built in its own frame (Rb columns: forward, side, up), design units
+# times SHIP_SCALE; the hatch is on the +side flank, which faces the camera in view 0.
+CRASH_DESIGN = os.environ.get('CRASH_DESIGN', 'ship')
+SHIP_SCALE = 2.0
+SHIP_HULL = np.array([15.0, 8.2, 7.4])         # the hull box's half size (its rounding is 4.0)
+SHIP_HATCH = np.array([4.0, 8.2, -0.6])        # hatch centre on the flank, from the hull centre
+SHIP_HATCH_HALF = np.array([0.55, 3.7, 5.3])   # the hatch door: thickness, half width, half height
+
+
+def decal_ship_hull(lit):
+    def decal(part, P):
+        q = part.sdf.local(P) / SHIP_SCALE
+        out = np.full(len(P), OID['white'])
+        flank = np.abs(q[:, 1]) > 6.0
+        out[flank & (q[:, 2] > -2.4) & (q[:, 2] < -1.1)] = OID['coral']         # the stripe along the flanks
+        out[q[:, 2] < -5.8] = OID['dark']                                         # scuffed belly plates
+        out[(q[:, 2] > 6.6) & (np.abs(q[:, 1]) < 1.1)] = OID['pack']              # the spine
+        port = (flank & (q[:, 2] > 1.2) & (q[:, 2] < 3.2) & (q[:, 0] > -12.5) & (q[:, 0] < -1.5)
+                & (np.mod(q[:, 0] + 12.5, 3.6) < 2.0))
+        out[port] = OID['window'] if lit else OID['darkwin']                     # the cabin's portholes
+        return out
+    return decal
+
+
+def decal_ship_nose(hot, scorched):
+    def decal(part, P):
+        q = part.sdf.local(P) / SHIP_SCALE
+        out = np.full(len(P), OID['white'])
+        out[(np.abs(q[:, 1]) > 4.0) & (q[:, 2] > -2.4) & (q[:, 2] < -1.1) & (q[:, 0] < 4.0)] = OID['coral']
+        out[q[:, 2] < -4.6] = OID['dark']
+        if hot:
+            out[q[:, 0] > 8.4] = OID['window']                                   # re-entry heat on the tip
+        else:
+            out[q[:, 0] > 9.2] = OID['char'] if scorched else OID['pack']        # the heat-shield cap
+        return out
+    return decal
+
+
+def decal_ship_canopy(part, P):
+    q = part.sdf.local(P) / SHIP_SCALE
+    out = np.full(len(P), OID['tglass'])
+    out[(np.abs(q[:, 1]) < 0.45) | (q[:, 0] < -6.2)] = OID['white']               # the frame
+    return out
+
+
+def decal_ship_engine(part, P):
+    q = part.sdf.local(P) / SHIP_SCALE
+    out = np.full(len(P), OID['metal'])
+    out[q[:, 0] > 3.4] = OID['coral']
+    out[(q[:, 2] > 4.4) & (np.mod(q[:, 0], 1.8) < 0.8)] = OID['dark']             # cooling vents
+    return out
+
+
+def decal_ship_nozzle_hot(part, P):
+    out = np.full(len(P), OID['char'])
+    out[part.sdf.local(P) > 0.82] = OID['window']                                 # the burn inside the bell
+    return out
+
+
+def decal_ship_wing(part, P):
+    q = part.sdf.local(P) / SHIP_SCALE
+    out = np.full(len(P), OID['white'])
+    out[q[:, 1] > 4.6] = OID['coral']                                             # coral wing tips
+    out[q[:, 2] < -0.25] = OID['dark']
+    return out
+
+
+def decal_ship_fin(part, P):
+    q = part.sdf.local(P) / SHIP_SCALE
+    out = np.full(len(P), OID['white'])
+    out[(q[:, 2] > 1.4) & (q[:, 2] < 3.0)] = OID['coral']
+    return out
+
+
+def decal_ship_hatch(part, P):
+    q = part.sdf.local(P) / SHIP_SCALE
+    out = np.full(len(P), OID['mustard'])
+    edge = (np.abs(q[:, 1]) > SHIP_HATCH_HALF[1] - 0.8) | (np.abs(q[:, 2]) > SHIP_HATCH_HALF[2] - 0.8)
+    out[edge] = OID['dark']                                                       # the seal round it
+    out[(np.abs(q[:, 2] - 0.4) < 0.55) & (np.abs(q[:, 1]) < 2.2)] = OID['dark']   # the handle bar
+    return out
+
+
+def ship_frames(Rb):
+    return Rb[:, 0], Rb[:, 1], Rb[:, 2]
+
+
+def ship_hatch_frame(Rb):
+    """The hatch door's frame: local x out of the flank, y along the hull, z up its face."""
+    f, s, u = ship_frames(Rb)
+    return np.stack([s, f, u], axis=1)
+
+
+def ship_hatch_centre(C, Rb, out=0.0):
+    k = SHIP_SCALE
+    return C + Rb @ (SHIP_HATCH * k) + Rb[:, 1] * out * k
+
+
+def ship_parts(C, Rb, hot=False, lit=True, wings=(1, -1), droop=0.0, hatch='closed', tag='ship'):
+    """The shuttle. wings: which still hang on (side signs); droop bends the +side wing down
+    (radians); hatch: 'closed' (the mustard door), 'open' (the dark doorway) or None."""
+    k = SHIP_SCALE
+    f, s, u = ship_frames(Rb)
+    hull = f'{tag}hull'
+    parts = [P_('hull', A.RoundBox(C, SHIP_HULL * k, 4.0 * k, Rb), 'white', hull, decal_ship_hull(lit)),
+             P_('nose', A.Ellipsoid(C + f * 12.0 * k - u * 0.4 * k, np.array([10.5, 7.8, 6.6]) * k, Rb), 'white', hull,
+                decal_ship_nose(hot, not lit)),
+             P_('canopy', A.Ellipsoid(C + f * 10.0 * k + u * 3.6 * k, np.array([7.6, 6.0, 4.2]) * k, Rb), 'tglass', hull,
+                decal_ship_canopy),
+             P_('engine', A.RoundBox(C - f * 17.5 * k + u * 0.4 * k, np.array([5.0, 7.0, 5.4]) * k, 2.0 * k, Rb), 'metal',
+                f'{tag}engine', decal_ship_engine)]
+    for sg in (1, -1):
+        a = C - f * 22.0 * k + s * sg * 3.4 * k
+        parts.append(P_('nozzle', A.RoundCone(a, a - f * 4.6 * k, 2.2 * k, 3.2 * k), 'char', f'{tag}engine',
+                        decal_ship_nozzle_hot if hot else None))
+    for sg in wings:
+        root = C - f * 4.0 * k + s * sg * 7.4 * k - u * 2.6 * k
+        span = A.nz(s * sg - f * 0.42)
+        if sg == 1 and droop:
+            span = A.nz(span * math.cos(droop) - u * math.sin(droop))
+        chord = A.nz(np.cross(span, u))
+        chord = chord if chord @ f > 0 else -chord
+        up = np.cross(chord, span)
+        up = up if up @ u > 0 else -up
+        parts.append(P_('wing', A.RoundBox(root + span * 7.0 * k, np.array([5.6, 7.4, 0.7]) * k, 0.5 * k,
+                                           np.stack([chord, span, up], axis=1)), 'white', f'{tag}wing{sg}', decal_ship_wing))
+    Rf = Rb @ A.ry(-0.38)                                                         # the fin leans back
+    fin_c = C - f * 16.0 * k + u * 9.6 * k
+    beacon = fin_c + Rf[:, 2] * 4.9 * k - Rf[:, 0] * 3.2 * k
+    parts += [P_('fin', A.RoundBox(fin_c, np.array([5.4, 0.7, 4.6]) * k, 0.5 * k, Rf), 'white', f'{tag}fin', decal_ship_fin),
+              P_('beacon', A.Sphere(beacon, 1.0 * k), 'beacon', f'{tag}fin')]
+    if hatch == 'closed':
+        parts.append(P_('hatch', A.RoundBox(ship_hatch_centre(C, Rb, 0.25), SHIP_HATCH_HALF * k, 1.3 * k,
+                                            ship_hatch_frame(Rb)), 'mustard', f'{tag}hatch', decal_ship_hatch))
+    elif hatch == 'open':
+        parts.append(P_('doorway', A.RoundBox(ship_hatch_centre(C, Rb, 0.1), (SHIP_HATCH_HALF - [0.3, 0.25, 0.25]) * k,
+                                              1.2 * k, ship_hatch_frame(Rb)), 'char', f'{tag}hatch'))
+    return parts, beacon
+
+
+def ship_lid(C, R):
+    """The hatch door on its own (blown off): centred on C, turned by R (columns: out, along, up)."""
+    return [P_('hatch', A.RoundBox(C, SHIP_HATCH_HALF * SHIP_SCALE, 1.3 * SHIP_SCALE, R), 'mustard', 'lid', decal_ship_hatch)]
+
+
+def ship_falling(C, roll):
+    """Coming in out of control: nose down along the trench, rolling over, the nose glowing."""
+    cf = np.array([*CRASH['came_from'], 0.0])
+    Rb = yaw_to(-cf) @ A.ry(math.radians(18)) @ A.rx(roll)
+    return ship_parts(C, Rb, hot=True, tag='fall')[0]
+
+
+def ship_pose():
+    """How the wreck lies: belly down in the crater, nose dug into the far rim, rolled so its
+    hatch side (facing the camera in view 0) rides a little high."""
+    fwd = np.array([*(-np.array(CRASH['came_from'])), 0.0])
+    return yaw_to(fwd) @ A.ry(math.radians(6)) @ A.rx(math.radians(9))
+
+
+def ship_wreck(ground, hatch='closed'):
+    """The lander belly-flopped into its crater: the far wing torn off and thrown back along the
+    trench, the near one bent down into the dust, engines burning. Returns parts, the points the
+    game animates, debris spots and the body centre (as satellite_wreck does)."""
+    k = SHIP_SCALE
+    cf = np.array([*CRASH['came_from'], 0.0])
+    fwd = -cf
+    side = np.array([-fwd[1], fwd[0], 0.0])
+    Rb = ship_pose()
+    C = cam(CRASH['X'], CRASH['Y'], ground(CRASH['X'], CRASH['Y']))
+    body_c = C + np.array([0, 0, 22.0])                    # resting on the bowl's walls, the hatch clear of the dust
+    parts, beacon = ship_parts(body_c, Rb, lit=False, wings=(1,), droop=math.radians(16), hatch=hatch, tag='w')
+    wx, wy = CRASH['X'] + cf[0] * 96, CRASH['Y'] + cf[1] * 96                    # the torn-off wing
+    Rl = yaw_to(side) @ A.rx(math.radians(6)) @ A.rz(0.6)
+    parts.append(P_('lostwing', A.RoundBox(cam(wx, wy, ground(wx, wy) + 1.2 * k), np.array([5.6, 7.4, 0.7]) * k, 0.5 * k, Rl),
+                    'white', 'lostwing', decal_ship_wing))
+    stub = body_c - Rb[:, 0] * 4.0 * k - Rb[:, 1] * 8.4 * k - Rb[:, 2] * 2.6 * k
+    parts.append(P_('stub', A.RoundCone(stub, stub - Rb[:, 1] * 3.2 * k, 1.1 * k, 0.7 * k), 'dark', 'wstub'))
+    rs = np.random.default_rng(SEED + 404)
+    debris = []
+    for j in range(20):
+        s_ = rs.uniform(30, CRASH['trench'] - 8)
+        lat = rs.uniform(-15, 15) * (0.5 + s_ / CRASH['trench'])
+        X = CRASH['X'] + cf[0] * s_ + side[0] * lat
+        Y = CRASH['Y'] + cf[1] * s_ + side[1] * lat
+        size = rs.uniform(0.9, 2.8)
+        R = A.rz(rs.uniform(0, TAU)) @ A.rx(rs.uniform(-0.6, 0.6))
+        parts.append(P_('debris', A.RoundBox(cam(X, Y, ground(X, Y) + size * 0.35), (size * 1.6, size, size * 0.5), 0.3, R),
+                        ['white', 'metal', 'dark', 'coral', 'char'][j % 5], f'debris{j}'))
+        debris.append((X, Y, size * 1.6))
+    f, s, u = ship_frames(Rb)
+    nozzles = [body_c - f * 26.4 * k + s * sg * 3.4 * k for sg in (1, -1)]
+    fx = dict(smoke=[body_c + f * 10.0 * k + u * 7.0 * k, nozzles[0] + np.array([0, 0, 2.0]),
+                     cam(wx, wy, ground(wx, wy) + 2.0)],
+              sparks=[stub - s * 3.2 * k, body_c - f * 13.0 * k + u * 6.6 * k],
+              beacon=beacon, fire=nozzles)
+    return parts, fx, debris, dict(X=float(body_c[0]), Y=float(body_c[1]), z=float(body_c[2]))
+
+
+def ship_exit(body, ground):
+    """Where the astronaut steps out: the ground point clear of the hull below the hatch, the
+    sill's height above that ground, and the sill itself (in the doorway). World (view 0)."""
+    k = SHIP_SCALE
+    Rb = ship_pose()
+    bc = np.array([body['X'], body['Y'], body['z']])
+    sill = ship_hatch_centre(bc, Rb, 0.6) - Rb[:, 2] * (SHIP_HATCH_HALF[2] - 1.2) * k
+    out = A.nz(np.array([Rb[0, 1], Rb[1, 1], 0.0]))
+    foot = sill + out * 6.0
+    return foot, float(sill[2] - ground(foot[0], foot[1])), sill
+
+
+def crash_wreck(ground):
+    if CRASH_DESIGN == 'satellite':
+        return satellite_wreck(ground)
+    return ship_wreck(ground)
+
+
 # ================================================================== sprites: plants, crystals, the satellite
 def sprite_box(frames_parts, pad=3):
     """Image rect (x0, y0, w, h) that holds every frame of a model."""
@@ -2898,7 +3120,7 @@ def crash_window():
         for lat in (-CRASH['R'] * 1.6, 0.0, CRASH['R'] * 1.6):
             X = CRASH['X'] + cf[0] * s_ - cf[1] * lat
             Y = CRASH['Y'] + cf[1] * s_ + cf[0] * lat
-            for z in (-CRASH['depth'] - 4, 60.0):
+            for z in (-CRASH['depth'] - 4, 60.0 if CRASH_DESIGN == 'satellite' else 90.0):   # the ship's fin stands tall
                 pts.append(project(X, Y, z))
     pts = np.array(pts)
     return (max(0, int(pts[:, 0].min()) - 8), max(0, int(pts[:, 1].min()) - 8),
@@ -2952,21 +3174,106 @@ def render_precrash(G, img, kind, gid, g0, g1):
     return dict(rgba=rgba, x0=x0, y0=y0)
 
 
-def export_crash(G, pre, wreck_fx, body, kind):
+HATCH_GROUPS = ('whull', 'whatch', 'wengine', 'wfin', 'wwing1')                 # what can show round the hatch
+
+
+def hatch_pixels(gid, g0, g1, body):
+    """The map pixels that show the closed hatch door: the open doorway replaces exactly these."""
+    with canonical():
+        hc = ship_hatch_centre(np.array([body['X'], body['Y'], body['z']]), ship_pose())
+    cx, cy = project(*to_view(hc))
+    r = int(SHIP_HATCH_HALF[1:].max() * SHIP_SCALE / S) + 10
+    x0, y0, x1, y1 = max(0, int(cx) - r), max(0, int(cy) - r), min(W, int(cx) + r), min(H, int(cy) + r)
+    g = gid[y0:y1, x0:x1]
+    return dict(x0=x0, y0=y0, mask=(g >= g0) & (g < g1))
+
+
+def hatch_overlay(hatch, ground, bio):
+    """The open doorway, shaded as the map is (lines and haze), over the closed door's pixels."""
+    hatch['ground'] = ground
+    m = hatch['mask']
+    if not m.any():                                    # this view looks at the far side
+        hatch['rgba'] = None
+        return
+    with canonical():
+        parts = [p for p in ship_wreck(ground, hatch='open')[0] if p.group in HATCH_GROUPS]
+    h, w = m.shape
+    fr = render_sprite(turned(parts), (hatch['x0'], hatch['y0'], w, h))
+    rgb = apply_haze(fr['rgb'], hatch['y0'], hatch['x0'], bio[hatch['y0']:hatch['y0'] + h, hatch['x0']:hatch['x0'] + w])
+    keep = m & fr['filled']
+    ys, xs = np.nonzero(keep)
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    rgba = np.zeros((h, w, 4), np.uint8)
+    rgba[..., :3] = rgb
+    rgba[..., 3] = np.where(keep, 255, 0)
+    hatch['rgba'] = rgba[y0:y1, x0:x1]
+    hatch['pos'] = [int(hatch['x0'] + x0), int(hatch['y0'] + y0)]
+
+
+def export_hatch(G, hatch, body):
+    """The hatch's part in the opening cutscene: the open doorway (once the door is blown off),
+    the door tumbling through the air and lying where it lands, and where the astronaut climbs out."""
+    adir = os.path.join(OUT, 'anim')
+    k = SHIP_SCALE
+    ground = hatch['ground']                              # view 0's ground: everything here is built there
+    with canonical():
+        Rb = ship_pose()
+        hc = ship_hatch_centre(np.array([body['X'], body['Y'], body['z']]), Rb, 0.25)
+        out = A.nz(np.array([Rb[0, 1], Rb[1, 1], 0.0]))
+        along = np.array([-out[1], out[0], 0.0])
+        foot, sill, door = ship_exit(body, ground)
+        rest = foot[:2] + out[:2] * 22.0 + along[:2] * 10.0           # where the blown door comes down
+        zr = ground(*rest) + SHIP_HATCH_HALF[0] * k + 0.3
+        a = A.nz(along * 0.9 + out * 0.45)
+        flat = np.stack([[0.0, 0.0, 1.0], a, np.cross([0.0, 0.0, 1.0], a)], axis=1)
+        lying = ship_lid(cam(rest[0], rest[1], zr), flat)
+        C = cam(0.0, 0.0, 80.0)
+        spin = [ship_lid(C, ship_hatch_frame(Rb) @ A.ry(f / 8 * TAU) @ A.rx(f / 8 * 1.7)) for f in range(8)]
+    spin = [turned(fp, about=C) for fp in spin]
+    box = sprite_box(spin)
+    strip = np.concatenate([sprite_rgba(render_sprite(fp, box)) for fp in spin], axis=1)
+    save_png(Image.fromarray(strip), os.path.join(adir, f'ship_lid{SFX}.png'))
+    ox, oy = project(*C)
+    lying = turned(lying)
+    lbox = sprite_box([lying])
+    save_png(Image.fromarray(sprite_rgba(render_sprite(lying, lbox))), os.path.join(adir, f'ship_lid_rest{SFX}.png'))
+
+    def px(P):
+        x, y = project(*to_view(P))
+        return [round(float(x), 1), round(float(y), 1)]
+
+    out_d = dict(lid=dict(file=f'anim/ship_lid{SFX}.png', frames=8, frame_size=[box[2], box[3]],
+                          origin=[round(ox - box[0], 1), round(oy - box[1], 1)]),
+                 rest=dict(file=f'anim/ship_lid_rest{SFX}.png', position=[lbox[0], lbox[1]],
+                           world=[round(float(rest[0]), 2), round(float(rest[1]), 2)]),
+                 door=px(hc), lands=px([rest[0], rest[1], zr]),
+                 exit=dict(world=[round(float(foot[0]), 2), round(float(foot[1]), 2)], sill=round(sill, 2),
+                           doorway=[round(float(door[0]), 2), round(float(door[1]), 2)]))
+    if hatch.get('rgba') is not None:
+        save_png(Image.fromarray(hatch['rgba']), os.path.join(adir, f'ship_hatch_open{SFX}.png'))
+        out_d['open'] = dict(file=f'anim/ship_hatch_open{SFX}.png', position=hatch['pos'])
+    return out_d
+
+
+def export_crash(G, pre, wreck_fx, body, kind, hatch=None):
     """Sprites and points for the crash scene and the smoking wreck."""
     adir = os.path.join(OUT, 'anim')
     rgba = pre['rgba']
     h, w = rgba.shape[:2]
     rgba[..., 3] = np.where(kind[pre['y0']:pre['y0'] + h, pre['x0']:pre['x0'] + w] == 4, 0, rgba[..., 3])
     save_png(Image.fromarray(rgba), os.path.join(adir, f'crash_before{SFX}.png'))
-    # the satellite coming in, tumbling: rendered high above the origin, nothing under it
+    # what comes in, tumbling: rendered high above the origin, nothing under it
     C = cam(0.0, 0.0, 80.0)
     with canonical():
-        frames_parts = [satellite_intact(C, f / 8 * TAU) for f in range(8)]
+        if CRASH_DESIGN == 'satellite':
+            frames_parts = [satellite_intact(C, f / 8 * TAU) for f in range(8)]
+        else:
+            frames_parts = [ship_falling(C, f / 8 * TAU) for f in range(8)]
     frames_parts = [turned(fp, about=C) for fp in frames_parts]
     box = sprite_box(frames_parts)
     strip = np.concatenate([sprite_rgba(render_sprite(fp, box)) for fp in frames_parts], axis=1)
-    save_png(Image.fromarray(strip), os.path.join(adir, f'satellite{SFX}.png'))
+    craft = 'satellite' if CRASH_DESIGN == 'satellite' else 'ship'
+    save_png(Image.fromarray(strip), os.path.join(adir, f'{craft}{SFX}.png'))
     ox, oy = project(*C)
     cf = np.array(CRASH['came_from'])
     gz = lambda X, Y: height_at(G, X, Y)  # noqa: E731
@@ -2978,10 +3285,12 @@ def export_crash(G, pre, wreck_fx, body, kind):
         return [round(float(x), 1), round(float(y), 1)]
 
     rest = to_view([body['X'], body['Y'], body['z']])
+    extra = dict(hatch=export_hatch(G, hatch, body)) if hatch is not None else {}
     return dict(
+        **extra, design=CRASH_DESIGN,
         before=dict(file=f'anim/crash_before{SFX}.png', position=[pre['x0'], pre['y0']]),
-        satellite=dict(file=f'anim/satellite{SFX}.png', frames=8, frame_size=[box[2], box[3]],
-                       origin=[round(ox - box[0], 1), round(oy - box[1], 1)]),
+        craft=dict(file=f'anim/{craft}{SFX}.png', frames=8, frame_size=[box[2], box[3]],
+                   origin=[round(ox - box[0], 1), round(oy - box[1], 1)]),
         sky=px([sky[0], sky[1], gz(*td) + 420]), touchdown=px([td[0], td[1], gz(*td) + 7.0]), rest=px(rest),
         smoke=[px(p) for p in wreck_fx['smoke']], sparks=[px(p) for p in wreck_fx['sparks']],
         fire=[px(p) for p in wreck_fx['fire']], beacon=px(wreck_fx['beacon']),
@@ -4605,13 +4914,20 @@ def world_walk_grid(G, debris=(), body=None):
         rooms = [u for u in dome_units() if u['owner'] == 'base']
         for a_, b_ in BASE_LINKS:
             block_segment(np.array([rooms[a_]['X'], rooms[a_]['Y']]), np.array([rooms[b_]['X'], rooms[b_]['Y']]), 16.0)
-    if body is not None:                                             # the wreck: hull, engine and the bent wing
+    if body is not None and CRASH_DESIGN == 'satellite':             # the wreck: hull, engine and the bent wing
         k = WRECK_SCALE
         fwd = -np.array(CRASH['came_from'])
         side = np.array([-fwd[1], fwd[0]])
         bc = np.array([body['X'], body['Y']])
         block_segment(bc - fwd * 22 * k, bc + fwd * 11 * k, 9.0 * k)
         block_segment(bc - side * 8 * k, bc - side * 26 * k, 6.0 * k)
+    elif body is not None:                                           # the ship: hull from nose to engines, the bent wing
+        k = SHIP_SCALE
+        fwd = -np.array(CRASH['came_from'])
+        side = np.array([-fwd[1], fwd[0]])
+        bc = np.array([body['X'], body['Y']])
+        block_segment(bc - fwd * 25 * k, bc + fwd * 21 * k, 8.6 * k)
+        block_segment(bc - fwd * 5 * k + side * 8 * k, bc - fwd * 10 * k + side * 20 * k, 2.6 * k)
     hop = np.zeros((N, N), bool)                                     # too steep: debris, small plants
     cf = np.array(CRASH['came_from'])
     stamp_disc(hop, CRASH['X'] + cf[0] * 92, CRASH['Y'] + cf[1] * 92, 20.0)
@@ -4761,9 +5077,11 @@ def export_cracks(cracks):
     return out
 
 
-def collect_glows(G, fxpx, D, baked, sprites):
+def collect_glows(G, fxpx, D, baked, sprites, kind=None):
     """Everything that glows on its own, for the game to pulse and twinkle:
-    [x, y, halo, colour, strength, kind, phase]; kinds 0 plant, 1 pool, 2 ember, 3 ice glint, 4 crystal spire."""
+    [x, y, halo, colour, strength, kind, phase]; kinds 0 plant, 1 pool, 2 ember, 3 ice glint, 4 crystal spire.
+    Embers smoulder in the scorched ground: one a prop now stands in front of (the wreck's hull) is
+    left out, its random draws still taken so every other glow keeps its place and phase."""
     rs = np.random.default_rng(SEED + 77)
     pts = [g + [int(rs.integers(256))] for g in static_glows(baked, sprites, D)]
     for code, every, halo, colours, strength, kind_ in ((1, 70, 1, (0, 0, 3), 150, 1), (2, 240, 0, (5,), 255, 3),
@@ -4773,8 +5091,11 @@ def collect_glows(G, fxpx, D, baked, sprites):
             continue
         pick = rs.choice(xs.size, size=max(1, xs.size // every), replace=False)
         for j in pick:
-            pts.append([int(xs[j]), int(ys[j]), halo + int(rs.integers(2)) * (kind_ == 1), int(rs.choice(colours)),
-                        strength, kind_, int(rs.integers(256))])
+            p = [int(xs[j]), int(ys[j]), halo + int(rs.integers(2)) * (kind_ == 1), int(rs.choice(colours)),
+                 strength, kind_, int(rs.integers(256))]
+            if kind_ == 2 and kind is not None and kind[ys[j], xs[j]] == 3:
+                continue
+            pts.append(p)
     for X, Y, Hs, bf, bi in G['peaks']:
         if bf < 0.5:
             continue
@@ -4893,11 +5214,15 @@ def render_view(G, G0, k):
             if debris_parts:
                 gb = render_groups(turned(debris_parts), img, D, kind, gid, gb)
     with canonical():
-        wreck_parts, wreck_fx, debris, body = satellite_wreck(ground0)
+        wreck_parts, wreck_fx, debris, body = crash_wreck(ground0)
     wreck_fx = dict(smoke=[to_view(q) for q in wreck_fx['smoke']], sparks=[to_view(q) for q in wreck_fx['sparks']],
                     beacon=to_view(wreck_fx['beacon']), fire=[to_view(q) for q in wreck_fx['fire']])
     gw0 = gb
-    gb = render_groups(turned(wreck_parts), img, D, kind, gid, gb)
+    hatch_parts = [p for p in wreck_parts if p.group == 'whatch']                  # on its own: its pixels are known
+    gb = render_groups(turned([p for p in wreck_parts if p.group != 'whatch']), img, D, kind, gid, gb)
+    gh0 = gb
+    if hatch_parts:
+        gb = render_groups(turned(hatch_parts), img, D, kind, gid, gb)
     gw1 = gb
     print(f'props in {time.time() - t0:.1f}s')
     gb, flora_out, live, baked, sprites = render_flora(G, img, D, kind, gid, gb)
@@ -4905,6 +5230,7 @@ def render_view(G, G0, k):
     depth_lines(img, dark, D, kind, gid)
     del dark
     pre = render_precrash(G, img, kind, gid, gw0, gw1)
+    hatch = hatch_pixels(gid, gh0, gw1, body) if hatch_parts else None
     for key in ('nX', 'nY', 'nZ', 'ao', 'tex', 'streak', 'albedo', 'strata', 'spike_rel', 'glow', 'walk_d',
                 'patch_f', 'patch_i', 'bglow', 'shadow', 'lane_d', 'crash_d', 'path_d'):
         G.pop(key, None)
@@ -4947,6 +5273,8 @@ def render_view(G, G0, k):
         r1 = min(H, r0 + 256)
         hazed = apply_haze(final[r0:r1], r0, 0, bio[r0:r1])
         final[r0:r1] = np.where(filled[r0:r1, :, None], hazed, final[r0:r1])
+    if hatch is not None:
+        hatch_overlay(hatch, ground0, bio)
     del bio
     for p, rad, colr, s_ in lights:
         sx, sy = project(*p)
@@ -4959,7 +5287,7 @@ def render_view(G, G0, k):
     _TILES['map'] = export_tiles(final, 'map', (0, 0, 0), 'RGB', as_image=True)
     _TILES['light'] = export_tiles(EMIT, 'light', (255,), 'L', as_image=True)
     print(f'light mask: {np.count_nonzero(EMIT[filled] > 127)} lit pixels on the ground')
-    glows = collect_glows(G, fxpx, D, baked, sprites)
+    glows = collect_glows(G, fxpx, D, baked, sprites, kind)
     rs_g = np.random.default_rng(SEED + 818)
     for x, y in dome_glints:                             # sunlight flashing off the dome's metal
         glows.append([int(x), int(y), 1, 5, 255, 3, int(rs_g.integers(256))])
@@ -5014,7 +5342,7 @@ def render_view(G, G0, k):
     meta['minimap'] = export_minimap(final, filled)
     meta['animated'] = export_animated(D)
     fx = dict(flora=flora_out, halos=export_halos(), glow_colors=GLOW_COLORS, glows=glows,
-              crash=export_crash(G, pre, wreck_fx, body, kind), cracks=export_cracks(base_cracks),
+              crash=export_crash(G, pre, wreck_fx, body, kind, hatch), cracks=export_cracks(base_cracks),
               doors=export_doors(D, kind))
     save_text(json.dumps(fx, separators=(',', ':')), os.path.join(OUT, f'red_planet_fx{SFX}.json'))
     meta['fx'] = f'red_planet_fx{SFX}.json'

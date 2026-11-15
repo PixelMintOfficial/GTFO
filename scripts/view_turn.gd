@@ -194,9 +194,13 @@ func _paths(k: int) -> Array[String]:
 	if fx.has("halos"):
 		out.append(dir.path_join(fx["halos"]["file"]))
 	var crash: Dictionary = fx.get("crash", {})
-	for key in ["before", "satellite"]:
+	for key in ["before", "craft"]:
 		if crash.has(key):
 			out.append(dir.path_join(crash[key]["file"]))
+	var hatch: Dictionary = crash.get("hatch", {})
+	for key in ["open", "lid", "rest"]:                # the ship's doorway and its blown-off door
+		if hatch.has(key):
+			out.append(dir.path_join(hatch[key]["file"]))
 	for d in fx.get("doors", []):
 		if d.has("file"):
 			out.append(dir.path_join(d["file"]))

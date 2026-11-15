@@ -1011,6 +1011,98 @@
    "note": "Reserve power: a relay clunk, then the emergency hum stuttering on in step with the flicker InteriorFX draws on the emergency lines.",
    "group": "Other"
   },
+  "intro_cockpit_hum": {
+   "files": [
+    "intro_cockpit_hum.wav"
+   ],
+   "bus": "amb",
+   "gain_db": -12.0,
+   "loop": true,
+   "seconds": 3.0,
+   "fade": 0.8,
+   "note": "The cockpit on the way in: an even engine drone through the hull with the air scrubbers breathing over it. Seamless 3 s.",
+   "group": "The opening cutscene"
+  },
+  "intro_radio_blip": {
+   "files": [
+    "intro_radio_blip_0.wav",
+    "intro_radio_blip_1.wav",
+    "intro_radio_blip_2.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -14.0,
+   "loop": false,
+   "seconds": 0.145,
+   "pitch": [
+    0.95,
+    1.05
+   ],
+   "note": "Mission Control keying up before each line: a squelch tick and a burst of carrier hiss.",
+   "group": "The opening cutscene"
+  },
+  "intro_radio_static": {
+   "files": [
+    "intro_radio_static.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -20.0,
+   "loop": true,
+   "seconds": 2.0,
+   "fade": 0.2,
+   "note": "The open channel under the radio lines: thin hiss and scattered crackle. Near the threshold of notice. Seamless 2 s.",
+   "group": "The opening cutscene"
+  },
+  "intro_radio_glitch": {
+   "files": [
+    "intro_radio_glitch.wav"
+   ],
+   "bus": "ui",
+   "gain_db": -8.0,
+   "loop": false,
+   "seconds": 1.541,
+   "note": "The signal breaking up mid-word in the radiation storm: stuttering static and a buzz tearing downward, then an empty channel.",
+   "group": "The opening cutscene"
+  },
+  "intro_alarm": {
+   "files": [
+    "intro_alarm.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -14.0,
+   "loop": true,
+   "seconds": 1.0,
+   "fade": 0.1,
+   "note": "The cockpit master alarm as control is lost: a warble between two pitches at an inharmonic ratio, through a grille. Seamless 1 s.",
+   "group": "The opening cutscene"
+  },
+  "intro_hatch_thump": {
+   "files": [
+    "intro_hatch_thump.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -6.0,
+   "loop": false,
+   "seconds": 0.525,
+   "pitch": [
+    0.92,
+    1.06
+   ],
+   "dist": 900.0,
+   "note": "Someone inside the wreck shouldering the jammed hatch: a muffled steel thud.",
+   "group": "The opening cutscene"
+  },
+  "intro_hatch_pop": {
+   "files": [
+    "intro_hatch_pop.wav"
+   ],
+   "bus": "sfx",
+   "gain_db": -4.0,
+   "loop": false,
+   "seconds": 1.224,
+   "dist": 1200.0,
+   "note": "The hatch blown off its explosive bolts: a pressure bang, a long clang as the door tears away, and the cabin air hissing out.",
+   "group": "The opening cutscene"
+  },
   "ui_map_open": {
    "files": [
     "ui_map_open.wav"

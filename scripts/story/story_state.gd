@@ -5,7 +5,8 @@ extends RefCounted
 ## the power and oxygen rooms; ordered oxygen/glass/generator/solar guidance and seven
 ## checklist tasks; nursery player tasks/cleanup fractions; independent body session positions.
 ## Survives the airlock, camera turns and rescue. Every name and line comes from
-## data/bot_story.json (names, tokens {BOT} {OWNER} {NAME}); nothing is written here.
+## data/bot_story.json (names, tokens {BOT} {OWNER} {NAME} {PLANET}); nothing is written here.
+## The opening cutscene's radio lines live there too ("intro"), read by IntroCutscene through text().
 ## The player's name is remembered between launches as a preference (PlayerProfile).
 ## F1 can complete/reset the nursery body independently of the main introduction and crops.
 
@@ -82,6 +83,7 @@ func _init() -> void:
 func text(line: String) -> String:
 	var names: Dictionary = data["names"]
 	return line.replace("{BOT}", names["bot"]).replace("{OWNER}", names["previous_owner"]).replace("{NAME}", player_name) \
+			.replace("{PLANET}", names.get("planet", "ARAXYS")) \
 			.replace("{TURN_LEFT}", _key_label("turn_left", "G")).replace("{TURN_RIGHT}", _key_label("turn_right", "H"))
 
 

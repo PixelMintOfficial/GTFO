@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://yul1ruajojml"
-path="res://.godot/imported/satellite_r2.png-2ba01099d60044c764c2619d0ee192cd.ctex"
+uid="uid://ctj4w52bn6atj"
+path="res://.godot/imported/ship_hatch_open_r1.png-1cd941d9b8368cf41eb989b8723796df.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/maps/red_planet/anim/satellite_r2.png"
-dest_files=["res://.godot/imported/satellite_r2.png-2ba01099d60044c764c2619d0ee192cd.ctex"]
+source_file="res://assets/maps/red_planet/anim/ship_hatch_open_r1.png"
+dest_files=["res://.godot/imported/ship_hatch_open_r1.png-1cd941d9b8368cf41eb989b8723796df.ctex"]
 
 [params]
 

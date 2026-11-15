@@ -1,7 +1,7 @@
 extends Node2D
 ## The red planet overworld: the pre-rendered map with the astronaut walking on it, the life
-## of its three lands (red dust plains, the alien forest, the ice), and the satellite crash
-## that opens the game.
+## of its three lands (red dust plains, the alien forest, the ice), and the opening cutscene
+## (IntroCutscene): the ship's approach, its crash by the base and the astronaut climbing out.
 ## The main base lights up once both indoor machines and all solar routes are restored.
 ## Escape opens the paused volume/GUI options (PauseMenu).
 ##
@@ -14,7 +14,8 @@ extends Node2D
 ##   --jump-every=SECONDS   jump on a timer
 ##   --zoom=LEVEL           start at this zoom level (0 = default, 3 = furthest)
 ##   --debug                print the player's position, ground height and map depth
-##   --intro / --no-intro   force or skip the crash scene (skipped by default with --spawn/--walk)
+##   --intro / --no-intro   force or skip the opening cutscene (skipped by default with --spawn/--walk)
+##   --intro-skip-at=SECONDS  press a key that many seconds in (the cutscene's skip, as a player does it)
 ##   --equip                take the multitool out right away
 ##   --use                  keep the multitool's use button held (after --equip)
 ##   --face=DX,DY           turn to face this screen direction before working
@@ -125,12 +126,15 @@ func _ready() -> void:
 	GameState.arrive = ""
 	var skip := args.has("no-intro") or args.has("spawn") or args.has("walk") or args.has("forage-at") or GameState.intro_done or arriving
 	if args.has("intro") or not skip:
-		crash.finished.connect(func() -> void: GameState.intro_done = true)
-		day_night.clock_panel.visible = false            # the time panel comes in once the crash is over
-		crash.finished.connect(func() -> void:
+		var intro := IntroCutscene.new()                 # cockpit, orbit, descent, the crash, the hatch
+		add_child(intro)
+		intro.setup(player, crash, ambience)
+		day_night.clock_panel.visible = false            # the time panel comes in once the opening is over
+		intro.finished.connect(func() -> void:
+			GameState.intro_done = true
 			day_night.clock_panel.visible = true
 			day_night.clock_panel.announce("DAY %d" % DayNight.day))
-		crash.play_intro()
+		intro.play()
 	else:
 		GameState.intro_done = true
 	_run_test_hooks(args)
@@ -246,6 +250,16 @@ func _run_test_hooks(args: Dictionary) -> void:
 	PerfProbe.attach(self, args)
 	if args.has("quit"):
 		_quit_after(float(args["quit"]))
+	if args.has("intro-skip-at"):                         # a real key press, as a player would skip it
+		get_tree().create_timer(float(args["intro-skip-at"])).timeout.connect(func() -> void:
+			var key := InputEventKey.new()
+			key.keycode = KEY_SPACE
+			key.physical_keycode = KEY_SPACE
+			key.pressed = true
+			Input.parse_input_event(key)
+			var up := key.duplicate()
+			up.pressed = false
+			Input.parse_input_event(up))
 	if args.has("solar-active") or args.has("solar-solved"):
 		for group in solar.state.feeds.size():
 			if not solar.state.feeds[group]:

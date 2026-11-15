@@ -212,6 +212,31 @@ func puppet_face(d: Vector2) -> void:
 	_sync()
 
 
+## Cutscenes: stand at a world point with the feet at an absolute height (a doorway's sill
+## above the ground), physics paused. puppet_walk keeps that height; puppet_hop lets go.
+func puppet_raise(p: Vector2, feet: float, d: Vector2) -> void:
+	puppet = true
+	world_pos = p
+	_feet = feet
+	_jump = Jump.GROUNDED
+	_vz = 0.0
+	puppet_face(d)
+
+
+## Cutscenes: hop off whatever puppet_raise stood the astronaut on. The ordinary jump physics
+## bring them down, so the landing squash, its dust and its sound come with it.
+func puppet_hop(vz: float) -> void:
+	puppet = false
+	_jump = Jump.AIR
+	_jt = 0.0
+	_vz = vz
+
+
+## On the ground and steady again after a landing (or never left it).
+func is_settled() -> bool:
+	return _jump == Jump.GROUNDED
+
+
 func _set_facing(d: Vector2) -> void:
 	if d.length() > 0.001:
 		var v := terrain.view_dir(d) if terrain != null else d
