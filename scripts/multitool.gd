@@ -60,6 +60,8 @@ var solar_suppressed := false
 ## The awake bot's [F] TALK prompt and its dialogue own F independently (Bot).
 var bot_suppressed := false
 var cultivation_suppressed := false
+## The powered comms console owns F/X while its transmit prompt is in reach.
+var comms_suppressed := false
 ## A live window modal blocks controls but keeps survival and world simulation running.
 var window_panel_open := false
 
@@ -282,7 +284,7 @@ func _process(delta: float) -> void:
 	_was_lit = lit
 	_transform_fx()
 	var ready := _player.tool_state == Player.Tool.READY
-	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not options_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed and not bot_suppressed and not cultivation_suppressed
+	var can := ready and _player.controls_enabled and not _player.turning and not suppressed and not inventory_suppressed and not options_suppressed and not repair_suppressed and not window_suppressed and not solar_suppressed and not bot_suppressed and not cultivation_suppressed and not comms_suppressed
 	if Input.is_action_just_pressed("tool_toggle") and _player.controls_enabled and not _player.puppet and not inventory_suppressed:
 		if _lifted != null:
 			_drop()

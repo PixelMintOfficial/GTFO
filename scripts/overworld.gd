@@ -20,7 +20,7 @@ extends Node2D
 ##   --use                  keep the multitool's use button held (after --equip)
 ##   --face=DX,DY           turn to face this screen direction before working
 ##   --door                 walk up to the base's airlock and go in (the whole cutscene)
-##   --door-id=ID           use a particular base/nursery airlock for transition captures
+##   --door-id=ID           use a particular airlock for transition captures
 ##   --open-inventory / --inventory-demo   backpack screenshot hooks (see InventoryUI)
 ##   --survival-debug / --vitals=H,O,F,W / --survival-speed=N (see SurvivalHUD)
 ##   --dev-panel / --dev-freeze=hunger,thirst,oxygen   master control panel (F1; see DevPanel)
@@ -208,7 +208,7 @@ func _turn_boards() -> Array:
 	return out
 
 
-## Base and nursery airlocks: generator-owned routes choose the matching interior.
+## Generator-owned airlock routes choose the matching interior.
 func _setup_doors() -> void:
 	var meta := ViewData.get_json(terrain.view_json)
 	if not meta.has("fx"):

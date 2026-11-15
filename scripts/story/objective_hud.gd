@@ -1,6 +1,6 @@
 class_name ObjectiveHUD
 extends CanvasLayer
-## Base or nursery tasks under the time panel (top left): one row per
+## Base, nursery and SOS tasks under the time panel (top left): one row per
 ## objective with a small box that ticks when it is done (the done ones dim and struck through),
 ## in the time panel's plate. Base tasks follow UNIT's introduction; nursery tasks show on entry and
 ## lights up when one is done. Hidden in cutscenes, while the world is paused and once everything
@@ -34,10 +34,17 @@ func setup(player: Player, context := "base") -> void:
 	add_child(_panel)
 	GameState.settings.changed.connect(_layout)
 	_layout()
-	for o in GameState.story.objectives(_context):
+	var objectives := _objectives()
+	for o in objectives:
 		_was[o["id"]] = o["done"]
-	if GameState.story.all_done(_context):
+	if not objectives.is_empty() and objectives.all(func(o: Dictionary) -> bool: return o["done"]):
 		_all_done_t = LINGER
+
+
+func _objectives() -> Array:
+	var objectives := [] if _context == "comms" else GameState.story.objectives(_context)
+	objectives.append_array(GameState.story.comms_objectives(_context))
+	return objectives
 
 
 func _layout() -> void:
@@ -50,12 +57,12 @@ func _process(delta: float) -> void:
 	if _panel.scale != next_scale:
 		_layout()
 	_flash = maxf(0.0, _flash - delta * 1.4)
-	var objectives := GameState.story.objectives(_context)
+	var objectives := _objectives()
 	for o in objectives:
 		if o["done"] and not _was.get(o["id"], false):
 			_flash = 1.0
 		_was[o["id"]] = o["done"]
-	if not objectives.is_empty() and GameState.story.all_done(_context):
+	if not objectives.is_empty() and objectives.all(func(o: Dictionary) -> bool: return o["done"]):
 		_all_done_t = maxf(_all_done_t, 0.0) + delta
 	else:
 		_all_done_t = -1.0
@@ -81,7 +88,7 @@ func _plate_rect(objectives: Array) -> Rect2:
 
 
 func _draw_panel() -> void:
-	var objectives := GameState.story.objectives(_context)
+	var objectives := _objectives()
 	if objectives.is_empty():
 		return
 	var r := _plate_rect(objectives)

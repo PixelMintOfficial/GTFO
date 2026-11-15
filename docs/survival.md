@@ -41,7 +41,20 @@ linked GOES-13 particle event. At the default clock speed, the warning gives pla
 seconds to find shelter. The storm lasts two game hours. Uninterrupted outdoor exposure
 fills the meter in 40 active seconds. Shelter drains it at four points per active second.
 The repetition, duration, exposure threshold and shelter recovery are training rules.
-The source timestamps come from near-Earth instruments. [NASA CCMC event record](https://ccmc.gsfc.nasa.gov/CMESB-Earth/prediction/detail/761)
+The source timestamps come from near-Earth instruments. The HUD shows game minutes until
+the storm starts or ends and confirms when the player is sheltered. [NASA CCMC event record](https://ccmc.gsfc.nasa.gov/CMESB-Earth/prediction/detail/761)
+
+## Phase 3 SOS
+
+Main-base power unlocks the objective to find the dish in the ice biome. Inside the pedestal,
+repair the screen with the equipped multitool, then press F or gamepad X to send the SOS.
+The pedestal shelters the player throughout the warning and storm, even during a power outage.
+
+The scenario uses a fixed 20-game-minute light time per leg and an immediate Earth response.
+At the default clock rate, the full trip takes about 20 seconds of unpaused play. The existing
+objective panel shows both legs and announces the acknowledgement. The receiver needs main power
+to log a due reply. The transmission and acknowledgement follow the player through airlocks and
+are kept through rescue. [NASA Mars Relay Network](https://science.nasa.gov/mars/mars-relay-network/)
 
 Outdoors and unpressurized facilities drain suit oxygen continuously. Full O2 repair
 starts 24 game hours of reserve. All three storage panes must seal before either main-base
